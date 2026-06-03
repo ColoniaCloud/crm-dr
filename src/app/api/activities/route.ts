@@ -67,6 +67,12 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId") || undefined;
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
+
+    const now = new Date();
+    const fromDate = fromParam ? new Date(fromParam) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const toDate = toParam ? new Date(toParam) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     await ensureActivityTable();
 
@@ -97,6 +103,8 @@ export async function GET(request: Request) {
           INNER JOIN users u ON a.userId = u.id
           INNER JOIN contacts c ON a.contactId = c.id
           WHERE a.userId = ${userId}
+            AND a.createdAt >= ${fromDate}
+            AND a.createdAt <= ${toDate}
           ORDER BY a.createdAt DESC
           LIMIT 300
         `
@@ -125,6 +133,8 @@ export async function GET(request: Request) {
           FROM activity_logs a
           INNER JOIN users u ON a.userId = u.id
           INNER JOIN contacts c ON a.contactId = c.id
+          WHERE a.createdAt >= ${fromDate}
+            AND a.createdAt <= ${toDate}
           ORDER BY a.createdAt DESC
           LIMIT 300
         `;

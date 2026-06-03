@@ -21,7 +21,6 @@ import {
   CalendarDays,
   Phone,
   Settings,
-  AlertTriangle,
   Truck,
   ClipboardList,
   BarChart3,
@@ -107,20 +106,6 @@ export function AppSidebar() {
     if (ventasActive) setVentasOpen(true);
   }, [pathname, productosActive, ventasActive]);
 
-  const [msgTitle, setMsgTitle] = useState("");
-  const [msgBody, setMsgBody] = useState("");
-
-  useEffect(() => {
-    fetch("/api/settings/message")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          setMsgTitle(data.title);
-          setMsgBody(data.body);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   return (
     <Sidebar collapsible="icon">
@@ -286,15 +271,12 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
 
-        {msgTitle && msgBody && (
-          <div className="mx-2 mb-2 rounded-lg border border-yellow-500/30 bg-yellow-50 dark:bg-yellow-950/20 p-3 group-data-[collapsible=icon]:hidden">
-            <div className="flex items-center gap-2 mb-1">
-              <AlertTriangle className="size-4 text-yellow-600 shrink-0" />
-              <span className="text-xs font-semibold text-yellow-800 dark:text-yellow-400 truncate">{msgTitle}</span>
-            </div>
-            <p className="text-xs text-yellow-700 dark:text-yellow-500 leading-relaxed">{msgBody}</p>
-          </div>
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icons/login.jpg"
+          alt="DR Polarizados"
+          className="mx-2 mb-2 w-[calc(100%-1rem)] rounded-lg object-cover group-data-[collapsible=icon]:hidden"
+        />
       </SidebarFooter>
     </Sidebar>
   );

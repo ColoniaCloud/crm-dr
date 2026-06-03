@@ -155,6 +155,8 @@ export default function ActivitiesPage() {
 
     const params = new URLSearchParams();
     if (selectedOperator && selectedOperator !== "all") params.set("userId", selectedOperator);
+    params.set("from", dateRange.from.toISOString());
+    params.set("to", dateRange.to.toISOString());
 
     Promise.all([
       fetch(`/api/activities?${params.toString()}`).then(async (r) => {
@@ -177,20 +179,16 @@ export default function ActivitiesPage() {
         setFetchError("No se pudo cargar la actividad.");
       })
       .finally(() => setLoading(false));
-  }, [selectedOperator, session, status]);
+  }, [selectedOperator, session, status, dateRange]);
 
-  // Filter timeline by date range
+  // Merge and sort activities + audit logs (date filtering is done server-side)
   const timeline = useMemo((): TimelineItem[] => {
     const actItems: ActivityItem[] = activities.map((a) => ({ kind: "activity" as const, ...a }));
     const auditItems: AuditItem[] = auditLogs.map((l) => ({ kind: "audit" as const, ...l }));
-    const all = [...actItems, ...auditItems].sort(
+    return [...actItems, ...auditItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    return all.filter((item) => {
-      const d = new Date(item.createdAt);
-      return d >= dateRange.from && d <= dateRange.to;
-    });
-  }, [activities, auditLogs, dateRange]);
+  }, [activities, auditLogs]);
 
   // Lead counters
   const counters = useMemo(() => {

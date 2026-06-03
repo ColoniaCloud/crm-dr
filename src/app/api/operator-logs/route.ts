@@ -40,6 +40,12 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId") || undefined;
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
+
+    const now = new Date();
+    const fromDate = fromParam ? new Date(fromParam) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const toDate = toParam ? new Date(toParam) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
     await ensureAuditTable();
 
@@ -48,12 +54,16 @@ export async function GET(request: Request) {
           SELECT id, action, entityType, entityId, description, link, createdAt
           FROM operator_audit_logs
           WHERE userId = ${userId}
+            AND createdAt >= ${fromDate}
+            AND createdAt <= ${toDate}
           ORDER BY createdAt DESC
           LIMIT 300
         `
       : await prisma.$queryRaw<AuditRow[]>`
           SELECT id, action, entityType, entityId, description, link, createdAt
           FROM operator_audit_logs
+          WHERE createdAt >= ${fromDate}
+            AND createdAt <= ${toDate}
           ORDER BY createdAt DESC
           LIMIT 300
         `;
