@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
-const PASSWORD = "DrPolarizados@26";
+const PASSWORD = "Polarizados@26";
 
 async function main() {
   const users = await prisma.user.findMany({
