@@ -56,6 +56,7 @@ export async function GET(request: Request) {
           WHERE userId = ${userId}
             AND createdAt >= ${fromDate}
             AND createdAt <= ${toDate}
+            AND action != 'CONTACT_ACTIVITY'
           ORDER BY createdAt DESC
           LIMIT 300
         `
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
           FROM operator_audit_logs
           WHERE createdAt >= ${fromDate}
             AND createdAt <= ${toDate}
+            AND action != 'CONTACT_ACTIVITY'
           ORDER BY createdAt DESC
           LIMIT 300
         `;

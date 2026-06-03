@@ -96,7 +96,7 @@ export default function ActivitiesPage() {
   const [selectedActivity, setSelectedActivity] = useState<ActivityItem | null>(null);
 
   // Date filter state
-  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "custom">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "custom">("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -159,23 +159,18 @@ export default function ActivitiesPage() {
     params.set("to", dateRange.to.toISOString());
 
     Promise.all([
-      fetch(`/api/activities?${params.toString()}`).then(async (r) => {
-        if (!r.ok) throw new Error(`Error actividades ${r.status}`);
-        return r.json();
-      }),
-      fetch(`/api/operator-logs?${params.toString()}`).then(async (r) => {
-        if (!r.ok) throw new Error(`Error logs ${r.status}`);
-        return r.json();
-      }),
+      fetch(`/api/activities?${params.toString()}`)
+        .then(async (r) => (r.ok ? r.json() : []))
+        .catch(() => []),
+      fetch(`/api/operator-logs?${params.toString()}`)
+        .then(async (r) => (r.ok ? r.json() : []))
+        .catch(() => []),
     ])
       .then(([acts, logs]) => {
         setActivities(Array.isArray(acts) ? acts : []);
         setAuditLogs(Array.isArray(logs) ? logs : []);
       })
-      .catch((err) => {
-        console.error("[activities] fetch timeline", err);
-        setActivities([]);
-        setAuditLogs([]);
+      .catch(() => {
         setFetchError("No se pudo cargar la actividad.");
       })
       .finally(() => setLoading(false));
