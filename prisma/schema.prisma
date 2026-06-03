@@ -1,0 +1,782 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  OPERATOR
+}
+
+enum ContactType {
+  LEAD
+  CLIENT
+}
+
+enum ContactMethod {
+  PHONE
+  WHATSAPP
+  EMAIL
+  IN_PERSON
+  NONE
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  CONVERTED
+}
+
+enum SaleType {
+  REGULAR
+  CONSIGNMENT
+}
+
+enum SaleStatus {
+  PENDING
+  CONFIRMED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum ProductCategory {
+  AUTOMOTIVE
+  ARCHITECTURAL
+  PPF
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  CONFIRMED
+  RECEIVED
+}
+
+enum StockMovementType {
+  ENTRADA
+  SALIDA
+  AJUSTE
+  DEVOLUCION
+}
+
+enum Currency {
+  ARS
+  USD
+}
+
+enum ImportCostType {
+  FLETE_INTERNACIONAL
+  DESPACHO_ADUANA
+  ARANCELES
+  FLETE_LOCAL
+  OTRO
+}
+
+enum PaymentAuditAction {
+  CREATED
+  EDITED
+  DELETED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          UserRole  @default(OPERATOR)
+  avatarUrl     String?   @db.LongText
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  assignedLeads    Contact[]        @relation("AssignedTo")
+  scheduledVisits  Visit[]          @relation("VisitAssignedTo")
+  createdVisits    Visit[]          @relation("VisitCreatedBy")
+  scheduledCalls   Call[]           @relation("CallAssignedTo")
+  createdCalls     Call[]           @relation("CallCreatedBy")
+  sales            Sale[]
+  quotes           Quote[]
+  assignedUnits    ProductUnit[]    @relation("UnitAssignedTo")
+  notifications    Notification[]
+  stockMovements   StockMovement[]
+  activities       ActivityLog[]    @relation("UserActivities")
+  leadActivities   LeadActivity[]   @relation("LeadActivityUser")
+  paymentAuditLogs PaymentAuditLog[] @relation("PaymentAuditUser")
+  operatorAuditLogs OperatorAuditLog[]
+
+  @@map("users")
+}
+
+model CrmTask {
+  id        String    @id @default(cuid())
+  title     String
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  priority  String?   // LOW | MEDIUM | HIGH
+  userId    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("crm_tasks")
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  color     String       @default("#6366f1")
+  createdAt DateTime     @default(now())
+
+  contacts  ContactTag[]
+
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("contact_tags")
+}
+
+model Contact {
+  id              String        @id @default(cuid())
+  leadNumber      Int           @unique @default(autoincrement())
+  type            ContactType   @default(LEAD)
+  firstName       String
+  lastName        String
+  company         String?
+  sector          String?       // AUTO_TALLER | AUTO_CONCESIONARIO | AUTO_MAYORISTA | ARQUITECTURA_CONSTRUCTORA | ARQUITECTURA_VIDRIERIA | ARQUITECTURA_MAYORISTA
+  email           String?
+  phone           String?
+  whatsapp        String?
+  address         String?
+  neighborhood    String?
+  city            String?
+  state           String?
+  cuit            String?
+  website         String?
+  notes           String?       @db.Text
+
+  // Lead-specific fields
+  contacted       Boolean       @default(false)
+  contactMethod   ContactMethod @default(NONE)
+  contactDate     DateTime?
+  vehicleFlowWeekly    Int?
+  architecturalFlowMonthly Int?
+  currentSupplier      String?   @db.Text
+  currentSupplierPrices String? @db.Text
+  avatarUrl       String?       @db.LongText
+
+  assignedToId    String?
+  assignedTo      User?         @relation("AssignedTo", fields: [assignedToId], references: [id])
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  tags            ContactTag[]
+  visits          Visit[]
+  calls           Call[]
+  quotes          Quote[]
+  sales           Sale[]
+  payments        Payment[]
+  activities      ActivityLog[]    @relation("ContactActivities")
+  leadActivities  LeadActivity[]   @relation("LeadActivities")
+
+  @@map("contacts")
+}
+
+model Visit {
+  id            String    @id @default(cuid())
+  contactId     String
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedToId  String
+  assignedTo    User      @relation("VisitAssignedTo", fields: [assignedToId], references: [id])
+  createdById   String
+  createdBy     User      @relation("VisitCreatedBy", fields: [createdById], references: [id])
+  scheduledDate DateTime
+  notes         String?   @db.Text
+  completed     Boolean   @default(false)
+  completedDate DateTime?
+  result        String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("visits")
+}
+
+model Call {
+  id           String    @id @default(cuid())
+  contactId    String
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedToId String
+  assignedTo   User      @relation("CallAssignedTo", fields: [assignedToId], references: [id])
+  createdById  String
+  createdBy    User      @relation("CallCreatedBy", fields: [createdById], references: [id])
+  scheduledAt  DateTime
+  durationMin  Int?
+  notes        String?   @db.Text
+  completed    Boolean   @default(false)
+  completedAt  DateTime?
+  result       String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("calls")
+}
+
+model Product {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?         @db.Text
+  category      ProductCategory
+  subcategory   String?         // PREMIUM | NANOCERAMIC | NANOCARBON | SAFETY | PPF (for AUTOMOTIVE)
+  brand         String?
+  width         Decimal?        @db.Decimal(10, 2)
+  length        Decimal?        @db.Decimal(10, 2)
+  shade         String?         // e.g., "05", "20", "35" or manual for PPF
+  price         Decimal         @db.Decimal(10, 2)
+  cost          Decimal?        @db.Decimal(10, 2)
+  stock         Int             @default(0)
+  minStock      Int             @default(0)
+  sku           String?         @unique
+  imageUrl      String?         @db.LongText // base64 or URL
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  quoteItems         QuoteItem[]
+  saleItems          SaleItem[]
+  discounts          ProductDiscount[]
+  priceTiers         PriceTier[]
+  units              ProductUnit[]
+  stockMovements     StockMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
+  warrantyConfig     WarrantyConfig?
+  warrantyLots       WarrantyLot[]
+  warrantyRolls      WarrantyRoll[]
+
+  @@map("products")
+}
+
+model ProductDiscount {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      String   // FIXED | PERCENTAGE
+  value     Decimal  @db.Decimal(10, 2)
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@map("product_discounts")
+}
+
+model PriceTier {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tierType  String   // PACK | VOLUME
+  minQty    Int
+  price     Decimal  @db.Decimal(10, 2) // PACK: total pack price, VOLUME: per-unit price
+  createdAt DateTime @default(now())
+
+  @@map("price_tiers")
+}
+
+model ProductUnit {
+  id           String    @id @default(cuid())
+  productId    String
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  code         String    @unique // [CAT_ABBREV]-[SHADE]-[SEQ4]
+  assignedToId String?
+  assignedTo   User?     @relation("UnitAssignedTo", fields: [assignedToId], references: [id])
+  assignedAt   DateTime?
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  warrantyRoll WarrantyRoll?
+
+  @@map("product_units")
+}
+
+model QuoteItem {
+  id            String    @id @default(cuid())
+  quoteId       String
+  quote         Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  quantity      Int
+  unitPrice     Decimal   @db.Decimal(10, 2)
+  discount      Decimal   @default(0) @db.Decimal(10, 2)
+  discountType  String    @default("FIXED") @db.VarChar(10)
+  total         Decimal   @db.Decimal(10, 2)
+
+  @@map("quote_items")
+}
+
+model Quote {
+  id            String        @id @default(cuid())
+  number        Int           @unique @default(autoincrement())
+  contactId     String
+  contact       Contact       @relation(fields: [contactId], references: [id])
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  status        QuoteStatus   @default(DRAFT)
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  tax           Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  requiresFactura Boolean       @default(false)
+  validUntil    DateTime?
+  notes         String?       @db.Text
+  convertedToSaleId String?
+  sentAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items         QuoteItem[]
+
+  @@map("quotes")
+}
+
+model Sale {
+  id            String        @id @default(cuid())
+  number        Int           @unique @default(autoincrement())
+  contactId     String
+  contact       Contact       @relation(fields: [contactId], references: [id])
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  requiresFactura Boolean       @default(false)
+  type          SaleType      @default(REGULAR)
+  status        SaleStatus    @default(PENDING)
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  tax           Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items            SaleItem[]
+  remito           Remito?
+  payments         Payment[]
+  paymentAuditLogs PaymentAuditLog[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id          String    @id @default(cuid())
+  saleId      String
+  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Decimal   @db.Decimal(10, 2)
+  total       Decimal   @db.Decimal(10, 2)
+  warrantyRoll WarrantyRoll?
+
+  @@map("sale_items")
+}
+
+model Remito {
+  id          String    @id @default(cuid())
+  number      Int       @unique @default(autoincrement())
+  saleId      String    @unique
+  sale        Sale      @relation(fields: [saleId], references: [id])
+  issuedAt    DateTime  @default(now())
+  signedAt    DateTime?
+  notes       String?   @db.Text
+  facturaInfo String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("remitos")
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  number      Int           @unique @default(autoincrement())
+  saleId      String
+  sale        Sale          @relation(fields: [saleId], references: [id])
+  contactId   String
+  contact     Contact       @relation(fields: [contactId], references: [id])
+  amount      Decimal       @db.Decimal(10, 2)
+  method      String?
+  reference   String?
+  notes       String?       @db.Text
+  paidAt      DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  auditLogs   PaymentAuditLog[]
+
+  @@map("payments")
+}
+
+model PaymentAuditLog {
+  id          String             @id @default(cuid())
+  saleId      String
+  sale        Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  paymentId   String?
+  payment     Payment?           @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User               @relation("PaymentAuditUser", fields: [userId], references: [id])
+  action      PaymentAuditAction
+  oldValues   String?            @db.Text
+  newValues   String?            @db.Text
+  description String             @db.Text
+  createdAt   DateTime           @default(now())
+
+  @@map("payment_audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // VISIT_ASSIGNED | CALL_ASSIGNED
+  title     String
+  message   String   @db.Text
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model Competitor {
+  id            String    @id @default(cuid())
+  name          String
+  website       String?
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  products      CompetitorProduct[]
+
+  @@map("competitors")
+}
+
+model CompetitorProduct {
+  id            String    @id @default(cuid())
+  competitorId  String
+  competitor    Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  name          String
+  category      ProductCategory
+  brand         String?
+  shade         String?
+  price         Decimal   @db.Decimal(10, 2)
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("competitor_products")
+}
+
+model Setting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// ─── Fase 1: Proveedores, Órdenes de Compra, Costos de Importación ───────────
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  country       String?
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  currency      Currency  @default(USD)
+  leadTimeDays  Int?
+  notes         String?   @db.Text
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  number       Int                 @unique @default(autoincrement())
+  supplierId   String
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  status       PurchaseOrderStatus @default(DRAFT)
+  orderDate    DateTime            @default(now())
+  expectedDate DateTime?
+  receivedDate DateTime?
+  currency     Currency            @default(USD)
+  exchangeRate Decimal?            @db.Decimal(10, 4) // USD→ARS al momento de la orden
+  notes        String?             @db.Text
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  items       PurchaseOrderItem[]
+  importCosts ImportCost[]
+  warrantyLots WarrantyLot[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  costFOB         Decimal       @db.Decimal(10, 2) // costo en moneda de origen (USD)
+  costLanded      Decimal?      @db.Decimal(10, 2) // costo real ARS después de prorrateo de gastos
+  notes           String?       @db.Text
+
+  @@map("purchase_order_items")
+}
+
+model ImportCost {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  type            ImportCostType
+  description     String?
+  amountARS       Decimal       @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+
+  @@map("import_costs")
+}
+
+// ─── Fase 1: Movimientos de Stock ─────────────────────────────────────────────
+
+model StockMovement {
+  id            String            @id @default(cuid())
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
+  type          StockMovementType
+  quantity      Int               // positivo para entradas, negativo para salidas
+  stockBefore   Int
+  stockAfter    Int
+  referenceId   String?           // saleId | purchaseOrderId | etc.
+  referenceType String?           // SALE | PURCHASE_ORDER | ADJUSTMENT | RETURN
+  reason        String?           @db.Text
+  userId        String?
+  user          User?             @relation(fields: [userId], references: [id])
+  createdAt     DateTime          @default(now())
+
+  @@map("stock_movements")
+}
+
+model ActivityLog {
+  id                 String   @id @default(cuid())
+  contactId          String
+  contact            Contact  @relation("ContactActivities", fields: [contactId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User     @relation("UserActivities", fields: [userId], references: [id])
+
+  contactMethod      String   // PHONE, WHATSAPP, EMAIL
+  responded          String?  // SI, NO, AUNNO (only for WHATSAPP and EMAIL)
+  interestLevel      String   // BAJO, MEDIO, ALTO
+
+  revealedSupplier   Boolean  @default(false)
+  supplierName       String?  @db.Text
+  supplierPriceRange String?  @db.Text
+
+  needsQuote         Boolean  @default(false)
+  scheduleTask       Boolean  @default(false)
+  sendAfter          Boolean  @default(false)
+
+  notes              String?  @db.LongText
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("activity_logs")
+}
+
+// ─── Timeline de actividades del lead ─────────────────────────────────────────
+
+enum LeadActivityType {
+  NOTE
+  EMAIL_SENT
+  QUOTE_SENT
+  VISIT
+  CALL
+  STATUS_CHANGE
+  OTHER
+}
+
+model LeadActivity {
+  id          String           @id @default(cuid())
+  contactId   String
+  contact     Contact          @relation("LeadActivities", fields: [contactId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation("LeadActivityUser", fields: [userId], references: [id])
+  type        LeadActivityType
+  title       String
+  description String?          @db.Text
+  createdAt   DateTime         @default(now())
+
+  @@map("lead_activities")
+}
+
+// ─── WhatsApp ────────────────────────────────────────────────────────────────
+
+enum WhatsAppMessageStatus {
+  SENT
+  FAILED
+}
+
+model WhatsAppMessage {
+  id        String                @id @default(cuid())
+  contactId String?
+  phone     String
+  message   String                @db.Text
+  status    WhatsAppMessageStatus
+  error     String?               @db.Text
+  sentById  String?
+  sentAt    DateTime              @default(now())
+
+  @@index([sentAt])
+  @@map("whatsapp_messages")
+}
+
+// ─── Auditoría de operadores ──────────────────────────────────────────────────
+
+model OperatorAuditLog {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  action      String   @db.VarChar(64)
+  entityType  String   @db.VarChar(32)
+  entityId    String?
+  description String   @db.Text
+  link        String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("operator_audit_logs")
+}
+
+// ─── Sistema de Garantías Digitales ──────────────────────────────────────────
+
+enum WarrantyRollStatus {
+  IN_STOCK
+  SOLD
+  IN_USE
+  EXHAUSTED
+  VOIDED
+}
+
+enum WarrantyInstallationStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  VOIDED
+}
+
+enum AssetType {
+  VEHICLE
+  WINDOW
+  BUILDING
+  OTHER
+}
+
+model WarrantyConfig {
+  id                    String   @id @default(cuid())
+  productId             String   @unique
+  product               Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warrantyEnabled       Boolean  @default(true)
+  rollWarrantyMonths    Int      @default(24)
+  installWarrantyMonths Int      @default(12)
+  maxInstallations      Int      @default(15)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("warranty_configs")
+}
+
+model WarrantyLot {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  lotNumber       String        @unique
+  quantity        Int
+  receivedAt      DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+
+  rolls           WarrantyRoll[]
+
+  @@map("warranty_lots")
+}
+
+model WarrantyRoll {
+  id          String             @id @default(cuid())
+  lotId       String
+  lot         WarrantyLot        @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product            @relation(fields: [productId], references: [id])
+  saleItemId   String?            @unique
+  saleItem     SaleItem?          @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  unitId       String?            @unique
+  unit         ProductUnit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  fullRollCode String             @unique
+  status       WarrantyRollStatus @default(IN_STOCK)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  installations WarrantyInstallation[]
+
+  @@map("warranty_rolls")
+}
+
+model WarrantyInstallation {
+  id                 String                     @id @default(cuid())
+  rollId             String
+  roll               WarrantyRoll               @relation(fields: [rollId], references: [id], onDelete: Cascade)
+  installationNumber Int
+  installationCode   String                     @unique
+  activationToken    String                     @unique @default(cuid())
+  status             WarrantyInstallationStatus @default(PENDING)
+  assetType          AssetType?
+  assetDescription   String?                    @db.Text
+  installerName      String?
+  clientName         String?
+  clientEmail        String?
+  clientPhone        String?
+  clientDni          String?
+  installedAt        DateTime?
+  activatedAt        DateTime?
+  expiresAt          DateTime?
+  notes              String?                    @db.Text
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@unique([rollId, installationNumber])
+  @@map("warranty_installations")
+}

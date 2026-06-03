@@ -1,0 +1,199 @@
+/* Galaxia de puntos animados para login */
+.galaxy-bg {
+  pointer-events: none;
+  background: transparent;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.galaxy-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(white 1.5px, transparent 1.5px) 0 0 / 80px 80px repeat,
+    radial-gradient(white 1px, transparent 1px) 40px 40px / 80px 80px repeat,
+    radial-gradient(#fff6 1px, transparent 1px) 20px 60px / 120px 120px repeat,
+    radial-gradient(#fff3 1.5px, transparent 1.5px) 60px 20px / 120px 120px repeat;
+  animation: galaxy-move 30s linear infinite;
+}
+@keyframes galaxy-move {
+  0% { background-position: 0 0, 40px 40px, 20px 60px, 60px 20px; }
+  100% { background-position: 80px 80px, 120px 120px, 100px 180px, 180px 100px; }
+}
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  --primary: oklch(0.6 0.22 50);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.93 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+
+  --muted: oklch(0.93 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+
+  --accent: oklch(0.94 0.02 50);
+  --accent-foreground: oklch(0.205 0 0);
+
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.88 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.6 0.22 50);
+
+  --sidebar: oklch(0.96 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(0.93 0 0);
+  --sidebar-border: oklch(0.88 0 0);
+  --sidebar-primary: oklch(0.6 0.22 50);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-ring: oklch(0.6 0.22 50);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.985 0 0);
+
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.72 0.22 50);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.6 0 0);
+
+  --accent: oklch(0.24 0.04 50);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0.26 0 0);
+  --input: oklch(0.26 0 0);
+  --ring: oklch(0.72 0.22 50);
+
+  --sidebar: oklch(0.13 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.22 0 0);
+  --sidebar-border: oklch(0.22 0 0);
+  --sidebar-primary: oklch(0.72 0.22 50);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.72 0.22 50);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ── Sidebar layout fix (Tailwind v4 CSS var compatibility) ── */
+@media (min-width: 768px) {
+  /* Gap div: forces correct width in the flex layout */
+  .peer[data-variant="sidebar"] > div:first-child {
+    width: var(--sidebar-width, 16rem);
+    transition: width 200ms ease-linear;
+    flex-shrink: 0;
+  }
+  .peer[data-variant="sidebar"][data-collapsible="icon"] > div:first-child {
+    width: var(--sidebar-width-icon, 3rem);
+  }
+  .peer[data-variant="sidebar"][data-collapsible="offcanvas"] > div:first-child {
+    width: 0;
+  }
+
+  /* Fixed sidebar panel: correct width + collapse transitions */
+  .peer[data-variant="sidebar"] > div:nth-child(2) {
+    width: var(--sidebar-width, 16rem);
+    transition: width 200ms ease-linear;
+  }
+  .peer[data-variant="sidebar"][data-collapsible="icon"] > div:nth-child(2) {
+    width: var(--sidebar-width-icon, 3rem);
+  }
+  .peer[data-variant="sidebar"][data-collapsible="offcanvas"] > div:nth-child(2) {
+    left: calc(var(--sidebar-width, 16rem) * -1);
+  }
+}
