@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
-import { formatDateTime } from "@/lib/utils";
-import { isAdminRole } from "@/lib/utils";
+import { formatDateTime, isAdminRole } from "@/lib/utils";
+import { INTEREST_COLORS, OPERATOR_ACTION_COLORS, ACTIVITY_COUNTER_STYLES } from "@/lib/design-tokens";
 import {
   Phone, Mail, MessageCircle, UserPlus, UserCheck,
   ArrowRightLeft, ShoppingCart, FileText, MapPin, Activity,
@@ -62,21 +62,17 @@ const methodLabel: Record<string, string> = {
   EMAIL: "Email",
 };
 
-const interestColor: Record<string, string> = {
-  BAJO: "bg-zinc-100 text-zinc-700",
-  MEDIO: "bg-amber-100 text-amber-700",
-  ALTO: "bg-emerald-100 text-emerald-700",
-};
+const interestColor = INTEREST_COLORS;
 
 const actionMeta: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  LEAD_CREATED:     { label: "Lead agregado",      icon: <UserPlus size={14} />,        color: "bg-emerald-100 text-emerald-700" },
-  CLIENT_CREATED:   { label: "Cliente creado",     icon: <UserCheck size={14} />,       color: "bg-blue-100 text-blue-700" },
-  LEAD_CONVERTED:   { label: "Lead → Cliente",     icon: <ArrowRightLeft size={14} />,  color: "bg-violet-100 text-violet-700" },
-  SALE_CREATED:     { label: "Venta registrada",   icon: <ShoppingCart size={14} />,    color: "bg-orange-100 text-orange-700" },
-  QUOTE_CREATED:    { label: "Presupuesto creado", icon: <FileText size={14} />,        color: "bg-yellow-100 text-yellow-700" },
-  VISIT_SCHEDULED:  { label: "Visita agendada",    icon: <MapPin size={14} />,          color: "bg-cyan-100 text-cyan-700" },
-  CALL_SCHEDULED:   { label: "Llamada agendada",   icon: <Phone size={14} />,           color: "bg-teal-100 text-teal-700" },
-  CONTACT_ACTIVITY: { label: "Actividad",          icon: <Activity size={14} />,        color: "bg-zinc-100 text-zinc-700" },
+  LEAD_CREATED:     { label: "Lead agregado",      icon: <UserPlus size={14} />,        color: OPERATOR_ACTION_COLORS.LEAD_CREATED },
+  CLIENT_CREATED:   { label: "Cliente creado",     icon: <UserCheck size={14} />,       color: OPERATOR_ACTION_COLORS.CLIENT_CREATED },
+  LEAD_CONVERTED:   { label: "Lead → Cliente",     icon: <ArrowRightLeft size={14} />,  color: OPERATOR_ACTION_COLORS.LEAD_CONVERTED },
+  SALE_CREATED:     { label: "Venta registrada",   icon: <ShoppingCart size={14} />,    color: OPERATOR_ACTION_COLORS.SALE_CREATED },
+  QUOTE_CREATED:    { label: "Presupuesto creado", icon: <FileText size={14} />,        color: OPERATOR_ACTION_COLORS.QUOTE_CREATED },
+  VISIT_SCHEDULED:  { label: "Visita agendada",    icon: <MapPin size={14} />,          color: OPERATOR_ACTION_COLORS.VISIT_SCHEDULED },
+  CALL_SCHEDULED:   { label: "Llamada agendada",   icon: <Phone size={14} />,           color: OPERATOR_ACTION_COLORS.CALL_SCHEDULED },
+  CONTACT_ACTIVITY: { label: "Actividad",          icon: <Activity size={14} />,        color: OPERATOR_ACTION_COLORS.CONTACT_ACTIVITY },
 };
 
 const contactMethodIcon: Record<string, React.ReactNode> = {
@@ -216,7 +212,7 @@ export default function ActivitiesPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="rounded-lg bg-emerald-100 p-2"><UserPlus className="h-5 w-5 text-emerald-700" /></div>
+            <div className={`rounded-lg p-2 ${ACTIVITY_COUNTER_STYLES.leads.bg}`}><UserPlus className={`h-5 w-5 ${ACTIVITY_COUNTER_STYLES.leads.text}`} /></div>
             <div>
               <p className="text-2xl font-bold">{counters.leadsLoaded}</p>
               <p className="text-xs text-muted-foreground">Leads cargados</p>
@@ -225,7 +221,7 @@ export default function ActivitiesPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="rounded-lg bg-blue-100 p-2"><Phone className="h-5 w-5 text-blue-700" /></div>
+            <div className={`rounded-lg p-2 ${ACTIVITY_COUNTER_STYLES.contacted.bg}`}><Phone className={`h-5 w-5 ${ACTIVITY_COUNTER_STYLES.contacted.text}`} /></div>
             <div>
               <p className="text-2xl font-bold">{counters.leadsContacted}</p>
               <p className="text-xs text-muted-foreground">Leads contactados</p>
@@ -234,7 +230,7 @@ export default function ActivitiesPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
-            <div className="rounded-lg bg-violet-100 p-2"><TrendingUp className="h-5 w-5 text-violet-700" /></div>
+            <div className={`rounded-lg p-2 ${ACTIVITY_COUNTER_STYLES.records.bg}`}><TrendingUp className={`h-5 w-5 ${ACTIVITY_COUNTER_STYLES.records.text}`} /></div>
             <div>
               <p className="text-2xl font-bold">{timeline.length}</p>
               <p className="text-xs text-muted-foreground">Total registros</p>

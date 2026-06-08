@@ -303,14 +303,14 @@ function ConnectionTab() {
         {loading ? (
           <p className="text-sm text-muted-foreground">Consultando estado...</p>
         ) : error ? (
-          <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+          <div className="alert-error">
             {error}
           </div>
         ) : connected ? (
           <div className="flex flex-col items-center justify-center py-8 gap-4">
-            <CheckCircle2 className="h-16 w-16 text-green-500" />
+            <CheckCircle2 className="h-16 w-16 text-success" />
             <p className="text-lg font-semibold">WhatsApp conectado ✓</p>
-            <Badge variant="default" className="bg-green-600 hover:bg-green-600">
+            <Badge variant="default" className="bg-success hover:bg-success">
               Activo
             </Badge>
             <Button
@@ -329,7 +329,7 @@ function ConnectionTab() {
         ) : (
           <div className="flex flex-col items-center justify-center py-8 gap-4">
             <div className="flex items-center gap-2">
-              <XCircle className="h-6 w-6 text-red-500" />
+              <XCircle className="h-6 w-6 text-destructive" />
               <span className="font-semibold">Desconectado</span>
             </div>
             <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -361,7 +361,7 @@ function ConnectionTab() {
             </DialogDescription>
           </DialogHeader>
           {logoutError && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
+            <p className="alert-error">
               {logoutError}
             </p>
           )}
@@ -1042,7 +1042,7 @@ function SendTab() {
 
           {/* Image preview */}
           {imageError && (
-            <p className="rounded-md bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-600">
+            <p className="alert-error">
               {imageError}
             </p>
           )}
@@ -1108,7 +1108,7 @@ function SendTab() {
 
           <div className="space-y-2">
             <Label>Vista previa</Label>
-            <div className="rounded-md border bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900 p-3 text-sm whitespace-pre-wrap min-h-[80px]">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap min-h-[80px]">
               {preview || (
                 <span className="text-muted-foreground italic">
                   Sin contactos para mostrar preview.
@@ -1309,7 +1309,7 @@ function HistoryTab() {
       </CardHeader>
       <CardContent>
         {error && (
-          <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 px-4 py-3 text-sm text-red-700 dark:text-red-400 mb-4">
+          <div className="alert-error mb-4">
             {error}
           </div>
         )}
@@ -1341,12 +1341,12 @@ function HistoryTab() {
                     <TableCell className="max-w-xs">
                       <span className="line-clamp-2 text-sm">{m.message}</span>
                       {m.error && (
-                        <p className="text-xs text-red-500 mt-1">{m.error}</p>
+                        <p className="text-xs text-destructive mt-1">{m.error}</p>
                       )}
                     </TableCell>
                     <TableCell>
                       {m.status === "SENT" ? (
-                        <Badge className="bg-green-600 hover:bg-green-600">Enviado</Badge>
+                        <Badge className="bg-success hover:bg-success">Enviado</Badge>
                       ) : (
                         <Badge variant="destructive">Falló</Badge>
                       )}

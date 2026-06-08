@@ -193,7 +193,7 @@ function SalesPage() {
       )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl sm:text-3xl font-bold">Ventas</h1>
-        <Button onClick={() => setShowForm(!showForm)} className="bg-orange-500 hover:bg-orange-600 text-white"><Plus className="h-4 w-4 mr-2" />Nueva Venta</Button>
+        <Button onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2" />Nueva Venta</Button>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}

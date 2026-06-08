@@ -146,7 +146,7 @@ export default function PaymentsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold">Pagos</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-orange-500 hover:bg-orange-600 text-white">Registrar Pago</Button>
+            <Button>Registrar Pago</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>

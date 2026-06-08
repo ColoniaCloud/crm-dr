@@ -132,7 +132,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <User size={16} className="text-orange-500" />
+            <User size={16} className="text-primary" />
             Información Personal
           </CardTitle>
         </CardHeader>
@@ -146,7 +146,7 @@ export default function ProfilePage() {
                   {avatarUrl ? (
                     <img src={avatarUrl} alt={name} className="w-20 h-20 rounded-full object-cover border-2 border-border" />
                   ) : (
-                    <div className="w-20 h-20 rounded-full bg-orange-500/10 flex items-center justify-center text-2xl font-bold text-orange-500 border-2 border-border">
+                    <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary border-2 border-border">
                       {initials}
                     </div>
                   )}
@@ -178,7 +178,7 @@ export default function ProfilePage() {
             </div>
 
             {infoResult && (
-              <div className={`flex items-center gap-2 rounded-md p-3 text-sm ${infoResult.ok ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"}`}>
+              <div className={`flex items-center gap-2 ${infoResult.ok ? "alert-success" : "alert-error"}`}>
                 {infoResult.ok && <CheckCircle2 size={14} />}
                 {infoResult.msg}
               </div>
@@ -197,7 +197,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Lock size={16} className="text-orange-500" />
+            <Lock size={16} className="text-primary" />
             Cambiar Contraseña
           </CardTitle>
         </CardHeader>
@@ -234,7 +234,7 @@ export default function ProfilePage() {
             </div>
 
             {pwdResult && (
-              <div className={`flex items-center gap-2 rounded-md p-3 text-sm ${pwdResult.ok ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"}`}>
+              <div className={`flex items-center gap-2 ${pwdResult.ok ? "alert-success" : "alert-error"}`}>
                 {pwdResult.ok && <CheckCircle2 size={14} />}
                 {pwdResult.msg}
               </div>
@@ -253,7 +253,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Mail size={16} className="text-orange-500" />
+            <Mail size={16} className="text-primary" />
             Información de Cuenta
           </CardTitle>
         </CardHeader>
@@ -268,7 +268,7 @@ export default function ProfilePage() {
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Sesión activa</span>
-            <span className="text-green-600 font-medium">● Conectado</span>
+            <span className="text-success font-medium">● Conectado</span>
           </div>
         </CardContent>
       </Card>

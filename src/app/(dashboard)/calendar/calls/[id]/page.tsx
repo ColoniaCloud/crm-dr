@@ -265,7 +265,7 @@ export default function CallDetailPage() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-full justify-start gap-3 bg-blue-600 hover:bg-blue-700 text-white"
+                    className="w-full justify-start gap-3"
                   >
                     <a href={`tel:${call.contact.phone}`}>
                       <Phone className="h-5 w-5 shrink-0" />
@@ -277,7 +277,8 @@ export default function CallDetailPage() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-full justify-start gap-3 bg-green-600 hover:bg-green-700 text-white"
+                    variant="outline"
+                    className="w-full justify-start gap-3 text-[#25d366] border-[#25d366]/40 hover:bg-[#25d366]/10 hover:text-[#25d366]"
                   >
                     <a href={`https://wa.me/${waNum}`} target="_blank" rel="noopener noreferrer">
                       <MessageCircle className="h-5 w-5 shrink-0" />
@@ -289,7 +290,8 @@ export default function CallDetailPage() {
                   <Button
                     asChild
                     size="lg"
-                    className="w-full justify-start gap-3 bg-purple-600 hover:bg-purple-700 text-white"
+                    variant="outline"
+                    className="w-full justify-start gap-3"
                   >
                     <a href={`mailto:${call.contact.email}`}>
                       <Mail className="h-5 w-5 shrink-0" />

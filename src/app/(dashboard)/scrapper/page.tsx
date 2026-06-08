@@ -694,9 +694,9 @@ export default function ScrapperPage() {
 
                 {/* Custom coords indicator */}
                 {customCoords && (
-                  <div className="flex items-center gap-2 p-2 rounded-md bg-orange-500/10 border border-orange-500/20 text-sm">
-                    <Crosshair className="h-4 w-4 text-orange-500 shrink-0" />
-                    <span className="text-orange-600">
+                  <div className="flex items-center gap-2 p-2 rounded-md bg-primary/10 border border-primary/20 text-sm">
+                    <Crosshair className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-primary">
                       Punto personalizado: {customCoords.lat.toFixed(5)}, {customCoords.lng.toFixed(5)}
                     </span>
                     <button
@@ -723,8 +723,8 @@ export default function ScrapperPage() {
                         onClick={() => toggleType(t)}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                           bizTypes.includes(t)
-                            ? "bg-orange-500 text-white border-orange-500"
-                            : "border-zinc-600 text-muted-foreground hover:border-orange-500 hover:text-foreground"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border text-muted-foreground hover:border-primary hover:text-foreground"
                         }`}
                       >
                         {t}
@@ -784,7 +784,7 @@ export default function ScrapperPage() {
             <Button
               type="submit"
               disabled={!city.trim() || !province || loading}
-              className="w-full h-12 text-base font-bold bg-orange-500 hover:bg-orange-600 text-white"
+              className="w-full h-12 text-base font-bold"
             >
               {loading ? (
                 <>
@@ -863,7 +863,7 @@ export default function ScrapperPage() {
                     size="sm"
                     onClick={handleBulkAdd}
                     disabled={bulkAdding}
-                    className="gap-1.5 text-xs bg-orange-500 hover:bg-orange-600"
+                    className="gap-1.5 text-xs"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     {bulkAdding

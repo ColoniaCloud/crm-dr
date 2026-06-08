@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Bell,
   MessageCircle,
+  Wrench,
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,8 +52,9 @@ import {
 
 const simpleItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Leads", href: "/leads", icon: UserPlus },
   { label: "Clientes", href: "/clients", icon: Users },
+  { label: "Leads", href: "/leads", icon: UserPlus },
+  { label: "Instaladores", href: "/installers", icon: Wrench },
 ];
 
 const bottomItems = [

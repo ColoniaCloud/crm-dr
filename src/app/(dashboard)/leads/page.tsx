@@ -628,7 +628,7 @@ export default function LeadsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold">Leads</h1>
-        <Button className="gap-2 bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setDialogOpen(true)}>
+        <Button className="gap-2" onClick={() => setDialogOpen(true)}>
           <Plus size={14} /> Nuevo Lead
         </Button>
       </div>
@@ -721,7 +721,7 @@ export default function LeadsPage() {
             Esta acción eliminará también todo el historial asociado. No se puede deshacer.
           </p>
           {deleteFeedback?.type === "error" && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="alert-error">
               <p className="font-medium">{deleteFeedback.message}</p>
               {deleteFeedback.log && (
                 <details className="mt-2">
@@ -794,7 +794,7 @@ export default function LeadsPage() {
               <Textarea value={emailForm.body} onChange={(e) => setEmailForm({ ...emailForm, body: e.target.value })} rows={6} required />
             </div>
             {emailResult && (
-              <div className={`rounded-md p-3 text-sm ${emailResult.ok ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"}`}>
+              <div className={emailResult.ok ? "alert-success" : "alert-error"}>
                 {emailResult.msg}
               </div>
             )}
@@ -817,7 +817,7 @@ export default function LeadsPage() {
           </DialogHeader>
           {campaignDone ? (
             <div className="py-4 space-y-3 text-center">
-              <CheckCircle2 className="mx-auto text-green-500" size={40} />
+              <CheckCircle2 className="mx-auto text-success" size={40} />
               <p className="font-medium">Campaña finalizada</p>
               <p className="text-sm text-muted-foreground">
                 {campaignProgress.sent} enviados · {campaignProgress.errors} errores
@@ -882,8 +882,8 @@ export default function LeadsPage() {
               <Input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleCSVFile} />
               <Button variant="ghost" size="sm" onClick={downloadTemplate} type="button">Descargar plantilla</Button>
             </div>
-            {csvError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{csvError}</div>}
-            {importResult && <div className="rounded-md bg-green-50 p-3 text-sm text-green-700">{importResult}</div>}
+            {csvError && <div className="alert-error">{csvError}</div>}
+            {importResult && <div className="alert-success">{importResult}</div>}
             {csvRows.length > 0 && (
               <div>
                 <p className="text-sm font-medium mb-2">{csvRows.length} filas — primeras 5:</p>
@@ -1102,11 +1102,7 @@ export default function LeadsPage() {
         <CardContent>
           {deleteFeedback && (
             <div
-              className={`mb-3 rounded-md border p-3 text-sm ${
-                deleteFeedback.type === "success"
-                  ? "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400"
-                  : "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400"
-              }`}
+              className={`mb-3 ${deleteFeedback.type === "success" ? "alert-success" : "alert-error"}`}
             >
               <p className="font-medium">{deleteFeedback.message}</p>
               {deleteFeedback.type === "error" && deleteFeedback.log && (
@@ -1198,7 +1194,7 @@ export default function LeadsPage() {
                             </Badge>
                           )}
                           {lead.contacted ? (
-                            <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-green-600/20 text-green-500 border-0">Contactado</Badge>
+                            <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-success/20 text-success border-0">Contactado</Badge>
                           ) : (
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Sin contactar</Badge>
                           )}
@@ -1220,7 +1216,7 @@ export default function LeadsPage() {
                             <a href={`tel:${lead.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{lead.phone}</a>
                           )}
                           {waNum && (
-                            <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-orange-500 hover:text-orange-400" title="WhatsApp">
+                            <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
                               <WhatsAppIcon size={14} />
                             </a>
                           )}
@@ -1295,8 +1291,8 @@ export default function LeadsPage() {
                             </TableCell>
                             <TableCell className="text-center p-1">
                               {lead.contacted
-                                ? <span className="text-green-500 text-xs font-semibold">Sí</span>
-                                : <span className="text-red-500 text-xs font-semibold">No</span>}
+                                ? <span className="text-success text-xs font-semibold">Sí</span>
+                                : <span className="text-muted-foreground text-xs font-semibold">No</span>}
                             </TableCell>
                             <TableCell>
                               {lead.sector
@@ -1397,7 +1393,7 @@ export default function LeadsPage() {
                               {lead.whatsapp ? (
                                 <a href={`https://wa.me/${normalizeWhatsApp(lead.whatsapp)}`}
                                   target="_blank" rel="noreferrer"
-                                  className="flex items-center justify-center h-8 w-8 hover:text-orange-400 transition-colors text-orange-500" title={lead.whatsapp}>
+                                  className="flex items-center justify-center h-8 w-8 transition-colors text-[#25d366] hover:text-[#25d366]/80" title={lead.whatsapp}>
                                   <WhatsAppIcon size={16} />
                                 </a>
                               ) : <span className="text-muted-foreground text-xs">-</span>}
@@ -1501,9 +1497,9 @@ export default function LeadsPage() {
                 <button
                   onClick={() => setFilterContacted(filterContacted === true ? null : true)}
                   className={cn("flex-1 flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
-                    filterContacted === true ? "border-green-500 bg-green-500/5 text-green-600 font-medium" : "hover:bg-muted")}
+                    filterContacted === true ? "border-primary bg-primary/10 text-primary font-medium" : "hover:bg-muted")}
                 >
-                  <CheckCircle2 size={13} className="text-green-500" /> Contactados
+                  <CheckCircle2 size={13} className="text-primary" /> Contactados
                 </button>
                 <button
                   onClick={() => setFilterContacted(filterContacted === false ? null : false)}

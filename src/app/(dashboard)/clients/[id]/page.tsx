@@ -245,7 +245,7 @@ export default function ClientDetailPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-red-50 p-4 text-red-600">{error}</div>
+      <div className="alert-error">{error}</div>
     );
   }
 
@@ -321,7 +321,7 @@ export default function ClientDetailPage() {
                 <Button
                   size="sm"
                   variant="default"
-                  className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+                  className="bg-success hover:bg-success/90 text-white disabled:opacity-50"
                   asChild={client.balance > 0}
                   disabled={client.balance <= 0}
                 >
@@ -497,7 +497,7 @@ export default function ClientDetailPage() {
           <CardContent>
             <p
               className={`text-3xl font-bold ${
-                client.balance > 0 ? "text-red-600" : "text-green-600"
+                client.balance > 0 ? "text-destructive" : "text-success"
               }`}
             >
               {formatCurrency(client.balance)}
@@ -576,7 +576,7 @@ export default function ClientDetailPage() {
           </div>
 
           {extraResult && (
-            <div className={`rounded-md p-3 text-sm ${extraResult.ok ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"}`}>
+            <div className={extraResult.ok ? "alert-success" : "alert-error"}>
               {extraResult.msg}
             </div>
           )}

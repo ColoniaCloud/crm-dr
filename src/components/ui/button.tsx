@@ -10,13 +10,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-zinc-950 text-zinc-50 border border-zinc-800 shadow-[0_1px_3px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-zinc-900 hover:border-zinc-700 hover:shadow-[0_2px_6px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] active:translate-y-px active:shadow-none",
+          "bg-primary text-primary-foreground border border-primary/20 shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-primary/90 hover:shadow-[0_2px_6px_rgba(0,0,0,0.35)] active:translate-y-px active:shadow-none",
         destructive:
           "bg-destructive text-destructive-foreground border border-destructive/80 shadow-[0_1px_3px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-destructive/90 active:translate-y-px active:shadow-none",
         outline:
-          "border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-[0_1px_2px_rgba(0,0,0,0.4)] hover:bg-zinc-800 hover:border-zinc-600 active:translate-y-px active:shadow-none",
+          "border border-border bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted hover:border-input active:translate-y-px active:shadow-none",
         secondary:
-          "bg-secondary text-secondary-foreground border border-zinc-700 shadow-[0_1px_2px_rgba(0,0,0,0.3)] hover:bg-secondary/80 active:translate-y-px active:shadow-none",
+          "bg-secondary text-secondary-foreground border border-border shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-secondary/80 active:translate-y-px active:shadow-none",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },

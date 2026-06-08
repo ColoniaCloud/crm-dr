@@ -9,6 +9,7 @@ import {
   Phone, CheckCircle, User, Clock, Timer,
   ChevronLeft, ChevronRight, AlertTriangle,
 } from "lucide-react";
+import { CALENDAR_USER_COLORS } from "@/lib/design-tokens";
 
 interface Call {
   id: string;
@@ -26,10 +27,7 @@ const MONTHS = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-const USER_COLORS = [
-  "bg-blue-500", "bg-green-500", "bg-purple-500", "bg-orange-500",
-  "bg-pink-500", "bg-teal-500", "bg-indigo-500", "bg-red-500",
-];
+const USER_COLORS = CALENDAR_USER_COLORS;
 
 function formatTime(dt: string) {
   return new Date(dt).toLocaleString("es-AR", { hour: "2-digit", minute: "2-digit" });
@@ -140,9 +138,9 @@ export default function CallsCalendarPage() {
 
       {/* ALERT: Upcoming calls within 48h */}
       {upcomingCalls.length > 0 && (
-        <Card className="border-orange-300 bg-orange-50 dark:bg-orange-950/20">
+        <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-orange-700 dark:text-orange-400">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-primary">
               <AlertTriangle className="h-4 w-4" />
               Próximas llamadas (48hs)
             </CardTitle>

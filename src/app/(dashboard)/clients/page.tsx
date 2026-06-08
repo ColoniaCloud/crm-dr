@@ -34,6 +34,7 @@ import { SoporteModal } from "@/components/soporte-modal";
 import { useCurrency } from "@/contexts/currency-context";
 import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SECTOR_COLORS } from "@/lib/design-tokens";
 
 // ── WhatsApp SVG ──────────────────────────────────────────────────────────────
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
@@ -91,14 +92,6 @@ const sectorLabel: Record<string, string> = {
   ARQUITECTURA_MAYORISTA: "Arquitectura - Mayorista",
 };
 
-const sectorColors: Record<string, string> = {
-  AUTO_TALLER: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  AUTO_CONCESIONARIO: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
-  AUTO_MAYORISTA: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
-  ARQUITECTURA_CONSTRUCTORA: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
-  ARQUITECTURA_VIDRIERIA: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
-  ARQUITECTURA_MAYORISTA: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300",
-};
 
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -464,7 +457,7 @@ export default function ClientsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold">Clientes</h1>
-        <Button className="gap-2 bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setDialogOpen(true)}>
+        <Button className="gap-2" onClick={() => setDialogOpen(true)}>
           <Plus size={14} /> Nuevo Cliente
         </Button>
       </div>
@@ -557,7 +550,7 @@ export default function ClientsPage() {
             Esta acción eliminará también sus ventas, cotizaciones, pagos y todo el historial asociado. No se puede deshacer.
           </p>
           {deleteFeedback?.type === "error" && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="alert-error">
               <p className="font-medium">{deleteFeedback.message}</p>
               {deleteFeedback.log && (
                 <details className="mt-2">
@@ -627,7 +620,7 @@ export default function ClientsPage() {
               <Textarea value={emailForm.body} onChange={(e) => setEmailForm({ ...emailForm, body: e.target.value })} rows={6} required />
             </div>
             {emailResult && (
-              <div className={`rounded-md p-3 text-sm ${emailResult.ok ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400"}`}>
+              <div className={emailResult.ok ? "alert-success" : "alert-error"}>
                 {emailResult.msg}
               </div>
             )}
@@ -650,7 +643,7 @@ export default function ClientsPage() {
           </DialogHeader>
           {campaignDone ? (
             <div className="py-4 space-y-3 text-center">
-              <CheckCircle2 className="mx-auto text-green-500" size={40} />
+              <CheckCircle2 className="mx-auto text-success" size={40} />
               <p className="font-medium">Campaña finalizada</p>
               <p className="text-sm text-muted-foreground">
                 {campaignProgress.sent} enviados · {campaignProgress.errors} errores
@@ -1054,11 +1047,7 @@ export default function ClientsPage() {
         <CardContent>
           {deleteFeedback && (
             <div
-              className={`mb-3 rounded-md border p-3 text-sm ${
-                deleteFeedback.type === "success"
-                  ? "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400"
-                  : "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400"
-              }`}
+              className={`mb-3 ${deleteFeedback.type === "success" ? "alert-success" : "alert-error"}`}
             >
               <p className="font-medium">{deleteFeedback.message}</p>
               {deleteFeedback.type === "error" && deleteFeedback.log && (
@@ -1107,7 +1096,7 @@ export default function ClientsPage() {
                       </p>
                       <div className="flex flex-wrap items-center gap-1">
                         {client.sector && (
-                          <Badge className={`text-[10px] px-1.5 py-0 font-medium border-0 ${sectorColors[client.sector] ?? "bg-zinc-100 text-zinc-700"}`}>
+                          <Badge className={`text-[10px] px-1.5 py-0 font-medium border-0 ${SECTOR_COLORS[client.sector] ?? "bg-zinc-100 text-zinc-700"}`}>
                             {sectorLabel[client.sector] ?? client.sector}
                           </Badge>
                         )}
@@ -1116,7 +1105,7 @@ export default function ClientsPage() {
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         {client.totalPurchases != null && <span className="font-medium text-foreground">{formatCurrency(client.totalPurchases)}</span>}
                         {client.balance != null && client.balance > 0 && (
-                          <span className="font-medium text-red-500">Saldo: {formatCurrency(client.balance)}</span>
+                          <span className="font-medium text-destructive">Saldo: {formatCurrency(client.balance)}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 pt-0.5">
@@ -1124,7 +1113,7 @@ export default function ClientsPage() {
                           <a href={`tel:${client.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{client.phone}</a>
                         )}
                         {waNum && (
-                          <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-green-600" title="WhatsApp">
+                          <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-[#25d366]" title="WhatsApp">
                             <WhatsAppIcon size={14} />
                           </a>
                         )}
@@ -1198,7 +1187,7 @@ export default function ClientsPage() {
                         </TableCell>
                         <TableCell>
                           {client.sector ? (
-                            <Badge className={`text-xs px-2 py-0.5 font-medium border-0 ${sectorColors[client.sector] ?? "bg-zinc-100 text-zinc-700"}`}>
+                            <Badge className={`text-xs px-2 py-0.5 font-medium border-0 ${SECTOR_COLORS[client.sector] ?? "bg-zinc-100 text-zinc-700"}`}>
                               {sectorLabel[client.sector] ?? client.sector}
                             </Badge>
                           ) : "-"}
@@ -1290,7 +1279,7 @@ export default function ClientsPage() {
                               href={`https://wa.me/${waNum}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-sm text-green-600 hover:text-green-500 transition-colors whitespace-nowrap"
+                              className="inline-flex items-center gap-1.5 text-sm text-[#25d366] hover:text-[#25d366]/80 transition-colors whitespace-nowrap"
                               title="Abrir WhatsApp"
                             >
                               <WhatsAppIcon size={13} />
@@ -1303,7 +1292,7 @@ export default function ClientsPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {client.balance != null ? (
-                            <span className={client.balance > 0 ? "font-medium text-red-500" : "text-green-500"}>
+                            <span className={client.balance > 0 ? "font-medium text-destructive" : "text-success"}>
                               {formatCurrency(client.balance)}
                             </span>
                           ) : "-"}

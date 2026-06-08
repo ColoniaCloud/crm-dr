@@ -69,7 +69,7 @@ export default function PurchaseOrdersPage() {
           <h1 className="text-2xl sm:text-3xl font-bold">Órdenes de Compra</h1>
           <p className="text-muted-foreground text-sm">Gestión de importaciones y compras a proveedores</p>
         </div>
-        <Button onClick={() => router.push("/purchase-orders/new")} className="bg-orange-500 hover:bg-orange-600 text-white">
+        <Button onClick={() => router.push("/purchase-orders/new")}>
           <Plus className="h-4 w-4 mr-2" />
           Nueva OC
         </Button>

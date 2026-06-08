@@ -137,7 +137,7 @@ export default function SuppliersPage() {
           <h1 className="text-2xl sm:text-3xl font-bold">Proveedores</h1>
           <p className="text-muted-foreground text-sm">Gestión de proveedores internacionales</p>
         </div>
-        <Button onClick={openCreate} className="bg-orange-500 hover:bg-orange-600 text-white">
+        <Button onClick={openCreate}>
           <Plus className="h-4 w-4 mr-2" />
           Nuevo proveedor
         </Button>

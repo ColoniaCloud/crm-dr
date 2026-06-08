@@ -377,7 +377,7 @@ export default function NewProductPage() {
 
             {/* Error */}
             {error && (
-              <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-3 text-sm text-red-600 dark:text-red-400">
+              <div className="alert-error">
                 {error}
               </div>
             )}
@@ -389,24 +389,23 @@ export default function NewProductPage() {
                 <Button
                   type="submit"
                   disabled={creating || success}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
                 >
                   {creating ? "Creando..." : "Crear Producto"}
                 </Button>
               </div>
 
               {success && (
-                <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <div className="alert-success space-y-3">
+                  <div className="flex items-center gap-2">
                     <CheckCircle2 size={20} />
                     <span className="font-medium">¡Producto creado exitosamente!</span>
                   </div>
-                  <p className="text-sm text-green-600 dark:text-green-500">¿Qué deseas hacer ahora?</p>
+                  <p className="text-sm">¿Qué deseas hacer ahora?</p>
                   <div className="flex items-center gap-3">
                     <Button
                       type="button"
                       onClick={resetForm}
-                      className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
+                      className="gap-2"
                     >
                       <Plus size={16} />
                       Crear otro producto

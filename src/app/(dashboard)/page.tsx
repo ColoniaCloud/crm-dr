@@ -149,8 +149,8 @@ function StatCard({
           <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {title}
           </CardTitle>
-          <div className="p-2 rounded-lg bg-orange-500/10 group-hover:bg-orange-500/20 transition-colors">
-            <Icon className="h-4 w-4 text-orange-500" />
+          <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+            <Icon className="h-4 w-4 text-primary" />
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -664,7 +664,7 @@ export default function DashboardPage() {
                 {(["month", "week", "day"] as const).map((f) => (
                   <button key={f} onClick={() => setChartFilter(f)}
                     className={`h-8 px-3 text-xs rounded-md font-medium transition-all ${
-                      chartFilter === f ? "bg-orange-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      chartFilter === f ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                     }`}>
                     {f === "month" ? "Mes" : f === "week" ? "Sem" : "Día"}
                   </button>
@@ -715,7 +715,7 @@ export default function DashboardPage() {
               {(["month", "week", "day"] as const).map((f) => (
                 <button key={f} onClick={() => setChartFilter(f)}
                   className={`h-8 px-3 text-xs rounded-md font-medium transition-all ${
-                    chartFilter === f ? "bg-orange-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    chartFilter === f ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                   }`}>
                   {f === "month" ? "Mes" : f === "week" ? "Sem" : "Día"}
                 </button>

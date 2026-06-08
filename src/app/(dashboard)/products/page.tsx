@@ -223,7 +223,7 @@ export default function ProductsPage() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold">Productos / Stock</h1>
         <Link href="/products/new">
-          <Button className="gap-2 bg-orange-500 hover:bg-orange-600 text-white">
+          <Button className="gap-2">
             <Plus size={16} />
             Nuevo Producto
           </Button>

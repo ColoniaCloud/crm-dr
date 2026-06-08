@@ -16,6 +16,7 @@ enum UserRole {
 enum ContactType {
   LEAD
   CLIENT
+  INSTALLER
 }
 
 enum ContactMethod {
@@ -173,6 +174,13 @@ model Contact {
   cuit            String?
   website         String?
   notes           String?       @db.Text
+
+  // Installer-specific fields
+  hasLocalStore       Boolean   @default(false)
+  storeAddress        String?
+  installerCountry    String?
+  installerProvince   String?
+  installerDepartment String?
 
   // Lead-specific fields
   contacted       Boolean       @default(false)

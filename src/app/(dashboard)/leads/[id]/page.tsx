@@ -27,6 +27,7 @@ import { CallDialog } from "@/components/call-dialog";
 import { ContactadoModal } from "@/components/contactado-modal";
 import { UserSearchSelect } from "@/components/user-search-select";
 import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
+import { QUOTE_STATUS_COLORS, LEAD_ACTIVITY_COLORS } from "@/lib/design-tokens";
 import dynamic from "next/dynamic";
 import {
   Pencil, FileText, CalendarDays, Phone, ChevronLeft, Check, X, Clock, User, MapPin,
@@ -105,13 +106,7 @@ interface LeadActivityItem {
   user: { id: string; name: string };
 }
 
-const quoteStatusColors: Record<string, string> = {
-  DRAFT: "bg-gray-100 text-gray-800 dark:bg-gray-800/40 dark:text-gray-300",
-  SENT: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  ACCEPTED: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-  CONVERTED: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
-};
+const quoteStatusColors = QUOTE_STATUS_COLORS;
 
 const quoteStatusLabels: Record<string, string> = {
   DRAFT: "Borrador", SENT: "Enviado", ACCEPTED: "Aceptado",
@@ -123,10 +118,7 @@ const activityTypeLabels: Record<string, string> = {
   VISIT: "Visita", CALL: "Llamada", STATUS_CHANGE: "Cambio de estado", OTHER: "Otro",
 };
 
-const activityTypeColors: Record<string, string> = {
-  NOTE: "bg-blue-500", EMAIL_SENT: "bg-green-500", QUOTE_SENT: "bg-purple-500",
-  VISIT: "bg-amber-500", CALL: "bg-cyan-500", STATUS_CHANGE: "bg-rose-500", OTHER: "bg-gray-500",
-};
+const activityTypeColors = LEAD_ACTIVITY_COLORS;
 
 const sectorLabels: Record<string, string> = {
   AUTO_TALLER: "Auto - Taller",
@@ -553,7 +545,7 @@ export default function LeadDetailPage() {
   }
 
   if (!lead) {
-    return <div className="rounded-md bg-red-50 p-4 text-red-600">{error || "Lead no encontrado"}</div>;
+    return <div className="alert-error">{error || "Lead no encontrado"}</div>;
   }
 
   const initials = ((lead.firstName?.[0] ?? "") + (lead.lastName?.[0] ?? "")).toUpperCase() || "?";
@@ -635,7 +627,7 @@ export default function LeadDetailPage() {
                 <Button variant="outline" size="sm" onClick={() => setCallDialogOpen(true)}>
                   <Phone className="h-4 w-4 mr-1" />Llamada
                 </Button>
-                <Button size="sm" variant="default" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => setConvertDialogOpen(true)}>
+                <Button size="sm" variant="default" className="bg-success hover:bg-success/90 text-white" onClick={() => setConvertDialogOpen(true)}>
                   <UserCheck className="h-4 w-4 mr-1" />Convertir a Cliente
                 </Button>
               </div>
@@ -678,7 +670,7 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+      {error && <div className="alert-error">{error}</div>}
 
       {editMode ? (
         /* ── EDIT MODE ── */
@@ -924,7 +916,7 @@ export default function LeadDetailPage() {
                   onClick={handleToggleContacted}
                   disabled={savingPanel}
                   className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    lead.contacted ? "bg-green-500" : "bg-red-400"
+                    lead.contacted ? "bg-success" : "bg-destructive/60"
                   }`}
                 >
                   <span className={`absolute left-1 text-[10px] font-bold text-white transition-opacity ${lead.contacted ? "opacity-0" : "opacity-100"}`}>No</span>
@@ -1141,7 +1133,7 @@ export default function LeadDetailPage() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-medium">Visita</span>
                       {v.completed ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">Completada</Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-success-subtle text-success">Completada</Badge>
                       ) : (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">Pendiente</Badge>
                       )}
@@ -1179,7 +1171,7 @@ export default function LeadDetailPage() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-medium">Llamada</span>
                       {c.completed ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">Completada</Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-success-subtle text-success">Completada</Badge>
                       ) : (
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">Pendiente</Badge>
                       )}
@@ -1341,7 +1333,7 @@ export default function LeadDetailPage() {
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConvertDialogOpen(false)}>Cancelar</Button>
-            <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleConvertToClient} disabled={converting}>
+            <Button className="bg-success hover:bg-success/90 text-white" onClick={handleConvertToClient} disabled={converting}>
               {converting ? "Convirtiendo..." : "Convertir a Cliente"}
             </Button>
           </DialogFooter>
