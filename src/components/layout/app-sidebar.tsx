@@ -10,6 +10,7 @@ import {
   Users,
   Shield,
   Package,
+  Bot,
   FileText,
   ShoppingCart,
   FileCheck,
@@ -28,6 +29,8 @@ import {
   Bell,
   MessageCircle,
   Wrench,
+  Plus,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,7 +54,6 @@ import {
 } from "@/components/ui/collapsible";
 
 const simpleItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Clientes", href: "/clients", icon: Users },
   { label: "Leads", href: "/leads", icon: UserPlus },
   { label: "Instaladores", href: "/installers", icon: Wrench },
@@ -82,6 +84,11 @@ const ventasSubItems = [
   { label: "Órdenes de Compra", href: "/purchase-orders", icon: ClipboardList },
 ];
 
+interface ConversationSummary {
+  id: string;
+  title: string;
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -99,15 +106,35 @@ export function AppSidebar() {
 
   const productosActive = productosSubItems.some((i) => isActive(i.href));
   const ventasActive = ventasSubItems.some((i) => isActive(i.href));
+  const asistenteActive = pathname.startsWith("/assistant");
 
   const [productosOpen, setProductosOpen] = useState(false);
   const [ventasOpen, setVentasOpen] = useState(false);
+  const [asistenteOpen, setAsistenteOpen] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
   useEffect(() => {
     if (productosActive) setProductosOpen(true);
     if (ventasActive) setVentasOpen(true);
-  }, [pathname, productosActive, ventasActive]);
+    if (asistenteActive) setAsistenteOpen(true);
+  }, [pathname, productosActive, ventasActive, asistenteActive]);
 
+  // Load conversation history from localStorage
+  useEffect(() => {
+    function loadConvs() {
+      try {
+        const stored: { id: string; title: string }[] = JSON.parse(
+          localStorage.getItem("assistant-conversations") ?? "[]"
+        );
+        setConversations(stored.slice(0, 3).map((c) => ({ id: c.id, title: c.title })));
+      } catch {
+        setConversations([]);
+      }
+    }
+    loadConvs();
+    window.addEventListener("assistant-conversations-updated", loadConvs);
+    return () => window.removeEventListener("assistant-conversations-updated", loadConvs);
+  }, []);
 
   return (
     <Sidebar collapsible="icon">
@@ -134,7 +161,55 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
 
-              {/* Simple top items */}
+              {/* Asistente (collapsible with conversation history) */}
+              <Collapsible open={asistenteOpen} onOpenChange={setAsistenteOpen} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton isActive={asistenteActive} tooltip="Asistente">
+                      <Bot />
+                      <span>Asistente</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {/* Nueva conversación */}
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton asChild>
+                          <Link href="/assistant" onClick={handleNavClick}>
+                            <Plus className="h-3 w-3" />
+                            <span>Nueva conversación</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+
+                      {/* Last 3 saved conversations */}
+                      {conversations.map((conv) => (
+                        <SidebarMenuSubItem key={conv.id}>
+                          <SidebarMenuSubButton asChild>
+                            <Link href={`/assistant?conv=${conv.id}`} onClick={handleNavClick}>
+                              <MessageSquare className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{conv.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+
+              {/* Dashboard */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/")} tooltip="Dashboard">
+                  <Link href="/" onClick={handleNavClick}>
+                    <LayoutDashboard />
+                    <span>Dashboard</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Simple items: Clientes, Leads, Instaladores */}
               {simpleItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
@@ -238,7 +313,6 @@ export function AppSidebar() {
 
               {/* Bottom items */}
               {bottomItems.filter((item) => {
-                // Hide Actividad Operadores from operators
                 if (item.href === "/activities" && !isAdminUser) return false;
                 return true;
               }).map((item) => (

@@ -40,7 +40,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError("Credenciales incorrectas. Intente nuevamente.");
       } else {
-        router.push("/");
+        router.push("/assistant");
       }
     } catch {
       setError("Error al iniciar sesión. Intente nuevamente.");

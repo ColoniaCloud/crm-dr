@@ -6,7 +6,7 @@ const anthropic = new Anthropic({
 
 export async function generateSalesSummary(salesData: string): Promise<string> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     messages: [
       {
@@ -25,7 +25,7 @@ export async function detectOpportunities(
   productData: string
 ): Promise<string> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     messages: [
       {
@@ -41,7 +41,7 @@ export async function detectOpportunities(
 
 export async function generateLeadSummary(activitiesData: string): Promise<string> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 512,
     messages: [
       {
