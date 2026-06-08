@@ -22,6 +22,7 @@ import {
 import {
   Mail, Phone, Plus, ChevronDown, ChevronLeft, ChevronRight,
   Search, Trash2, AlertTriangle, Pencil, UserPlus, Store, StoreIcon,
+  Upload, Download, FileSpreadsheet,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -120,6 +121,13 @@ export default function InstallersPage() {
   const [emailForm, setEmailForm] = useState({ subject: "", body: "" });
   const [emailSending, setEmailSending] = useState(false);
   const [emailResult, setEmailResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // CSV import
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const csvFileRef = useRef<HTMLInputElement>(null);
 
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -291,6 +299,64 @@ export default function InstallersPage() {
     }
   }
 
+  // CSV parse helper
+  function parseCSV(text: string): Record<string, string>[] {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+    return lines.slice(1).filter((l) => l.trim()).map((line) => {
+      const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
+      return row;
+    });
+  }
+
+  function downloadTemplate() {
+    const csv = [
+      "firstName,lastName,phone,email,whatsapp,hasLocalStore,storeAddress,installerCountry,installerProvince,installerDepartment",
+      "Juan,Pérez,+54 11 1234-5678,juan@example.com,5491112345678,false,,Argentina,Buenos Aires,",
+      "María,González,+598 99 123 456,maria@example.com,59899123456,true,Av. 18 de Julio 1234,Uruguay,,Montevideo",
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template_instaladores.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleCsvImport() {
+    if (!csvFile) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const text = await csvFile.text();
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        setCsvResult({ ok: false, msg: "El CSV está vacío o no tiene filas válidas." });
+        return;
+      }
+      const res = await fetch("/api/installers/import-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCsvResult({ ok: false, msg: json.error || "Error al importar" });
+      } else {
+        setCsvResult({ ok: true, msg: `Se importaron ${json.imported} instaladores correctamente.${json.skipped ? ` (${json.skipped} filas sin nombre/apellido fueron ignoradas)` : ""}` });
+        fetchInstallers();
+      }
+    } catch {
+      setCsvResult({ ok: false, msg: "Error de conexión al importar." });
+    } finally {
+      setCsvImporting(false);
+    }
+  }
+
   function locationLabel(installer: Installer) {
     const region = installer.installerCountry === "Argentina"
       ? installer.installerProvince
@@ -305,9 +371,12 @@ export default function InstallersPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl sm:text-3xl font-bold">DB Instaladores</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" className="gap-2" onClick={() => setImportOpen(true)}>
             <UserPlus size={14} /> Importar desde Lead
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={() => { setCsvImportOpen(true); setCsvFile(null); setCsvResult(null); }}>
+            <FileSpreadsheet size={14} /> Importar CSV
           </Button>
           <Button className="gap-2" onClick={openCreate}>
             <Plus size={14} /> Nuevo Instalador
@@ -357,6 +426,73 @@ export default function InstallersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── CSV Import Dialog ── */}
+      <Dialog open={csvImportOpen} onOpenChange={(open) => { setCsvImportOpen(open); if (!open) { setCsvFile(null); setCsvResult(null); } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet size={16} className="text-primary" />
+              Importar Instaladores desde CSV
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Cargá un archivo CSV con la lista de instaladores. Descargá el template para ver el formato correcto.
+          </p>
+
+          {/* Template download */}
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="flex items-center gap-2 text-sm text-primary hover:underline w-fit"
+          >
+            <Download size={14} />
+            Descargar template de ejemplo (CSV)
+          </button>
+
+          {/* File input */}
+          <div
+            className="flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-lg px-6 py-8 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => csvFileRef.current?.click()}
+          >
+            <Upload size={24} className="text-muted-foreground" />
+            <p className="text-sm text-center text-muted-foreground">
+              {csvFile ? (
+                <><span className="font-medium text-foreground">{csvFile.name}</span><br /><span className="text-xs">Clic para cambiar el archivo</span></>
+              ) : (
+                <>Clic para seleccionar archivo CSV<br /><span className="text-xs">Solo archivos .csv</span></>
+              )}
+            </p>
+            <input
+              ref={csvFileRef}
+              type="file"
+              accept=".csv"
+              className="sr-only"
+              onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvResult(null); e.target.value = ""; }}
+            />
+          </div>
+
+          {/* Columnas requeridas */}
+          <div className="rounded-lg bg-muted/40 px-4 py-3 text-xs space-y-1">
+            <p className="font-medium">Columnas del CSV:</p>
+            <p><strong>Requeridas:</strong> <code>firstName</code>, <code>lastName</code></p>
+            <p><strong>Opcionales:</strong> <code>phone</code>, <code>email</code>, <code>whatsapp</code>, <code>hasLocalStore</code> (true/false), <code>storeAddress</code>, <code>installerCountry</code>, <code>installerProvince</code>, <code>installerDepartment</code></p>
+          </div>
+
+          {csvResult && (
+            <div className={`text-sm rounded-lg px-4 py-3 ${csvResult.ok ? "bg-green-50 text-green-800 dark:bg-green-950/30 dark:text-green-300" : "bg-destructive/10 text-destructive"}`}>
+              {csvResult.msg}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsvImportOpen(false)}>Cerrar</Button>
+            <Button onClick={handleCsvImport} disabled={!csvFile || csvImporting} className="gap-2">
+              {csvImporting ? <><Upload size={14} className="animate-bounce" /> Importando...</> : <><Upload size={14} /> Importar</>}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
