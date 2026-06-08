@@ -214,3 +214,11 @@ body {
 .animate-fade-in-down {
   animation: fadeInDown 0.45s ease-out both;
 }
+
+/* ── Sidebar settings button hover ──────────────────────────────────────────── */
+.sidebar-settings-btn:hover,
+.sidebar-settings-btn:focus-visible {
+  background-image: linear-gradient(to bottom, #0a0a0a, #222222) !important;
+  background-color: transparent !important;
+  color: white !important;
+}

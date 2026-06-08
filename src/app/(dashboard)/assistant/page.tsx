@@ -237,7 +237,7 @@ export default function AssistantPage() {
 
   return (
     <div
-      className="-m-3 sm:-m-6 flex flex-col overflow-hidden"
+      className="-m-3 sm:-m-6 relative flex flex-col overflow-hidden"
       style={{ height: "calc(100dvh - 56px - 37px)" }}
     >
       <DottedSurface />
@@ -322,7 +322,7 @@ export default function AssistantPage() {
                       className={cn(
                         "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
                         msg.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-tr-sm"
+                          ? "bg-zinc-200 dark:bg-zinc-700 text-foreground rounded-tr-sm"
                           : "bg-muted text-foreground rounded-tl-sm"
                       )}
                     >
@@ -341,8 +341,9 @@ export default function AssistantPage() {
                     {msg.action && (
                       <Button
                         size="sm"
+                        variant="outline"
                         onClick={() => handleProceed(msg.action!)}
-                        className="gap-2 self-start"
+                        className="gap-2 self-start border-primary text-primary bg-transparent hover:bg-primary/10 hover:text-primary"
                       >
                         {msg.action.label}
                         <ArrowRight className="h-3.5 w-3.5" />
@@ -356,7 +357,7 @@ export default function AssistantPage() {
           </div>
 
           {/* Pinned input */}
-          <div className="shrink-0 border-t bg-background/95 backdrop-blur-sm py-3">
+          <div className="shrink-0 py-3">
             <div className="max-w-2xl mx-auto px-4">
               {InputToolbar()}
               <p className="text-xs text-muted-foreground text-center mt-2">

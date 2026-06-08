@@ -29,17 +29,15 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
         const scene = new THREE.Scene();
         scene.fog = new THREE.Fog(0xffffff, 2000, 10000);
 
-        const camera = new THREE.PerspectiveCamera(
-            60,
-            window.innerWidth / window.innerHeight,
-            1,
-            10000,
-        );
+        const w = containerRef.current.clientWidth || window.innerWidth;
+        const h = containerRef.current.clientHeight || window.innerHeight;
+
+        const camera = new THREE.PerspectiveCamera(60, w / h, 1, 10000);
         camera.position.set(0, 355, 1220);
 
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(w, h);
         renderer.setClearColor(scene.fog.color, 0);
 
         containerRef.current.appendChild(renderer.domElement);
@@ -101,9 +99,12 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
         };
 
         const handleResize = () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            if (!containerRef.current) return;
+            const nw = containerRef.current.clientWidth || window.innerWidth;
+            const nh = containerRef.current.clientHeight || window.innerHeight;
+            camera.aspect = nw / nh;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(nw, nh);
         };
 
         window.addEventListener('resize', handleResize);
@@ -136,8 +137,7 @@ export function DottedSurface({ className, ...props }: DottedSurfaceProps) {
     return (
         <div
             ref={containerRef}
-            className={cn('pointer-events-none fixed inset-0', className)}
-            style={{ zIndex: -1 }}
+            className={cn('pointer-events-none absolute inset-0', className)}
             {...props}
         />
     );

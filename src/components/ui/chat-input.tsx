@@ -50,7 +50,7 @@ function ChatInput({
     <ChatInputContext.Provider value={{ value, setValue: onChange, onSubmit, loading }}>
       <div
         className={cn(
-          "flex flex-col w-full rounded-2xl border border-input bg-background px-3 pt-2 pb-2",
+          "flex flex-col w-full rounded-2xl border border-input bg-background/70 backdrop-blur-[3px] px-3 pt-2 pb-2",
           "shadow-sm transition-shadow focus-within:shadow-md",
           "focus-within:ring-1 focus-within:ring-ring focus-within:outline-none",
           className

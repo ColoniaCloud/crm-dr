@@ -166,9 +166,9 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
                     <SidebarMenuButton isActive={asistenteActive} tooltip="Asistente">
-                      <Bot />
+                      <Bot className="text-primary" />
                       <span>Asistente</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      <ChevronRight className="ml-auto text-primary transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
@@ -177,7 +177,7 @@ export function AppSidebar() {
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton asChild>
                           <Link href="/assistant" onClick={handleNavClick}>
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-3 w-3 text-primary" />
                             <span>Nueva conversación</span>
                           </Link>
                         </SidebarMenuSubButton>
@@ -188,7 +188,7 @@ export function AppSidebar() {
                         <SidebarMenuSubItem key={conv.id}>
                           <SidebarMenuSubButton asChild>
                             <Link href={`/assistant?conv=${conv.id}`} onClick={handleNavClick}>
-                              <MessageSquare className="h-3 w-3 shrink-0" />
+                              <MessageSquare className="h-3 w-3 shrink-0 text-primary" />
                               <span className="truncate">{conv.title}</span>
                             </Link>
                           </SidebarMenuSubButton>
@@ -203,7 +203,7 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isActive("/")} tooltip="Dashboard">
                   <Link href="/" onClick={handleNavClick}>
-                    <LayoutDashboard />
+                    <LayoutDashboard className="text-primary" />
                     <span>Dashboard</span>
                   </Link>
                 </SidebarMenuButton>
@@ -218,7 +218,7 @@ export function AppSidebar() {
                     tooltip={item.label}
                   >
                     <Link href={item.href} onClick={handleNavClick}>
-                      <item.icon />
+                      <item.icon className="text-primary" />
                       <span>{item.label}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -234,9 +234,9 @@ export function AppSidebar() {
                       isActive={productosActive}
                       tooltip="Productos"
                     >
-                      <Package />
+                      <Package className="text-primary" />
                       <span>Productos</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      <ChevronRight className="ml-auto text-primary transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
@@ -248,7 +248,7 @@ export function AppSidebar() {
                             isActive={isActive(item.href)}
                           >
                             <Link href={item.href} onClick={handleNavClick}>
-                              <item.icon />
+                              <item.icon className="text-primary" />
                               <span>{item.label}</span>
                             </Link>
                           </SidebarMenuSubButton>
@@ -269,9 +269,9 @@ export function AppSidebar() {
                       isActive={ventasActive}
                       tooltip="Ventas"
                     >
-                      <ShoppingCart />
+                      <ShoppingCart className="text-primary" />
                       <span>Ventas</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      <ChevronRight className="ml-auto text-primary transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
@@ -283,7 +283,7 @@ export function AppSidebar() {
                             isActive={isActive(item.href)}
                           >
                             <Link href={item.href} onClick={handleNavClick}>
-                              <item.icon />
+                              <item.icon className="text-primary" />
                               <span>{item.label}</span>
                             </Link>
                           </SidebarMenuSubButton>
@@ -304,7 +304,7 @@ export function AppSidebar() {
                     tooltip="WhatsApp"
                   >
                     <Link href="/whatsapp" onClick={handleNavClick}>
-                      <MessageCircle />
+                      <MessageCircle className="text-primary" />
                       <span>WhatsApp</span>
                     </Link>
                   </SidebarMenuButton>
@@ -323,7 +323,7 @@ export function AppSidebar() {
                     tooltip={item.label}
                   >
                     <Link href={item.href} onClick={handleNavClick}>
-                      <item.icon />
+                      <item.icon className="text-primary" />
                       <span>{item.label}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -335,24 +335,22 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="bg-muted/60 border-t border-border/40">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={isActive("/settings")} tooltip="Configuración">
+            <SidebarMenuButton
+              asChild
+              isActive={isActive("/settings")}
+              tooltip="Configuración"
+              className="sidebar-settings-btn"
+            >
               <Link href="/settings" onClick={handleNavClick}>
-                <Settings />
+                <Settings className="text-primary" />
                 <span>Configuración</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/icons/login.jpg"
-          alt="DR Polarizados"
-          className="mx-2 mb-2 w-[calc(100%-1rem)] rounded-lg object-cover group-data-[collapsible=icon]:hidden"
-        />
       </SidebarFooter>
     </Sidebar>
   );
