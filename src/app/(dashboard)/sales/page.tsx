@@ -73,8 +73,10 @@ function SalesPage() {
       if (prodRes.ok) setProducts(await prodRes.json().then((d: Product[]) => Array.isArray(d) ? d : []));
       else setProducts([]);
 
-      const leads = leadsRes.ok ? await leadsRes.json().then((d: Contact[]) => Array.isArray(d) ? d : []) : [];
-      const clients = clientsRes.ok ? await clientsRes.json().then((d: Contact[]) => Array.isArray(d) ? d : []) : [];
+      const leadsData = leadsRes.ok ? await leadsRes.json() : null;
+      const clientsData = clientsRes.ok ? await clientsRes.json() : null;
+      const leads = leadsData && Array.isArray(leadsData.leads) ? leadsData.leads : [];
+      const clients = clientsData && Array.isArray(clientsData.clients) ? clientsData.clients : [];
       setContacts([...leads, ...clients]);
     } catch (err) {
       console.error("[sales] fetchAll", err);

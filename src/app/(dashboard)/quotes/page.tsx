@@ -113,9 +113,11 @@ function QuotesPageInner() {
         fetch("/api/leads"),
         fetch("/api/clients"),
       ]);
-      const leads = leadsRes.ok ? await leadsRes.json() : [];
-      const clients = clientsRes.ok ? await clientsRes.json() : [];
-      setContacts([...(Array.isArray(leads) ? leads : []), ...(Array.isArray(clients) ? clients : [])]);
+      const leadsData = leadsRes.ok ? await leadsRes.json() : null;
+      const clientsData = clientsRes.ok ? await clientsRes.json() : null;
+      const leads = leadsData && Array.isArray(leadsData.leads) ? leadsData.leads : [];
+      const clients = clientsData && Array.isArray(clientsData.clients) ? clientsData.clients : [];
+      setContacts([...leads, ...clients]);
     } catch (err) { console.error(err); }
   }
 
