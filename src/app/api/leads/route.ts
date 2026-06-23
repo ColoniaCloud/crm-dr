@@ -16,7 +16,11 @@ export async function GET(request: Request) {
     const city = searchParams.get("city");
     const state = searchParams.get("state");
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "30", 10)));
+    const limitParam = searchParams.get("limit");
+    const isAll = limitParam === "all";
+    const limit = isAll
+      ? undefined
+      : Math.min(100, Math.max(1, parseInt(limitParam || "30", 10)));
 
     const where: Record<string, any> = { type: "LEAD" as const };
 
@@ -64,6 +68,25 @@ export async function GET(request: Request) {
     const validSort: "asc" | "desc" = sortDate === "asc" ? "asc" : "desc";
     const orderBy = { createdAt: validSort };
 
+    const minimal = searchParams.get("minimal") === "true";
+    if (minimal) {
+      const leads = await prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          company: true,
+          cuit: true,
+          type: true,
+        },
+        orderBy,
+        skip: isAll ? undefined : (page - 1) * (limit ?? 30),
+        take: isAll ? undefined : limit,
+      });
+      return NextResponse.json({ leads });
+    }
+
     const [leads, total, distinctStates] = await Promise.all([
       prisma.contact.findMany({
         where,
@@ -76,8 +99,8 @@ export async function GET(request: Request) {
           },
         },
         orderBy,
-        skip: (page - 1) * limit,
-        take: limit,
+        skip: isAll ? undefined : (page - 1) * (limit ?? 30),
+        take: isAll ? undefined : limit,
       }),
       prisma.contact.count({ where }),
       prisma.contact.findMany({
@@ -111,7 +134,7 @@ export async function GET(request: Request) {
       leads,
       total,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / (limit ?? 30)),
       states: distinctStates.map((s) => s.state).filter(Boolean),
       cities: distinctCities.map((c) => c.city).filter(Boolean),
       neighborhoods: distinctNeighborhoods.map((n) => n.neighborhood).filter(Boolean),

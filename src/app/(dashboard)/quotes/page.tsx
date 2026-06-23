@@ -110,8 +110,8 @@ function QuotesPageInner() {
   async function fetchContacts() {
     try {
       const [leadsRes, clientsRes] = await Promise.all([
-        fetch("/api/leads"),
-        fetch("/api/clients"),
+        fetch("/api/leads?limit=all&minimal=true"),
+        fetch("/api/clients?limit=all&minimal=true"),
       ]);
       const leadsData = leadsRes.ok ? await leadsRes.json() : null;
       const clientsData = clientsRes.ok ? await clientsRes.json() : null;

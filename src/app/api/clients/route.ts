@@ -23,7 +23,11 @@ export async function GET(request: Request) {
     const myClients = searchParams.get("myClients");
     const sortDate = searchParams.get("sortDate");
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "30", 10)));
+    const limitParam = searchParams.get("limit");
+    const isAll = limitParam === "all";
+    const limit = isAll
+      ? undefined
+      : Math.min(100, Math.max(1, parseInt(limitParam || "30", 10)));
 
     const where: Record<string, any> = { type: "CLIENT" as const };
 
@@ -55,11 +59,30 @@ export async function GET(request: Request) {
     const validSort: "asc" | "desc" = sortDate === "asc" ? "asc" : "desc";
     const orderBy = { createdAt: validSort };
 
+    const minimal = searchParams.get("minimal") === "true";
+    if (minimal) {
+      const clients = await prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          company: true,
+          cuit: true,
+          type: true,
+        },
+        orderBy,
+        skip: isAll ? undefined : (page - 1) * (limit ?? 30),
+        take: isAll ? undefined : limit,
+      });
+      return NextResponse.json({ clients });
+    }
+
     const [clients, total, distinctStates] = await Promise.all([
       prisma.contact.findMany({
         where,
-        take: limit,
-        skip: (page - 1) * limit,
+        take: isAll ? undefined : limit,
+        skip: isAll ? undefined : (page - 1) * (limit ?? 30),
         include: {
           assignedTo: {
             select: { id: true, name: true },
@@ -108,7 +131,7 @@ export async function GET(request: Request) {
       clients: result,
       total,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / (limit ?? 30)),
       states: distinctStates.map((s) => s.state).filter(Boolean),
       cities: distinctCities.map((c) => c.city).filter(Boolean),
     });

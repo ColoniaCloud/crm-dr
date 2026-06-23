@@ -65,7 +65,10 @@ function SalesPage() {
     setError("");
     try {
       const [salesRes, prodRes, leadsRes, clientsRes] = await Promise.all([
-        fetch("/api/sales"), fetch("/api/products"), fetch("/api/leads"), fetch("/api/clients"),
+        fetch("/api/sales"),
+        fetch("/api/products"),
+        fetch("/api/leads?limit=all&minimal=true"),
+        fetch("/api/clients?limit=all&minimal=true"),
       ]);
       if (salesRes.ok) setSales(await salesRes.json().then((d: Sale[]) => Array.isArray(d) ? d : []));
       else throw new Error(`No se pudieron cargar las ventas (Error ${salesRes.status})`);
