@@ -8,7 +8,7 @@ export async function GET() {
     const sales = await prisma.sale.findMany({
       include: {
         contact: {
-          select: { firstName: true, lastName: true, company: true },
+          select: { id: true, firstName: true, lastName: true, company: true },
         },
         payments: { select: { amount: true } },
       },
@@ -32,6 +32,7 @@ export async function GET() {
           saleId: sale.id,
           saleNumber: sale.number,
           clientName,
+          contactId: sale.contactId,
           total,
           paid,
           remaining,

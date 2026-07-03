@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -48,6 +49,7 @@ interface Debt {
   clientName: string;
   saleNumber: string;
   saleId: string;
+  contactId: string;
   total: number;
   paid: number;
   remaining: number;
@@ -57,19 +59,32 @@ const paymentMethodLabel: Record<string, string> = {
   CASH: "Efectivo",
   TRANSFER: "Transferencia",
   CHECK: "Cheque",
-  CREDIT_CARD: "Tarjeta de Credito",
+  CARD: "Tarjeta de Credito",
   OTHER: "Otro",
 };
 
-export default function PaymentsPage() {
+export default function PaymentsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex h-64 items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+      <PaymentsPage />
+    </Suspense>
+  );
+}
+
+function PaymentsPage() {
+  const searchParams = useSearchParams();
+  const contactIdFilter = searchParams.get("contactId");
   const { format: formatCurrency } = useCurrency();
-  const [activeTab, setActiveTab] = useState<"payments" | "debts">("payments");
+  const [activeTab, setActiveTab] = useState<"payments" | "debts">(
+    contactIdFilter ? "debts" : "payments"
+  );
   const [payments, setPayments] = useState<Payment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState("");
   const [form, setForm] = useState({
     saleId: "",
     amount: "",
@@ -108,19 +123,52 @@ export default function PaymentsPage() {
     loadData();
   }, []);
 
+  const visibleDebts = contactIdFilter
+    ? debts.filter((d) => d.contactId === contactIdFilter)
+    : debts;
+
+  useEffect(() => {
+    if (!contactIdFilter || loading) return;
+    const clientDebts = debts.filter((d) => d.contactId === contactIdFilter);
+    if (clientDebts.length === 1) {
+      setForm((f) => ({
+        ...f,
+        saleId: clientDebts[0].saleId,
+        amount: clientDebts[0].remaining.toString(),
+      }));
+      setDialogOpen(true);
+    }
+  }, [contactIdFilter, debts, loading]);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    if (!debts.some((d) => d.saleId === form.saleId)) {
+      setFormError("Seleccioná una venta válida de la lista antes de registrar el pago");
+      return;
+    }
     setCreating(true);
+    setFormError("");
     try {
       const res = await fetch("/api/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
+          saleId: form.saleId,
           amount: parseFloat(form.amount),
+          method: form.method,
+          notes: form.notes,
         }),
       });
-      if (!res.ok) throw new Error("Error al registrar pago");
+      if (!res.ok) {
+        if (res.status === 404) {
+          await fetchDebts();
+          throw new Error(
+            "La venta seleccionada ya no tiene saldo pendiente o fue eliminada. Volvé a elegirla de la lista actualizada."
+          );
+        }
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Error al registrar pago");
+      }
       setDialogOpen(false);
       setForm({
         saleId: "",
@@ -132,7 +180,7 @@ export default function PaymentsPage() {
       fetchPayments();
       fetchDebts();
     } catch (err) {
-      setError(
+      setFormError(
         err instanceof Error ? err.message : "Error al registrar pago"
       );
     } finally {
@@ -144,7 +192,13 @@ export default function PaymentsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl sm:text-3xl font-bold">Pagos</h1>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (open) setFormError("");
+          }}
+        >
           <DialogTrigger asChild>
             <Button>Registrar Pago</Button>
           </DialogTrigger>
@@ -156,7 +210,7 @@ export default function PaymentsPage() {
               <div className="space-y-2">
                 <Label>Venta *</Label>
                 <DebtSearchSelect
-                  debts={debts}
+                  debts={visibleDebts}
                   value={form.saleId}
                   onValueChange={(v) => setForm({ ...form, saleId: v })}
                   formatCurrency={formatCurrency}
@@ -187,7 +241,7 @@ export default function PaymentsPage() {
                       <SelectItem value="CASH">Efectivo</SelectItem>
                       <SelectItem value="TRANSFER">Transferencia</SelectItem>
                       <SelectItem value="CHECK">Cheque</SelectItem>
-                      <SelectItem value="CREDIT_CARD">Tarjeta de Credito</SelectItem>
+                      <SelectItem value="CARD">Tarjeta de Credito</SelectItem>
                       <SelectItem value="OTHER">Otro</SelectItem>
                     </SelectContent>
                   </Select>
@@ -209,8 +263,11 @@ export default function PaymentsPage() {
                   }
                 />
               </div>
+              {formError && (
+                <p className="text-sm text-destructive">{formError}</p>
+              )}
               <DialogFooter>
-                <Button type="submit" disabled={creating}>
+                <Button type="submit" disabled={creating || !form.saleId || !form.amount}>
                   {creating ? "Registrando..." : "Registrar Pago"}
                 </Button>
               </DialogFooter>
@@ -318,8 +375,8 @@ export default function PaymentsPage() {
           <CardContent className="pt-6">
             {/* ── Vista móvil deudas ── */}
             <div className="md:hidden space-y-2">
-              {debts.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No hay deudas pendientes</p>}
-              {debts.map((debt) => (
+              {visibleDebts.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No hay deudas pendientes</p>}
+              {visibleDebts.map((debt) => (
                 <div key={debt.id} className="rounded-lg border px-3 py-2.5 space-y-1">
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-sm truncate">{debt.clientName}</p>
@@ -350,7 +407,7 @@ export default function PaymentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {debts.map((debt) => (
+                {visibleDebts.map((debt) => (
                   <TableRow key={debt.id}>
                     <TableCell className="font-medium">
                       {debt.clientName}
@@ -380,7 +437,7 @@ export default function PaymentsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {debts.length === 0 && (
+                {visibleDebts.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={6}
