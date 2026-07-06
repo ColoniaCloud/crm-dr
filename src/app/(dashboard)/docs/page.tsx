@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   BookOpen, Monitor, Users, ShoppingCart, Package, FileText, Brain,
   MapPin, Phone, CalendarDays, Settings, ChevronRight, Search,
   LayoutDashboard, UserPlus, CreditCard, BarChart3, Truck,
-  ClipboardList, Bell, Target, Sparkles, Shield, ArrowRight,
-  CheckCircle2, Info, Lightbulb, Layers,
+  ClipboardList, Bell, Target, Sparkles, ShieldCheck, ArrowRight,
+  CheckCircle2, Layers,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Section {
@@ -51,42 +54,6 @@ function DocSidebar({
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function Tip({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
-      <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex gap-4">
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-        {n}
-      </div>
-      <div className="flex-1 space-y-1">
-        <p className="font-medium">{title}</p>
-        <div className="text-sm text-muted-foreground">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
-  return (
-    <div className="rounded-lg border bg-card p-4 space-y-2">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 text-primary" />
-        <span className="font-medium text-sm">{title}</span>
-      </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </div>
-  );
-}
-
 // ── Section Content ──────────────────────────────────────────────────────────
 
 function IntroSection() {
@@ -114,6 +81,24 @@ function IntroSection() {
         Usá la barra lateral izquierda del CRM para navegar entre los módulos.
         En dispositivos móviles, tocá el ícono de menú en la esquina superior izquierda.
       </Tip>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 size-6 shrink-0 text-primary" />
+          <div>
+            <p className="font-semibold">Sistema de Garantías y API</p>
+            <p className="text-sm text-muted-foreground">
+              Trazabilidad de stock, Centro de Garantías y guía de integración de la API pública para talleres y sitios externos.
+            </p>
+          </div>
+        </div>
+        <Button asChild className="shrink-0">
+          <Link href="/docs/garantias">
+            Ver documentación
+            <ArrowRight className="ml-1 size-4" />
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
