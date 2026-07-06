@@ -4,12 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
+import { getRollByCode } from "@/lib/warranty";
 import type { AssistantApiResponse, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction } from "@/types/assistant";
 
 const log = createLogger("api/assistant");
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MODEL = "claude-haiku-4-5-20251001";
+
+function isAdminOrAbove(role: string): boolean {
+  return role === "ADMIN" || role === "SUPERADMIN";
+}
 
 const SYSTEM_PROMPT = `Eres un asistente de CRM para Dr. Polarizados, empresa de láminas de polarizado (automotriz, arquitectónico y PPF). Ayudás a los usuarios a navegar el sistema y a consultar/gestionar datos en tiempo real.
 
@@ -28,6 +33,7 @@ SECCIONES DEL CRM:
 - /competitors → Competencia
 - /activities → Actividad de operadores
 - /whatsapp → Módulo WhatsApp
+- /warranty-claims → Centro de Garantías (reclamos y trazabilidad de rollos)
 
 TIPOS DE CONTACTO: LEAD (prospecto), CLIENT (cliente), INSTALLER (instalador)
 
@@ -46,6 +52,14 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para modificar stock, necesitás el nombre/ID del producto y la cantidad de ajuste.
 - Para campañas de WhatsApp: solo SUPERADMIN puede enviar. Ayudá al usuario a redactar mensajes profesionales y con el tono adecuado antes de ejecutar.
 - Cuando el usuario sube un CSV para importar contactos, analizá las columnas y confirmá antes de importar.
+- Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
+- Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
+- Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
+
+RESTRICCIONES DE ROL (si el usuario no tiene el rol necesario, explicá amablemente que no tiene permisos):
+- Solo ADMIN y SUPERADMIN pueden: crear/editar productos, ajustar stock, ver y registrar ventas, presupuestos y pagos, y gestionar garantías (buscar rollos, listar y actualizar reclamos).
+- Solo SUPERADMIN puede: lanzar campañas de WhatsApp.
+- Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, y agendar visitas o llamadas.
 
 Respondé siempre en español, de forma concisa y amigable. Si el usuario pide algo no disponible, explicalo brevemente.`;
 
@@ -63,7 +77,7 @@ const TOOLS: Anthropic.Tool[] = [
             "/leads", "/clients", "/installers", "/calendar/calls",
             "/calendar/visits", "/sales", "/quotes", "/products",
             "/payments", "/purchase-orders", "/suppliers",
-            "/competitors", "/activities", "/whatsapp",
+            "/competitors", "/activities", "/whatsapp", "/warranty-claims",
           ],
         },
         message: { type: "string", description: "Mensaje breve confirmando adónde vas a llevar al usuario." },
@@ -238,6 +252,112 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "search_warranty_roll",
+    description: "Busca la trazabilidad de un código de rollo o instalación de garantía: producto, lote, vendedor, cliente e instalaciones activas. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "Código de rollo (fullRollCode) o de instalación (installationCode)." },
+        message: { type: "string" },
+      },
+      required: ["code", "message"],
+    },
+  },
+  {
+    name: "list_warranty_claims",
+    description: "Lista reclamos de garantía, opcionalmente filtrados por estado. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED", "ALL"], description: "Default ALL." },
+        message: { type: "string" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "update_warranty_claim",
+    description: "Cambia el estado o agrega notas de resolución a un reclamo de garantía existente, identificado por el código de instalación o el nombre de quien reclamó. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        claim_search: { type: "string", description: "Código de instalación o nombre de quien reportó el reclamo." },
+        status: { type: "string", enum: ["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"] },
+        resolution_notes: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["claim_search", "message"],
+    },
+  },
+  {
+    name: "register_payment",
+    description: "Registra un pago sobre una venta existente. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sale_search: { type: "string", description: "Número de venta (ej: 123) o nombre/empresa del cliente." },
+        amount: { type: "number" },
+        method: { type: "string", enum: ["CASH", "TRANSFER", "CHECK", "CARD", "OTHER"] },
+        reference: { type: "string" },
+        notes: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["sale_search", "amount", "method", "message"],
+    },
+  },
+  {
+    name: "schedule_visit",
+    description: "Agenda una visita comercial a un contacto (lead, cliente o instalador), asignada a quien pide la acción.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contact_search: { type: "string", description: "Nombre, empresa, email o teléfono del contacto." },
+        scheduled_date: { type: "string", description: "Fecha y hora en formato ISO 8601 (ej: 2026-07-10T14:00:00)." },
+        notes: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["contact_search", "scheduled_date", "message"],
+    },
+  },
+  {
+    name: "schedule_call",
+    description: "Agenda una llamada telefónica a un contacto (lead, cliente o instalador), asignada a quien pide la acción.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contact_search: { type: "string", description: "Nombre, empresa, email o teléfono del contacto." },
+        scheduled_date: { type: "string", description: "Fecha y hora en formato ISO 8601." },
+        notes: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["contact_search", "scheduled_date", "message"],
+    },
+  },
+  {
+    name: "search_sales",
+    description: "Busca ventas por número o por nombre/empresa del cliente, mostrando total, pagado y estado. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        search: { type: "string", description: "Número de venta o nombre/empresa del cliente. Vacío para las últimas ventas." },
+        message: { type: "string" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "search_quotes",
+    description: "Busca presupuestos por número o por nombre/empresa del cliente, mostrando estado y total. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        search: { type: "string", description: "Número de presupuesto o nombre/empresa del cliente. Vacío para los últimos presupuestos." },
+        message: { type: "string" },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "answer_only",
     description: "Responde con texto plano sin navegar ni consultar datos.",
     input_schema: {
@@ -265,6 +385,7 @@ const SECTION_LABELS: Record<string, string> = {
   "/competitors": "Ir a Competencia",
   "/activities": "Ir a Actividades",
   "/whatsapp": "Ir a WhatsApp",
+  "/warranty-claims": "Ir a Garantías",
 };
 
 async function executeDataQuery(queryType: string): Promise<string> {
@@ -643,6 +764,9 @@ export async function POST(req: Request) {
 
     // ── create_product ────────────────────────────────────────────────────────
     if (toolBlock.name === "create_product") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden crear productos." });
+      }
       const msg = input.message as string;
 
       const rawCategory = (input.category as string || "AUTOMOTIVE").toUpperCase();
@@ -681,6 +805,9 @@ export async function POST(req: Request) {
 
     // ── update_stock ──────────────────────────────────────────────────────────
     if (toolBlock.name === "update_stock") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden ajustar stock." });
+      }
       const search = (input.product_search as string || "").trim();
       const quantity = Number(input.quantity);
       const reason = (input.reason as string || "Ajuste via Asistente IA").trim();
@@ -773,6 +900,361 @@ export async function POST(req: Request) {
         message: `${assistantMsg}\n\n📊 **Resumen de la campaña:**\n- Destinatarios: **${cappedCount}** ${count > 200 ? `(máx. 200 de ${count} totales)` : ""}\n- Delay entre mensajes: **${delaySeconds} segundos**\n- Tiempo estimado: ~${estimatedMinutes} minuto${estimatedMinutes !== 1 ? "s" : ""}\n\nMensaje a enviar:\n> ${campaignMessage}\n\nConfirmá para iniciar el envío.`,
         action,
       });
+    }
+
+    // ── search_warranty_roll ──────────────────────────────────────────────────
+    if (toolBlock.name === "search_warranty_roll") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden consultar garantías." });
+      }
+      const code = (input.code as string || "").trim();
+      const msg = input.message as string;
+
+      const roll = await getRollByCode(code);
+      if (!roll) {
+        return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo encontré ningún rollo con el código "${code}".` });
+      }
+
+      const clientName = roll.saleItem?.sale.contact
+        ? roll.saleItem.sale.contact.company || `${roll.saleItem.sale.contact.firstName} ${roll.saleItem.sale.contact.lastName}`.trim()
+        : "—";
+      const sellerName = roll.saleItem?.sale.user?.name ?? "—";
+
+      return NextResponse.json<AssistantApiResponse>({
+        message: `${msg}\n\n**${roll.fullRollCode}** (${roll.status})\n- Producto: ${roll.product.name}\n- Lote: ${roll.lot.lotNumber}\n- Vendedor: ${sellerName}\n- Cliente: ${clientName}\n- Instalaciones activas: ${roll._count.installations} / ${roll.installations.length}`,
+      });
+    }
+
+    // ── list_warranty_claims ──────────────────────────────────────────────────
+    if (toolBlock.name === "list_warranty_claims") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden ver reclamos de garantía." });
+      }
+      const status = input.status as string | undefined;
+      const msg = input.message as string;
+
+      const claims = await prisma.warrantyClaim.findMany({
+        where: status && status !== "ALL" ? { status: status as "OPEN" | "IN_REVIEW" | "RESOLVED" | "REJECTED" } : {},
+        take: 20,
+        orderBy: { createdAt: "desc" },
+        include: {
+          installation: {
+            select: { installationCode: true, roll: { select: { product: { select: { name: true } } } } },
+          },
+        },
+      });
+
+      if (claims.length === 0) {
+        return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo hay reclamos con esos criterios.` });
+      }
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Reclamos de garantía (${claims.length})`,
+        columns: ["Código", "Producto", "Reportado por", "Estado", "Fecha"],
+        rows: claims.map((c) => ({
+          "Código": c.installation.installationCode,
+          Producto: c.installation.roll.product.name,
+          "Reportado por": c.reporterName,
+          Estado: c.status,
+          Fecha: c.createdAt.toLocaleDateString("es-AR"),
+        })),
+      };
+
+      return NextResponse.json<AssistantApiResponse>({ message: msg, action });
+    }
+
+    // ── update_warranty_claim ─────────────────────────────────────────────────
+    if (toolBlock.name === "update_warranty_claim") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden gestionar reclamos de garantía." });
+      }
+      const search = (input.claim_search as string || "").trim();
+      const newStatus = input.status as "OPEN" | "IN_REVIEW" | "RESOLVED" | "REJECTED" | undefined;
+      const notes = input.resolution_notes as string | undefined;
+      const msg = input.message as string;
+
+      const claim = await prisma.warrantyClaim.findFirst({
+        where: {
+          OR: [
+            { installation: { installationCode: { contains: search } } },
+            { reporterName: { contains: search } },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        include: { installation: { select: { installationCode: true } } },
+      });
+
+      if (!claim) {
+        return NextResponse.json<AssistantApiResponse>({ message: `No encontré ningún reclamo que coincida con "${search}".` });
+      }
+
+      await prisma.warrantyClaim.update({
+        where: { id: claim.id },
+        data: {
+          ...(newStatus ? { status: newStatus } : {}),
+          ...(notes !== undefined ? { resolutionNotes: notes } : {}),
+          ...(newStatus === "RESOLVED" || newStatus === "REJECTED" ? { resolvedAt: new Date() } : {}),
+        },
+      });
+
+      await logOperatorAction({
+        userId: session.user.id,
+        action: "UPDATE_WARRANTY_CLAIM",
+        entityType: "WARRANTY_CLAIM",
+        entityId: claim.id,
+        description: `Asistente IA actualizó reclamo "${claim.installation.installationCode}"${newStatus ? ` → ${newStatus}` : ""}`,
+        link: "/warranty-claims",
+      });
+
+      return NextResponse.json<AssistantApiResponse>({
+        message: `${msg}\n\n✅ Reclamo de **${claim.installation.installationCode}** actualizado${newStatus ? ` a **${newStatus}**` : ""}.`,
+      });
+    }
+
+    // ── register_payment ──────────────────────────────────────────────────────
+    if (toolBlock.name === "register_payment") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden registrar pagos." });
+      }
+      const search = (input.sale_search as string || "").trim();
+      const amount = Number(input.amount);
+      const method = input.method as string;
+      const reference = (input.reference as string) || null;
+      const notes = (input.notes as string) || null;
+      const msg = input.message as string;
+
+      if (isNaN(amount) || amount <= 0) {
+        return NextResponse.json<AssistantApiResponse>({ message: "El monto del pago debe ser un número positivo." });
+      }
+
+      const saleNumber = parseInt(search, 10);
+      const sale = await prisma.sale.findFirst({
+        where: !isNaN(saleNumber) && search !== ""
+          ? { number: saleNumber }
+          : {
+              contact: {
+                OR: [
+                  { firstName: { contains: search } },
+                  { lastName: { contains: search } },
+                  { company: { contains: search } },
+                ],
+              },
+            },
+        orderBy: { createdAt: "desc" },
+        include: { contact: { select: { id: true, firstName: true, lastName: true, company: true } } },
+      });
+
+      if (!sale) {
+        return NextResponse.json<AssistantApiResponse>({ message: `No encontré ninguna venta que coincida con "${search}".` });
+      }
+
+      const payment = await prisma.payment.create({
+        data: {
+          saleId: sale.id,
+          contactId: sale.contactId,
+          amount,
+          method,
+          reference,
+          notes,
+        },
+      });
+
+      const cName = sale.contact.company || `${sale.contact.firstName} ${sale.contact.lastName}`.trim();
+      await logOperatorAction({
+        userId: session.user.id,
+        action: "CREATE_PAYMENT",
+        entityType: "PAYMENT",
+        entityId: payment.id,
+        description: `Asistente IA registró pago $${amount} de "${cName}" (venta #${sale.number})`,
+        link: `/sales/${sale.id}`,
+      });
+
+      return NextResponse.json<AssistantApiResponse>({
+        message: `${msg}\n\n✅ Pago de $${amount.toLocaleString("es-AR")} registrado sobre la venta #${sale.number} (${cName}).`,
+      });
+    }
+
+    // ── schedule_visit ────────────────────────────────────────────────────────
+    if (toolBlock.name === "schedule_visit") {
+      const search = (input.contact_search as string || "").trim();
+      const scheduledDate = input.scheduled_date as string;
+      const notes = (input.notes as string) || null;
+      const msg = input.message as string;
+
+      const contact = await prisma.contact.findFirst({
+        where: {
+          OR: [
+            { firstName: { contains: search } },
+            { lastName: { contains: search } },
+            { company: { contains: search } },
+            { email: { contains: search } },
+            { phone: { contains: search } },
+          ],
+        },
+      });
+
+      if (!contact) {
+        return NextResponse.json<AssistantApiResponse>({ message: `No encontré ningún contacto que coincida con "${search}".` });
+      }
+
+      const visit = await prisma.visit.create({
+        data: {
+          contactId: contact.id,
+          assignedToId: session.user.id,
+          createdById: session.user.id,
+          scheduledDate: new Date(scheduledDate),
+          notes,
+        },
+      });
+
+      const cName = contact.company || `${contact.firstName} ${contact.lastName}`.trim();
+      await logOperatorAction({
+        userId: session.user.id,
+        action: "CREATE_VISIT",
+        entityType: "VISIT",
+        entityId: visit.id,
+        description: `Asistente IA agendó visita a "${cName}"`,
+        link: "/calendar/visits",
+      });
+
+      return NextResponse.json<AssistantApiResponse>({
+        message: `${msg}\n\n✅ Visita agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.`,
+      });
+    }
+
+    // ── schedule_call ─────────────────────────────────────────────────────────
+    if (toolBlock.name === "schedule_call") {
+      const search = (input.contact_search as string || "").trim();
+      const scheduledDate = input.scheduled_date as string;
+      const notes = (input.notes as string) || null;
+      const msg = input.message as string;
+
+      const contact = await prisma.contact.findFirst({
+        where: {
+          OR: [
+            { firstName: { contains: search } },
+            { lastName: { contains: search } },
+            { company: { contains: search } },
+            { email: { contains: search } },
+            { phone: { contains: search } },
+          ],
+        },
+      });
+
+      if (!contact) {
+        return NextResponse.json<AssistantApiResponse>({ message: `No encontré ningún contacto que coincida con "${search}".` });
+      }
+
+      const call = await prisma.call.create({
+        data: {
+          contactId: contact.id,
+          assignedToId: session.user.id,
+          createdById: session.user.id,
+          scheduledAt: new Date(scheduledDate),
+          notes,
+        },
+      });
+
+      const cName = contact.company || `${contact.firstName} ${contact.lastName}`.trim();
+      await logOperatorAction({
+        userId: session.user.id,
+        action: "CREATE_CALL",
+        entityType: "CALL",
+        entityId: call.id,
+        description: `Asistente IA agendó llamada a "${cName}"`,
+        link: "/calendar/calls",
+      });
+
+      return NextResponse.json<AssistantApiResponse>({
+        message: `${msg}\n\n✅ Llamada agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.`,
+      });
+    }
+
+    // ── search_sales ──────────────────────────────────────────────────────────
+    if (toolBlock.name === "search_sales") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden consultar ventas." });
+      }
+      const search = (input.search as string || "").trim();
+      const msg = input.message as string;
+      const saleNumber = parseInt(search, 10);
+
+      const sales = await prisma.sale.findMany({
+        where: search
+          ? (!isNaN(saleNumber)
+              ? { number: saleNumber }
+              : { contact: { OR: [{ firstName: { contains: search } }, { lastName: { contains: search } }, { company: { contains: search } }] } })
+          : {},
+        take: 15,
+        orderBy: { createdAt: "desc" },
+        include: {
+          contact: { select: { firstName: true, lastName: true, company: true } },
+          payments: { select: { amount: true } },
+        },
+      });
+
+      if (sales.length === 0) {
+        return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo encontré ventas con esos criterios.` });
+      }
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Ventas (${sales.length})`,
+        columns: ["#", "Cliente", "Total", "Pagado", "Estado"],
+        rows: sales.map((s) => {
+          const paid = s.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+          const cName = s.contact.company || `${s.contact.firstName} ${s.contact.lastName}`.trim();
+          return {
+            "#": String(s.number),
+            Cliente: cName,
+            Total: `$${Number(s.total).toLocaleString("es-AR")}`,
+            Pagado: `$${paid.toLocaleString("es-AR")}`,
+            Estado: s.status,
+          };
+        }),
+      };
+
+      return NextResponse.json<AssistantApiResponse>({ message: msg, action });
+    }
+
+    // ── search_quotes ─────────────────────────────────────────────────────────
+    if (toolBlock.name === "search_quotes") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden consultar presupuestos." });
+      }
+      const search = (input.search as string || "").trim();
+      const msg = input.message as string;
+      const quoteNumber = parseInt(search, 10);
+
+      const quotes = await prisma.quote.findMany({
+        where: search
+          ? (!isNaN(quoteNumber)
+              ? { number: quoteNumber }
+              : { contact: { OR: [{ firstName: { contains: search } }, { lastName: { contains: search } }, { company: { contains: search } }] } })
+          : {},
+        take: 15,
+        orderBy: { createdAt: "desc" },
+        include: { contact: { select: { firstName: true, lastName: true, company: true } } },
+      });
+
+      if (quotes.length === 0) {
+        return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo encontré presupuestos con esos criterios.` });
+      }
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Presupuestos (${quotes.length})`,
+        columns: ["#", "Cliente", "Total", "Estado"],
+        rows: quotes.map((q) => ({
+          "#": String(q.number),
+          Cliente: q.contact.company || `${q.contact.firstName} ${q.contact.lastName}`.trim(),
+          Total: `$${Number(q.total).toLocaleString("es-AR")}`,
+          Estado: q.status,
+        })),
+      };
+
+      return NextResponse.json<AssistantApiResponse>({ message: msg, action });
     }
 
     // ── answer_only ───────────────────────────────────────────────────────────
