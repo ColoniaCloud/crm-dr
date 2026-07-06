@@ -10,7 +10,7 @@ import {
   MapPin, Phone, CalendarDays, Settings, ChevronRight, Search,
   LayoutDashboard, UserPlus, CreditCard, BarChart3, Truck,
   ClipboardList, Bell, Target, Sparkles, ShieldCheck, ArrowRight,
-  CheckCircle2, Layers,
+  CheckCircle2, Layers, Bot,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
@@ -94,6 +94,24 @@ function IntroSection() {
         </div>
         <Button asChild className="shrink-0">
           <Link href="/docs/garantias">
+            Ver documentación
+            <ArrowRight className="ml-1 size-4" />
+          </Link>
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <Bot className="mt-0.5 size-6 shrink-0 text-primary" />
+          <div>
+            <p className="font-semibold">Asistente IA</p>
+            <p className="text-sm text-muted-foreground">
+              Qué puede hacer el chat del CRM y la lista completa de funciones que puede ejecutar por vos.
+            </p>
+          </div>
+        </div>
+        <Button asChild className="shrink-0">
+          <Link href="/docs/asistente">
             Ver documentación
             <ArrowRight className="ml-1 size-4" />
           </Link>
