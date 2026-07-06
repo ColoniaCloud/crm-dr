@@ -95,7 +95,7 @@ export default function AssistantDocsPage() {
         <CardContent className="space-y-6">
           <div>
             <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold"><Compass className="size-4 text-primary" /> Navegación y consultas</h3>
-            <FunctionRow name="Navegar a una sección" description="\"Llevame a Clientes\", \"mostrame los leads sin contactar\" — navega con filtros pre-aplicados cuando aplica." role="TODOS" />
+            <FunctionRow name="Navegar a una sección" description="“Llevame a Clientes”, “mostrame los leads sin contactar” — navega con filtros pre-aplicados cuando aplica." role="TODOS" />
             <FunctionRow name="Métricas rápidas" description="Ventas del mes/mes pasado, total de leads, leads sin contactar, clientes totales, presupuestos pendientes." role="TODOS" />
           </div>
 
