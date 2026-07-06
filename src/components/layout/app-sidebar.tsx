@@ -31,6 +31,7 @@ import {
   Wrench,
   Plus,
   MessageSquare,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -293,6 +294,22 @@ export function AppSidebar() {
                   </CollapsibleContent>
                 </SidebarMenuItem>
               </Collapsible>
+              )}
+
+              {/* Centro de Garantías — ADMIN/SUPERADMIN only */}
+              {isAdminUser && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive("/warranty-claims")}
+                    tooltip="Garantías"
+                  >
+                    <Link href="/warranty-claims" onClick={handleNavClick}>
+                      <ShieldCheck className="text-primary" />
+                      <span>Garantías</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               )}
 
               {/* WhatsApp — SUPERADMIN only */}

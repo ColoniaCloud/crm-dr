@@ -118,6 +118,7 @@ model User {
   leadActivities   LeadActivity[]   @relation("LeadActivityUser")
   paymentAuditLogs PaymentAuditLog[] @relation("PaymentAuditUser")
   operatorAuditLogs OperatorAuditLog[]
+  assignedWarrantyClaims WarrantyClaim[]
 
   @@map("users")
 }
@@ -729,8 +730,8 @@ model WarrantyConfig {
 
 model WarrantyLot {
   id              String        @id @default(cuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   productId       String
   product         Product       @relation(fields: [productId], references: [id])
   lotNumber       String        @unique
@@ -785,6 +786,46 @@ model WarrantyInstallation {
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
+  claims             WarrantyClaim[]
+
   @@unique([rollId, installationNumber])
   @@map("warranty_installations")
+}
+
+model WarrantyClaim {
+  id              String              @id @default(cuid())
+  installationId  String
+  installation    WarrantyInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  status          WarrantyClaimStatus @default(OPEN)
+  description     String              @db.Text
+  reporterName    String
+  reporterEmail   String
+  reporterPhone   String?
+  channel         String              // INTERNAL | PUBLIC_API
+  assignedToId    String?
+  assignedTo      User?               @relation(fields: [assignedToId], references: [id])
+  resolutionNotes String?             @db.Text
+  resolvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@map("warranty_claims")
+}
+
+enum WarrantyClaimStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+model WarrantyApiClient {
+  id         String    @id @default(cuid())
+  name       String
+  apiKeyHash String    @unique
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@map("warranty_api_clients")
 }

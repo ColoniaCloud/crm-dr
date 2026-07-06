@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
+import { ensureWarrantyRolls } from "@/lib/warranty";
 const log = createLogger("api/stock-movements");
 
 export async function GET(request: Request) {
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
         data: { stock: stockAfter },
       });
 
-      return tx.stockMovement.create({
+      const movement = await tx.stockMovement.create({
         data: {
           productId,
           type,
@@ -87,6 +88,15 @@ export async function POST(request: Request) {
           user: { select: { id: true, name: true } },
         },
       });
+
+      if (type === "ENTRADA") {
+        await ensureWarrantyRolls(tx, productId, Math.abs(qty), {
+          type: "MANUAL_ADJUSTMENT",
+          referenceId: movement.id,
+        });
+      }
+
+      return movement;
     });
 
     await logOperatorAction({ userId: session.user.id, action: "STOCK_MOVEMENT", entityType: "STOCK", entityId: result.id, description: `Movimiento de stock: ${type} x${Math.abs(qty)} de "${result.product.name}"` });

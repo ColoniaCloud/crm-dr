@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
+import { getRollsWhere } from "@/lib/warranty";
 
 const log = createLogger("api/clients/[id]/warranty-rolls");
 
@@ -17,54 +17,8 @@ export async function GET(
 
     const { id } = await params;
 
-    const rolls = await prisma.warrantyRoll.findMany({
-      where: {
-        saleItem: {
-          sale: {
-            contactId: id,
-          },
-        },
-      },
-      include: {
-        lot: true,
-        product: {
-          select: { id: true, name: true, sku: true },
-        },
-        saleItem: {
-          include: {
-            sale: {
-              select: { id: true, createdAt: true },
-            },
-          },
-        },
-        installations: {
-          orderBy: { installationNumber: "asc" },
-          select: {
-            id: true,
-            installationNumber: true,
-            installationCode: true,
-            activationToken: true,
-            status: true,
-            clientName: true,
-            clientEmail: true,
-            clientPhone: true,
-            clientDni: true,
-            assetType: true,
-            assetDescription: true,
-            installerName: true,
-            activatedAt: true,
-            expiresAt: true,
-          },
-        },
-        _count: {
-          select: {
-            installations: {
-              where: { status: "ACTIVE" },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: "asc" },
+    const rolls = await getRollsWhere({
+      saleItem: { sale: { contactId: id } },
     });
 
     return NextResponse.json({ rolls });

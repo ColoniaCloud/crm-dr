@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { auth } from "@/lib/auth";
+import { ensureWarrantyRolls } from "@/lib/warranty";
 const log = createLogger("api/products/[id]/units");
 
 // Abbreviation map for unit code generation
@@ -62,19 +63,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Count existing units to generate sequential codes
     const existingCount = await prisma.productUnit.count({ where: { productId } });
 
-    const units = [];
+    const units: { productId: string; code: string }[] = [];
     for (let i = 0; i < quantity; i++) {
       const seq = pad4(existingCount + i + 1);
       const code = `${abbrev}-${shade}-${seq}`;
       units.push({ productId, code });
     }
 
-    await prisma.productUnit.createMany({ data: units, skipDuplicates: true });
+    await prisma.$transaction(async (tx) => {
+      await tx.productUnit.createMany({ data: units, skipDuplicates: true });
 
-    // Update product stock
-    await prisma.product.update({
-      where: { id: productId },
-      data: { stock: { increment: quantity } },
+      // Update product stock
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: { increment: quantity } },
+      });
+
+      // Link each unit to a warranty roll if the product has WarrantyConfig
+      const createdUnits = await tx.productUnit.findMany({
+        where: { productId, code: { in: units.map((u) => u.code) } },
+        select: { id: true },
+        orderBy: { createdAt: "asc" },
+      });
+      await ensureWarrantyRolls(tx, productId, quantity, {
+        type: "UNIT_CREATION",
+        unitIds: createdUnits.map((u) => u.id),
+      });
     });
 
     await logOperatorAction({ userId: session.user.id, action: "CREATE_UNITS", entityType: "PRODUCT", entityId: productId, description: `Creó ${units.length} unidad(es) de producto`, link: `/products/${productId}` });

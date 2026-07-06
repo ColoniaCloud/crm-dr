@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
-import { createWarrantyLot } from "@/lib/warranty";
+import { ensureWarrantyRolls } from "@/lib/warranty";
 const log = createLogger("api/purchase-orders/[id]/receive");
 
 // POST /api/purchase-orders/[id]/receive
@@ -95,7 +95,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Create warranty lots for products that have a WarrantyConfig
     await prisma.$transaction(async (tx) => {
       for (const item of order.items) {
-        await createWarrantyLot(tx, id, item.productId, item.quantity);
+        await ensureWarrantyRolls(tx, item.productId, item.quantity, {
+          type: "PURCHASE_ORDER",
+          referenceId: id,
+        });
       }
     });
 

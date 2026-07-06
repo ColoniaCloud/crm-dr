@@ -4,30 +4,44 @@ import type { Prisma } from "@prisma/client";
 
 type Tx = Prisma.TransactionClient;
 
-function buildLotNumber(seq: number): string {
+const LOT_PREFIX = {
+  PURCHASE_ORDER: "LOT",
+  MANUAL_ADJUSTMENT: "LOT-ADJ",
+  UNIT_CREATION: "LOT-UNIT",
+} as const;
+
+type WarrantyRollSourceType = keyof typeof LOT_PREFIX;
+
+function buildLotNumber(prefix: string, seq: number): string {
   const d = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return `LOT-${d}-${String(seq).padStart(4, "0")}`;
+  return `${prefix}-${d}-${String(seq).padStart(4, "0")}`;
 }
 
 /**
- * Creates a WarrantyLot with one WarrantyRoll per unit received.
- * No-op if the product has no WarrantyConfig.
+ * Creates a WarrantyLot with one WarrantyRoll per unit entering stock.
+ * No-op if the product has no WarrantyConfig. Called from every stock-in
+ * path (PO receive, manual adjustments, unit creation) so every unit of
+ * a warranty-enabled product is traceable regardless of how it entered stock.
  */
-export async function createWarrantyLot(
+export async function ensureWarrantyRolls(
   tx: Tx,
-  purchaseOrderId: string,
   productId: string,
-  quantity: number
+  quantity: number,
+  source: {
+    type: WarrantyRollSourceType;
+    referenceId?: string;
+    unitIds?: string[];
+  }
 ): Promise<void> {
   const config = await tx.warrantyConfig.findUnique({ where: { productId } });
   if (!config) return;
 
   const seq = (await tx.warrantyLot.count()) + 1;
-  const lotNumber = buildLotNumber(seq);
+  const lotNumber = buildLotNumber(LOT_PREFIX[source.type], seq);
 
   await tx.warrantyLot.create({
     data: {
-      purchaseOrderId,
+      purchaseOrderId: source.type === "PURCHASE_ORDER" ? source.referenceId : null,
       productId,
       lotNumber,
       quantity,
@@ -35,9 +49,72 @@ export async function createWarrantyLot(
         create: Array.from({ length: quantity }, (_, i) => ({
           productId,
           fullRollCode: `${lotNumber}-R${String(i + 1).padStart(3, "0")}`,
+          unitId: source.unitIds?.[i] ?? null,
         })),
       },
     },
+  });
+}
+
+const ROLL_TRACE_INCLUDE = {
+  lot: true,
+  product: { select: { id: true, name: true, sku: true } },
+  saleItem: {
+    include: {
+      sale: {
+        select: {
+          id: true,
+          number: true,
+          createdAt: true,
+          user: { select: { id: true, name: true } },
+          contact: {
+            select: { id: true, firstName: true, lastName: true, company: true },
+          },
+        },
+      },
+    },
+  },
+  installations: {
+    orderBy: { installationNumber: "asc" as const },
+    select: {
+      id: true,
+      installationNumber: true,
+      installationCode: true,
+      activationToken: true,
+      status: true,
+      clientName: true,
+      clientEmail: true,
+      clientPhone: true,
+      clientDni: true,
+      assetType: true,
+      assetDescription: true,
+      installerName: true,
+      activatedAt: true,
+      expiresAt: true,
+    },
+  },
+  _count: {
+    select: { installations: { where: { status: "ACTIVE" as const } } },
+  },
+} satisfies Prisma.WarrantyRollInclude;
+
+/**
+ * Resolves the live traceability of a roll (seller, client, active
+ * installations) by its fullRollCode. The code itself is a stable
+ * lookup key — this data is always fetched fresh, never embedded in it.
+ */
+export async function getRollByCode(fullRollCode: string) {
+  return prisma.warrantyRoll.findUnique({
+    where: { fullRollCode },
+    include: ROLL_TRACE_INCLUDE,
+  });
+}
+
+export async function getRollsWhere(where: Prisma.WarrantyRollWhereInput) {
+  return prisma.warrantyRoll.findMany({
+    where,
+    include: ROLL_TRACE_INCLUDE,
+    orderBy: { createdAt: "asc" },
   });
 }
 
