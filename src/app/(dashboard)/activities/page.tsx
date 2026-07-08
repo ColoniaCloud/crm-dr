@@ -81,9 +81,14 @@ const contactMethodIcon: Record<string, React.ReactNode> = {
   EMAIL:     <Mail size={14} />,
 };
 
+// Excel en configuración regional es-AR/es-UY espera ";" como separador de listas
+// (usa "," como separador decimal), así que un CSV separado por comas se ve todo
+// amontonado en la columna A al abrirlo. Usamos ";" para que Excel lo reconozca solo.
+const CSV_DELIMITER = ";";
+
 function csvEscape(v: string): string {
   if (!v) return "";
-  if (v.includes(",") || v.includes('"') || v.includes("\n")) return `"${v.replace(/"/g, '""')}"`;
+  if (v.includes(CSV_DELIMITER) || v.includes('"') || v.includes("\n")) return `"${v.replace(/"/g, '""')}"`;
   return v;
 }
 
@@ -100,7 +105,7 @@ function timelineToCSV(items: TimelineItem[], fallbackOperatorName: string): str
         "",
         "",
         csvEscape(item.description),
-      ].join(",");
+      ].join(CSV_DELIMITER);
     }
     const contactName = item.contact.company || `${item.contact.firstName} ${item.contact.lastName}`;
     const detail = [
@@ -109,15 +114,15 @@ function timelineToCSV(items: TimelineItem[], fallbackOperatorName: string): str
       item.notes || "",
     ].filter(Boolean).join(" · ");
     return [
-      formatDateTime(item.createdAt),
+      csvEscape(formatDateTime(item.createdAt)),
       csvEscape(item.user.name),
       csvEscape("Actividad de contacto"),
       csvEscape(contactName),
       csvEscape(item.interestLevel),
       csvEscape(detail),
-    ].join(",");
+    ].join(CSV_DELIMITER);
   });
-  return "﻿" + headers.join(",") + "\n" + rows.join("\n");
+  return "﻿" + headers.join(CSV_DELIMITER) + "\n" + rows.join("\n");
 }
 
 function downloadCSV(csv: string, filename: string) {
