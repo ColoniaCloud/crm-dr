@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { getRollByCode } from "@/lib/warranty";
-import type { AssistantApiResponse, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction } from "@/types/assistant";
+import { buildActivityCSV, type ActivityCsvRow } from "@/lib/activity-csv";
+import type { AssistantApiResponse, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction } from "@/types/assistant";
 
 const log = createLogger("api/assistant");
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -55,13 +56,23 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
 - Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
+- Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
 RESTRICCIONES DE ROL (si el usuario no tiene el rol necesario, explicá amablemente que no tiene permisos):
-- Solo ADMIN y SUPERADMIN pueden: crear/editar productos, ajustar stock, ver y registrar ventas, presupuestos y pagos, y gestionar garantías (buscar rollos, listar y actualizar reclamos).
+- Solo ADMIN y SUPERADMIN pueden: crear/editar productos, ajustar stock, ver y registrar ventas, presupuestos y pagos, gestionar garantías (buscar rollos, listar y actualizar reclamos), y exportar actividad de operadores a CSV.
 - Solo SUPERADMIN puede: lanzar campañas de WhatsApp.
 - Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, y agendar visitas o llamadas.
 
 Respondé siempre en español, de forma concisa y amigable. Si el usuario pide algo no disponible, explicalo brevemente.`;
+
+function systemPromptWithDate(): string {
+  const now = new Date();
+  const todayLabel = now.toLocaleDateString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+  return `${SYSTEM_PROMPT}\n\nFECHA Y HORA ACTUAL: ${todayLabel} (${now.toISOString()}). Usá esta fecha real como referencia para resolver cualquier fecha relativa ("hoy", "mañana", "esta semana", "el mes pasado", etc.) — no asumas ninguna otra fecha.`;
+}
 
 const TOOLS: Anthropic.Tool[] = [
   {
@@ -358,6 +369,20 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "export_activity_csv",
+    description: "Genera un archivo CSV con la actividad de operadores (actividad de contacto + auditoría) filtrado por operador y rango de fechas, y lo ofrece para descargar en el chat. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        operator_search: { type: "string", description: "Nombre o email del operador a filtrar. Vacío o \"todos\" para incluir a todos los operadores." },
+        from: { type: "string", description: "Fecha de inicio en ISO 8601 (ej: 2026-07-01). Si no se especifica, se usa el inicio del mes actual." },
+        to: { type: "string", description: "Fecha de fin en ISO 8601 (ej: 2026-07-31). Si no se especifica, se usa la fecha de hoy." },
+        message: { type: "string", description: "Mensaje de confirmación al usuario." },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "answer_only",
     description: "Responde con texto plano sin navegar ni consultar datos.",
     input_schema: {
@@ -456,7 +481,7 @@ export async function POST(req: Request) {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 1536,
-      system: SYSTEM_PROMPT,
+      system: systemPromptWithDate(),
       tools: TOOLS,
       messages,
     });
@@ -495,7 +520,7 @@ export async function POST(req: Request) {
       const followUp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 512,
-        system: SYSTEM_PROMPT,
+        system: systemPromptWithDate(),
         messages: [
           ...messages,
           { role: "assistant" as const, content: response.content },
@@ -1252,6 +1277,120 @@ export async function POST(req: Request) {
           Total: `$${Number(q.total).toLocaleString("es-AR")}`,
           Estado: q.status,
         })),
+      };
+
+      return NextResponse.json<AssistantApiResponse>({ message: msg, action });
+    }
+
+    // ── export_activity_csv ───────────────────────────────────────────────────
+    if (toolBlock.name === "export_activity_csv") {
+      if (!isAdminOrAbove(session.user.role)) {
+        return NextResponse.json<AssistantApiResponse>({ message: "Solo ADMIN/SUPERADMIN pueden exportar actividad de operadores." });
+      }
+
+      const msg = input.message as string;
+      const operatorSearch = (input.operator_search as string || "").trim();
+      const now = new Date();
+      const fromDate = input.from ? new Date(input.from as string) : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const toDate = input.to ? new Date(`${input.to as string}T23:59:59.999`) : now;
+
+      let operator: { id: string; name: string } | null = null;
+      if (operatorSearch && operatorSearch.toLowerCase() !== "todos") {
+        operator = await prisma.user.findFirst({
+          where: { OR: [{ name: { contains: operatorSearch } }, { email: { contains: operatorSearch } }] },
+          select: { id: true, name: true },
+        });
+        if (!operator) {
+          return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo encontré ningún operador que coincida con "${operatorSearch}".` });
+        }
+      }
+
+      type AssistantActivityRow = {
+        createdAt: string;
+        responded: string | null;
+        interestLevel: string;
+        contactMethod: string;
+        notes: string | null;
+        userName: string;
+        firstName: string;
+        lastName: string;
+        company: string | null;
+      };
+      type AssistantAuditRow = { action: string; description: string; createdAt: string };
+
+      const [activityRows, auditRows] = await Promise.all([
+        operator
+          ? prisma.$queryRaw<AssistantActivityRow[]>`
+              SELECT a.createdAt, a.responded, a.interestLevel, a.contactMethod, a.notes,
+                     u.name AS userName, c.firstName, c.lastName, c.company
+              FROM activity_logs a
+              INNER JOIN users u ON a.userId = u.id
+              INNER JOIN contacts c ON a.contactId = c.id
+              WHERE a.userId = ${operator.id} AND a.createdAt >= ${fromDate} AND a.createdAt <= ${toDate}
+              ORDER BY a.createdAt DESC
+              LIMIT 300
+            `
+          : prisma.$queryRaw<AssistantActivityRow[]>`
+              SELECT a.createdAt, a.responded, a.interestLevel, a.contactMethod, a.notes,
+                     u.name AS userName, c.firstName, c.lastName, c.company
+              FROM activity_logs a
+              INNER JOIN users u ON a.userId = u.id
+              INNER JOIN contacts c ON a.contactId = c.id
+              WHERE a.createdAt >= ${fromDate} AND a.createdAt <= ${toDate}
+              ORDER BY a.createdAt DESC
+              LIMIT 300
+            `,
+        operator
+          ? prisma.$queryRaw<AssistantAuditRow[]>`
+              SELECT action, description, createdAt FROM operator_audit_logs
+              WHERE userId = ${operator.id} AND createdAt >= ${fromDate} AND createdAt <= ${toDate}
+                AND action != 'CONTACT_ACTIVITY'
+              ORDER BY createdAt DESC
+              LIMIT 300
+            `
+          : prisma.$queryRaw<AssistantAuditRow[]>`
+              SELECT action, description, createdAt FROM operator_audit_logs
+              WHERE createdAt >= ${fromDate} AND createdAt <= ${toDate}
+                AND action != 'CONTACT_ACTIVITY'
+              ORDER BY createdAt DESC
+              LIMIT 300
+            `,
+      ]);
+
+      const csvRows: ActivityCsvRow[] = [
+        ...activityRows.map((r) => ({
+          kind: "activity" as const,
+          createdAt: r.createdAt,
+          userName: r.userName,
+          contactName: r.company || `${r.firstName} ${r.lastName}`.trim(),
+          interestLevel: r.interestLevel,
+          contactMethod: r.contactMethod,
+          responded: r.responded,
+          notes: r.notes,
+        })),
+        ...auditRows.map((r) => ({
+          kind: "audit" as const,
+          createdAt: r.createdAt,
+          action: r.action,
+          description: r.description,
+        })),
+      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      if (csvRows.length === 0) {
+        return NextResponse.json<AssistantApiResponse>({ message: `${msg}\n\nNo hay actividad para exportar en ese rango.` });
+      }
+
+      const operatorName = operator?.name ?? "Todos";
+      const csv = buildActivityCSV(csvRows, operatorName);
+      const slug = operatorName.toLowerCase().replace(/\s+/g, "_");
+      const filename = `actividad_operadores_${slug}_${fromDate.toISOString().slice(0, 10)}_a_${toDate.toISOString().slice(0, 10)}.csv`;
+
+      const action: AssistantFileAction = {
+        type: "file",
+        filename,
+        mimeType: "text/csv;charset=utf-8;",
+        contentBase64: Buffer.from(csv, "utf-8").toString("base64"),
+        label: `Descargar ${filename}`,
       };
 
       return NextResponse.json<AssistantApiResponse>({ message: msg, action });

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Bot, ChevronLeft, Mic, Paperclip, MessageSquare, Compass, Users2,
   Package, ShoppingCart, CalendarDays, ShieldCheck, MessageCircle,
-  CheckCircle2, AlertTriangle,
+  CheckCircle2, AlertTriangle, Activity,
 } from "lucide-react";
 import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
 
@@ -136,6 +136,11 @@ export default function AssistantDocsPage() {
           </div>
 
           <div>
+            <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold"><Activity className="size-4 text-primary" /> Actividad de Operadores</h3>
+            <FunctionRow name="Exportar actividad a CSV" description="Genera y ofrece para descargar un CSV con la actividad de contacto y auditoría, filtrado por operador y rango de fechas." role="ADMIN+" />
+          </div>
+
+          <div>
             <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold"><MessageCircle className="size-4 text-primary" /> WhatsApp</h3>
             <FunctionRow name="Planificar campaña" description="Redacta el mensaje junto al usuario, calcula destinatarios y tiempo estimado antes de lanzar (tope 200 destinatarios)." role="SUPERADMIN" />
           </div>
@@ -155,6 +160,7 @@ export default function AssistantDocsPage() {
             <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 size-4 text-primary shrink-0" /> <span>&quot;Registrá un pago de $50.000 en efectivo para la venta 123&quot;</span></li>
             <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 size-4 text-primary shrink-0" /> <span>&quot;Buscá el rollo LOT-20260705-0001-R003&quot;</span></li>
             <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 size-4 text-primary shrink-0" /> <span>&quot;Mostrame los reclamos de garantía abiertos&quot;</span></li>
+            <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 size-4 text-primary shrink-0" /> <span>&quot;Exportame en CSV la actividad de Juan del mes pasado&quot;</span></li>
             <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 size-4 text-primary shrink-0" /> <span>&quot;Ajustá el stock de Lámina Nano 20 en +50, entrada por compra directa&quot;</span></li>
           </ul>
         </CardContent>

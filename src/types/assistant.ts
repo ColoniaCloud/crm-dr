@@ -22,10 +22,19 @@ export interface AssistantCampaignAction {
   recipientCount: number;
 }
 
+export interface AssistantFileAction {
+  type: "file";
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+  label: string;
+}
+
 export type AssistantAction =
   | AssistantNavigateAction
   | AssistantTableAction
-  | AssistantCampaignAction;
+  | AssistantCampaignAction
+  | AssistantFileAction;
 
 export interface AssistantApiResponse {
   message: string;

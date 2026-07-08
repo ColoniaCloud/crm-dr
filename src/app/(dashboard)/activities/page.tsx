@@ -12,6 +12,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { formatDateTime, isAdminRole } from "@/lib/utils";
 import { INTEREST_COLORS, OPERATOR_ACTION_COLORS, ACTIVITY_COUNTER_STYLES } from "@/lib/design-tokens";
+import { buildActivityCSV, type ActivityCsvRow } from "@/lib/activity-csv";
 import {
   Phone, Mail, MessageCircle, UserPlus, UserCheck,
   ArrowRightLeft, ShoppingCart, FileText, MapPin, Activity,
@@ -81,48 +82,21 @@ const contactMethodIcon: Record<string, React.ReactNode> = {
   EMAIL:     <Mail size={14} />,
 };
 
-// Excel en configuración regional es-AR/es-UY espera ";" como separador de listas
-// (usa "," como separador decimal), así que un CSV separado por comas se ve todo
-// amontonado en la columna A al abrirlo. Usamos ";" para que Excel lo reconozca solo.
-const CSV_DELIMITER = ";";
-
-function csvEscape(v: string): string {
-  if (!v) return "";
-  if (v.includes(CSV_DELIMITER) || v.includes('"') || v.includes("\n")) return `"${v.replace(/"/g, '""')}"`;
-  return v;
-}
-
-// fallbackOperatorName is used for audit rows, which don't carry user info from the API
-function timelineToCSV(items: TimelineItem[], fallbackOperatorName: string): string {
-  const headers = ["Fecha", "Operador", "Tipo", "Contacto", "Interés", "Detalle"];
-  const rows = items.map((item) => {
-    if (item.kind === "audit") {
-      const label = actionMeta[item.action]?.label ?? item.action;
-      return [
-        csvEscape(formatDateTime(item.createdAt)),
-        csvEscape(fallbackOperatorName),
-        csvEscape(label),
-        "",
-        "",
-        csvEscape(item.description),
-      ].join(CSV_DELIMITER);
-    }
-    const contactName = item.contact.company || `${item.contact.firstName} ${item.contact.lastName}`;
-    const detail = [
-      methodLabel[item.contactMethod] || item.contactMethod,
-      item.responded ? `Respondió: ${item.responded}` : "",
-      item.notes || "",
-    ].filter(Boolean).join(" · ");
-    return [
-      csvEscape(formatDateTime(item.createdAt)),
-      csvEscape(item.user.name),
-      csvEscape("Actividad de contacto"),
-      csvEscape(contactName),
-      csvEscape(item.interestLevel),
-      csvEscape(detail),
-    ].join(CSV_DELIMITER);
-  });
-  return "﻿" + headers.join(CSV_DELIMITER) + "\n" + rows.join("\n");
+function toActivityCsvRows(items: TimelineItem[]): ActivityCsvRow[] {
+  return items.map((item) =>
+    item.kind === "audit"
+      ? { kind: "audit" as const, createdAt: item.createdAt, action: item.action, description: item.description }
+      : {
+          kind: "activity" as const,
+          createdAt: item.createdAt,
+          userName: item.user.name,
+          contactName: item.contact.company || `${item.contact.firstName} ${item.contact.lastName}`,
+          interestLevel: item.interestLevel,
+          contactMethod: item.contactMethod,
+          responded: item.responded,
+          notes: item.notes,
+        }
+  );
 }
 
 function downloadCSV(csv: string, filename: string) {
@@ -272,7 +246,7 @@ export default function ActivitiesPage() {
   }
 
   function handleDownloadCurrent() {
-    const csv = timelineToCSV(timeline, selectedOperatorName);
+    const csv = buildActivityCSV(toActivityCsvRows(timeline), selectedOperatorName);
     const dateStr = new Date().toISOString().slice(0, 10);
     const slug = selectedOperatorName.toLowerCase().replace(/\s+/g, "_");
     downloadCSV(csv, `actividad_${slug}_${dateStr}.csv`);
@@ -310,7 +284,7 @@ export default function ActivitiesPage() {
 
       const operatorName = exportOperator === "all" ? "Todos" : (operators.find((o) => o.id === exportOperator)?.name || "operador");
       const slug = operatorName.toLowerCase().replace(/\s+/g, "_");
-      const csv = timelineToCSV(merged, operatorName);
+      const csv = buildActivityCSV(toActivityCsvRows(merged), operatorName);
       downloadCSV(csv, `actividad_operadores_${slug}_${exportFrom || "inicio"}_a_${exportTo || "hoy"}.csv`);
       setExportOpen(false);
     } catch {

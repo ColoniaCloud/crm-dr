@@ -18,9 +18,10 @@ import {
   Plus,
   Send,
   Loader2,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction } from "@/types/assistant";
+import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction } from "@/types/assistant";
 import { DottedSurface } from "@/components/ui/dotted-surface";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -282,6 +283,20 @@ export default function AssistantPage() {
     router.push(action.path);
   }
 
+  // ── File download action ────────────────────────────────────────────────────
+  function handleDownloadFile(action: AssistantFileAction) {
+    const byteChars = atob(action.contentBase64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([new Uint8Array(byteNumbers)], { type: action.mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = action.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Campaign action ─────────────────────────────────────────────────────────
   async function handleCampaign(action: AssistantCampaignAction) {
     if (campaignRunning) return;
@@ -507,6 +522,18 @@ export default function AssistantPage() {
 
                     {msg.action?.type === "table" && (
                       <TableMessage data={msg.action as AssistantTableAction} />
+                    )}
+
+                    {msg.action?.type === "file" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDownloadFile(msg.action as AssistantFileAction)}
+                        className="gap-2 self-start"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {(msg.action as AssistantFileAction).label}
+                      </Button>
                     )}
 
                     {msg.action?.type === "campaign" && (
