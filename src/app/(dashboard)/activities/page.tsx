@@ -15,7 +15,7 @@ import { INTEREST_COLORS, OPERATOR_ACTION_COLORS, ACTIVITY_COUNTER_STYLES } from
 import {
   Phone, Mail, MessageCircle, UserPlus, UserCheck,
   ArrowRightLeft, ShoppingCart, FileText, MapPin, Activity,
-  Calendar, Users, TrendingUp,
+  Calendar, Users, TrendingUp, Download, Loader2,
 } from "lucide-react";
 
 interface Operator {
@@ -81,6 +81,55 @@ const contactMethodIcon: Record<string, React.ReactNode> = {
   EMAIL:     <Mail size={14} />,
 };
 
+function csvEscape(v: string): string {
+  if (!v) return "";
+  if (v.includes(",") || v.includes('"') || v.includes("\n")) return `"${v.replace(/"/g, '""')}"`;
+  return v;
+}
+
+// fallbackOperatorName is used for audit rows, which don't carry user info from the API
+function timelineToCSV(items: TimelineItem[], fallbackOperatorName: string): string {
+  const headers = ["Fecha", "Operador", "Tipo", "Contacto", "Interés", "Detalle"];
+  const rows = items.map((item) => {
+    if (item.kind === "audit") {
+      const label = actionMeta[item.action]?.label ?? item.action;
+      return [
+        csvEscape(formatDateTime(item.createdAt)),
+        csvEscape(fallbackOperatorName),
+        csvEscape(label),
+        "",
+        "",
+        csvEscape(item.description),
+      ].join(",");
+    }
+    const contactName = item.contact.company || `${item.contact.firstName} ${item.contact.lastName}`;
+    const detail = [
+      methodLabel[item.contactMethod] || item.contactMethod,
+      item.responded ? `Respondió: ${item.responded}` : "",
+      item.notes || "",
+    ].filter(Boolean).join(" · ");
+    return [
+      formatDateTime(item.createdAt),
+      csvEscape(item.user.name),
+      csvEscape("Actividad de contacto"),
+      csvEscape(contactName),
+      csvEscape(item.interestLevel),
+      csvEscape(detail),
+    ].join(",");
+  });
+  return "﻿" + headers.join(",") + "\n" + rows.join("\n");
+}
+
+function downloadCSV(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ActivitiesPage() {
   const { data: session, status } = useSession();
   const [operators, setOperators] = useState<Operator[]>([]);
@@ -95,6 +144,14 @@ export default function ActivitiesPage() {
   const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "custom">("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+
+  // Export modal state
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOperator, setExportOperator] = useState<string>("all");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
     if (status !== "authenticated" || !isAdminRole(session.user.role)) return;
@@ -200,6 +257,64 @@ export default function ActivitiesPage() {
     [operators, selectedOperator]
   );
 
+  function openExportModal() {
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    setExportOperator(selectedOperator);
+    setExportFrom(fmt(dateRange.from));
+    setExportTo(fmt(dateRange.to));
+    setExportError("");
+    setExportOpen(true);
+  }
+
+  function handleDownloadCurrent() {
+    const csv = timelineToCSV(timeline, selectedOperatorName);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const slug = selectedOperatorName.toLowerCase().replace(/\s+/g, "_");
+    downloadCSV(csv, `actividad_${slug}_${dateStr}.csv`);
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError("");
+    try {
+      const params = new URLSearchParams();
+      if (exportOperator !== "all") params.set("userId", exportOperator);
+      const from = exportFrom ? new Date(exportFrom + "T00:00:00") : new Date(0);
+      const to = exportTo ? new Date(exportTo + "T23:59:59.999") : new Date();
+      params.set("from", from.toISOString());
+      params.set("to", to.toISOString());
+
+      const [actsRes, logsRes] = await Promise.all([
+        fetch(`/api/activities?${params.toString()}`),
+        fetch(`/api/operator-logs?${params.toString()}`),
+      ]);
+      if (!actsRes.ok || !logsRes.ok) throw new Error("request failed");
+      const acts = await actsRes.json();
+      const logs = await logsRes.json();
+
+      const actItems: ActivityItem[] = (Array.isArray(acts) ? acts : []).map((a: Omit<ActivityItem, "kind">) => ({ kind: "activity" as const, ...a }));
+      const auditItems: AuditItem[] = (Array.isArray(logs) ? logs : []).map((l: Omit<AuditItem, "kind">) => ({ kind: "audit" as const, ...l }));
+      const merged: TimelineItem[] = [...actItems, ...auditItems].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      if (merged.length === 0) {
+        setExportError("No hay actividad para exportar en el rango seleccionado.");
+        return;
+      }
+
+      const operatorName = exportOperator === "all" ? "Todos" : (operators.find((o) => o.id === exportOperator)?.name || "operador");
+      const slug = operatorName.toLowerCase().replace(/\s+/g, "_");
+      const csv = timelineToCSV(merged, operatorName);
+      downloadCSV(csv, `actividad_operadores_${slug}_${exportFrom || "inicio"}_a_${exportTo || "hoy"}.csv`);
+      setExportOpen(false);
+    } catch {
+      setExportError("No se pudo exportar la actividad. Intentá de nuevo.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (status === "loading") return <div className="p-6">Cargando...</div>;
 
   if (!isAdminRole(session?.user.role)) {
@@ -241,7 +356,12 @@ export default function ActivitiesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Actividad de Operadores</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Actividad de Operadores</CardTitle>
+            <Button variant="outline" size="sm" className="gap-2" onClick={openExportModal}>
+              <Download className="h-4 w-4" /> Exportar actividad
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Filters row */}
@@ -298,11 +418,18 @@ export default function ActivitiesPage() {
               <p className="text-sm text-muted-foreground">
                 Actividad de <span className="font-medium text-foreground">{selectedOperatorName}</span>
               </p>
-              {!loading && (
-                <p className="text-xs text-muted-foreground">
-                  {timeline.length} {timeline.length === 1 ? "registro" : "registros"}
-                </p>
-              )}
+              <div className="flex items-center gap-3">
+                {!loading && (
+                  <p className="text-xs text-muted-foreground">
+                    {timeline.length} {timeline.length === 1 ? "registro" : "registros"}
+                  </p>
+                )}
+                {!loading && selectedOperator !== "all" && timeline.length > 0 && (
+                  <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={handleDownloadCurrent}>
+                    <Download className="h-3.5 w-3.5" /> Descargar
+                  </Button>
+                )}
+              </div>
             </div>
 
             {loading ? (
@@ -368,6 +495,44 @@ export default function ActivitiesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Export activity modal */}
+      <Dialog open={exportOpen} onOpenChange={(open) => !exporting && setExportOpen(open)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Exportar actividad</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5"><Users className="h-4 w-4" />Operador</Label>
+              <Select value={exportOperator} onValueChange={setExportOperator}>
+                <SelectTrigger><SelectValue placeholder="Todos los usuarios" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {operators.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5"><Calendar className="h-4 w-4" />Desde</Label>
+                <DatePicker value={exportFrom} onChange={setExportFrom} placeholder="Desde" />
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5"><Calendar className="h-4 w-4" />Hasta</Label>
+                <DatePicker value={exportTo} onChange={setExportTo} placeholder="Hasta" />
+              </div>
+            </div>
+            {exportError && <p className="text-sm text-destructive">{exportError}</p>}
+            <Button className="w-full gap-2" onClick={handleExport} disabled={exporting}>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {exporting ? "Exportando..." : "Exportar CSV"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Activity detail modal */}
       <Dialog open={!!selectedActivity} onOpenChange={(open) => !open && setSelectedActivity(null)}>
