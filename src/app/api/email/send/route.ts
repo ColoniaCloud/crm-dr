@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
 import { isSmtpConfigured, transporter } from "@/lib/mailer";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/email/send");
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
+  // Throttle to curb spam / phishing abuse from a compromised account.
+  const rl = rateLimit(`email-send:${session.user.id}`, 20, 10 * 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Demasiados emails enviados. Esperá ${rl.retryAfter}s antes de reintentar.` },
+      { status: 429 }
+    );
   }
 
   try {

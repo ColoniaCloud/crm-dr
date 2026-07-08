@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/ai/describe");
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   try {
     const { description, productName, category, subcategory, shade, brand } = await request.json();
 

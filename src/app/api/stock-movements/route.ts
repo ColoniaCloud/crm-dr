@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
 const log = createLogger("api/stock-movements");
 
 export async function GET(request: Request) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get("productId");
     const type = searchParams.get("type");
@@ -37,12 +36,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
 
+  try {
     const body = await request.json();
     const { productId, type, quantity, reason } = body;
 

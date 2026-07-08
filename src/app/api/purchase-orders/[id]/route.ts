@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 const log = createLogger("api/purchase-orders/[id]");
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
@@ -31,11 +30,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const body = await request.json();
     const { status, exchangeRate, expectedDate, notes, importCosts } = body;
@@ -87,11 +86,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const order = await prisma.purchaseOrder.findUnique({ where: { id } });
     if (!order) {

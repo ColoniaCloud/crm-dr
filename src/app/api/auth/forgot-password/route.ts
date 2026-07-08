@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { transporter, FROM } from "@/lib/mailer";
+import { rateLimit } from "@/lib/rate-limit";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/auth/forgot-password");
 
@@ -24,8 +25,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email requerido" }, { status: 400 });
     }
 
+    const emailKey = email.trim().toLowerCase();
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    // Without this, anyone who knows an email could reset its password (and lock
+    // out the user) on every request. When throttled we succeed silently: no reset
+    // is performed and nothing leaks about whether the email exists.
+    const okEmail = rateLimit(`forgot-pw:email:${emailKey}`, 3, 15 * 60_000).allowed;
+    const okIp = rateLimit(`forgot-pw:ip:${ip}`, 10, 15 * 60_000).allowed;
+    if (!okEmail || !okIp) {
+      return NextResponse.json({ success: true });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
+      where: { email: emailKey },
     });
 
     // Always return success to avoid email enumeration

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { requireRole } from "@/lib/api-auth";
 
 export async function GET() {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   const apiKey = process.env.CLICKUP_API_KEY;
   const listId = process.env.CLICKUP_LIST_ID;
 

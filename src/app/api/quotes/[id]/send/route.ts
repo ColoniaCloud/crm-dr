@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { transporter } from "@/lib/mailer";
 import nodemailer from "nodemailer";
@@ -11,10 +11,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
 
   const { id } = await params;
 

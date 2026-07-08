@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { sendNotification, escapeHtml, logOperatorAction } from "@/lib/notifications";
 
 // Assign a unit to a user (or unassign with userId: null)
@@ -8,8 +8,11 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; unitId: string }> }
 ) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
     const { id: productId, unitId } = await params;
     const { userId, notes } = await request.json();
 
@@ -44,7 +47,7 @@ export async function PATCH(
     const desc = userId
       ? `Asignó unidad ${unit.code} a ${unit.assignedTo?.name}`
       : `Desasignó unidad ${unit.code}`;
-    await logOperatorAction({ userId: session!.user!.id, action, entityType: "PRODUCT_UNIT", entityId: unitId, description: desc, link: `/products/${productId}` });
+    await logOperatorAction({ userId: session.user.id, action, entityType: "PRODUCT_UNIT", entityId: unitId, description: desc, link: `/products/${productId}` });
     return NextResponse.json(unit);
   } catch {
     return NextResponse.json({ error: "Error al actualizar unidad" }, { status: 500 });

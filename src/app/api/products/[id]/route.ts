@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { logOperatorAction } from "@/lib/notifications";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
     const { id } = await params;
     const product = await prisma.product.findUnique({
@@ -25,9 +28,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     const { id } = await params;
     const body = await request.json();
     const { discounts, priceTiers, ...productData } = body;

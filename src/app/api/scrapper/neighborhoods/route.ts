@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { AR_NEIGHBORHOODS } from "@/lib/argentina-geo";
+import { requireRole } from "@/lib/api-auth";
 
 export async function GET(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const province = searchParams.get("province")?.trim();
   const city = searchParams.get("city")?.trim();

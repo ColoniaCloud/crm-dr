@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 const log = createLogger("api/suppliers/[id]");
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const supplier = await prisma.supplier.findUnique({
       where: { id },
@@ -33,11 +32,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const body = await request.json();
     const { name, country, contactName, contactEmail, contactPhone, currency, leadTimeDays, notes, active } = body;
@@ -65,11 +64,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
     const supplier = await prisma.supplier.update({ where: { id }, data: { active: false } });
     await logOperatorAction({ userId: session.user.id, action: "DELETE_SUPPLIER", entityType: "SUPPLIER", entityId: id, description: `Desactivó proveedor "${supplier.name}"` });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
@@ -9,11 +9,11 @@ const log = createLogger("api/purchase-orders/[id]/receive");
 // POST /api/purchase-orders/[id]/receive
 // Marks order as RECEIVED, updates product stock and cost, creates stock movements
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
     const { id } = await params;
 
     const order = await prisma.purchaseOrder.findUnique({

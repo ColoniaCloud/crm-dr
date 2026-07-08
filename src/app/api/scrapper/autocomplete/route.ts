@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/scrapper/autocomplete");
 
 export async function GET(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   const { searchParams } = new URL(request.url);
   const input = searchParams.get("input");
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/scrapper/search");
 
 const MAPS_KEY = () => process.env.GOOGLE_MAPS_API_KEY ?? "";
@@ -331,6 +332,9 @@ function inferType(types: string[] = [], name: string): string {
 }
 
 export async function POST(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   if (!process.env.GOOGLE_MAPS_API_KEY) {
     return NextResponse.json(
       { error: "GOOGLE_MAPS_API_KEY no configurada. Agregala en las variables de entorno." },

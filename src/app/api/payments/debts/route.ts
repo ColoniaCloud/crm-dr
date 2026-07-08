@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/payments/debts");
 
 export async function GET() {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
     const sales = await prisma.sale.findMany({
       include: {

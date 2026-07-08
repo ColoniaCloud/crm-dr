@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/ai/social-copy");
 
 const SYSTEM_PROMPT = `Sos un experto en marketing digital para el mercado argentino, especializado exclusivamente en:
@@ -36,6 +37,9 @@ const CHAR_HINTS: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json(
       { error: "ANTHROPIC_API_KEY no configurada" },

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
-import { auth } from "@/lib/auth";
 import { ensureWarrantyRolls } from "@/lib/warranty";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/products/[id]/units");
 
 // Abbreviation map for unit code generation
@@ -31,6 +31,9 @@ function pad4(n: number): string {
 }
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
   try {
     const { id } = await params;
     const units = await prisma.productUnit.findMany({
@@ -45,9 +48,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     const { id: productId } = await params;
     const { quantity = 1 } = await request.json();
 

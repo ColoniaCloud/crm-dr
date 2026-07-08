@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireRole } from "@/lib/api-auth";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 const log = createLogger("api/products/bulk");
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+  const { session } = gate;
 
   try {
     const { ids, action } = await request.json();
@@ -22,9 +21,23 @@ export async function POST(request: Request) {
     }
 
     if (action === "delete") {
+      // Refuse to delete products with sales history: deleting their saleItems
+      // would corrupt the totals of past sales. Deactivate them instead.
+      const sold = await prisma.saleItem.findMany({
+        where: { productId: { in: ids } },
+        select: { productId: true },
+        distinct: ["productId"],
+      });
+      if (sold.length > 0) {
+        return NextResponse.json(
+          {
+            error: `No se pueden eliminar ${sold.length} producto(s) con ventas registradas. Desactivalos en su lugar.`,
+          },
+          { status: 409 }
+        );
+      }
       await prisma.$transaction([
         prisma.quoteItem.deleteMany({ where: { productId: { in: ids } } }),
-        prisma.saleItem.deleteMany({ where: { productId: { in: ids } } }),
         prisma.product.deleteMany({ where: { id: { in: ids } } }),
       ]);
       await logOperatorAction({ userId: session.user.id, action: "BULK_DELETE_PRODUCTS", entityType: "PRODUCT", description: `Eliminó ${ids.length} producto(s) masivamente` });

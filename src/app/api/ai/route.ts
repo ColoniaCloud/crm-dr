@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateSalesSummary, detectOpportunities } from "@/lib/ai";
 import { createLogger } from "@/lib/logger";
+import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/ai");
 
 export async function POST(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
   try {
     const body = await request.json();
     const { action } = body;
