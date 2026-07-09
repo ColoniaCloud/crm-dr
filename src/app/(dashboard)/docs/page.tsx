@@ -338,7 +338,7 @@ function ToolsSection() {
         <FeatureCard icon={MapPin} title="DR Scrapp" description="Buscador integrado con Google Maps para encontrar potenciales clientes por zona y rubro." />
         <FeatureCard icon={Brain} title="AI Insights" description="Análisis automáticos con IA sobre tendencias de ventas, comportamiento de clientes y oportunidades." />
         <FeatureCard icon={Sparkles} title="RRSS Creator" description="Generador de contenido para redes sociales con asistencia de IA." />
-        <FeatureCard icon={ClipboardList} title="Actividad Operadores" description="Log de actividades de los operadores del CRM para auditoría." />
+        <FeatureCard icon={ClipboardList} title="Actividad Operadores" description="Log de actividades de los operadores del CRM para auditoría, con exportación a CSV filtrada por operador y rango de fechas." />
         <FeatureCard icon={Bell} title="Notificaciones" description="Centro de notificaciones con alertas sobre asignaciones, ventas y eventos importantes." />
       </div>
 
@@ -354,6 +354,22 @@ function ToolsSection() {
           Desde los resultados, podés crear leads directamente con los datos del negocio encontrado.
         </Step>
       </div>
+
+      <h3 className="text-lg font-semibold mt-6">Caso de uso: Exportar actividad de operadores a CSV</h3>
+      <div className="space-y-4">
+        <Step n={1} title="Accedé a Actividad Operadores">
+          Desde la barra lateral, seleccioná <strong>&quot;Actividad Operadores&quot;</strong> (ADMIN o SUPERADMIN).
+        </Step>
+        <Step n={2} title="Exportar todo con filtros propios">
+          Presioná <strong>&quot;Exportar actividad&quot;</strong> arriba a la derecha. En el modal elegí un operador (o &quot;Todos&quot;) y un rango de fechas, y presioná <strong>&quot;Exportar CSV&quot;</strong>.
+        </Step>
+        <Step n={3} title="Descarga rápida de un operador filtrado">
+          Si ya filtraste la lista por un operador puntual, aparece un botón <strong>&quot;Descargar&quot;</strong> junto al contador de registros para bajar esa actividad sin abrir el modal.
+        </Step>
+      </div>
+      <Tip>
+        El CSV usa punto y coma (;) como separador de columnas para que Excel con configuración regional es-AR/es-UY lo abra correctamente.
+      </Tip>
 
       <h3 className="text-lg font-semibold mt-6">Caso de uso: Generar contenido con IA</h3>
       <div className="space-y-4">
