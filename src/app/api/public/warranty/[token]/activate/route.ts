@@ -4,6 +4,7 @@ import { createLogger } from "@/lib/logger";
 import { activateInstallationWarranty } from "@/lib/warranty";
 import { verifyWarrantyApiKey } from "@/lib/warranty-api-auth";
 import { withCors, corsPreflight } from "@/lib/cors";
+import { notifyWarrantyActivated } from "@/lib/client-portal";
 
 const log = createLogger("api/public/warranty/[token]/activate");
 
@@ -52,6 +53,7 @@ export async function POST(
       installerName,
       notes,
     });
+    await notifyWarrantyActivated(installation.id);
 
     return withCors(NextResponse.json({ activated: true, expiresAt }));
   } catch (error) {

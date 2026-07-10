@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable } from "@/lib/notifications";
 import { linkRollToSaleItem } from "@/lib/warranty";
+import { notifyNewPurchase } from "@/lib/client-portal";
 
 const log = createLogger("api/sales/[id]");
 
@@ -117,6 +118,10 @@ export async function PUT(
       description: `Actualizó venta #${existing.number} de "${cName}"${status ? ` → ${status}` : ""}`,
       link: `/sales/${id}`,
     });
+
+    if (status === "CONFIRMED" && existing.status !== "CONFIRMED") {
+      await notifyNewPurchase(existing.contactId, updated.number, Number(updated.total));
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

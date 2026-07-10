@@ -1,0 +1,34 @@
+import { NextResponse } from "next/server";
+import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { rateLimit } from "@/lib/rate-limit";
+import { findClientContact, getClientStock } from "@/lib/client-portal";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("api/portal/v1/contacts/[contactId]/stock");
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ contactId: string }> }
+) {
+  const gate = await requirePortalApiKey(request);
+  if (!gate.success) return gate.response;
+
+  const rl = rateLimit(`portal-api:${gate.client.id}`, 300, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Demasiadas solicitudes" }, { status: 429 });
+  }
+
+  try {
+    const { contactId } = await params;
+    const contact = await findClientContact(contactId);
+    if (!contact) {
+      return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
+    }
+
+    const rolls = await getClientStock(contactId);
+    return NextResponse.json(rolls);
+  } catch (error) {
+    log.error({ err: error }, "Error fetching client stock");
+    return NextResponse.json({ error: "Error al cargar el stock" }, { status: 500 });
+  }
+}

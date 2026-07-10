@@ -21,6 +21,7 @@ export const QUOTE_STATUS_COLORS: Record<string, string> = {
 export const LEAD_ACTIVITY_COLORS: Record<string, string> = {
   NOTE:          "bg-blue-500",
   EMAIL_SENT:    "bg-green-500",
+  EMAIL_RECEIVED: "bg-teal-500",
   QUOTE_SENT:    "bg-purple-500",
   VISIT:         "bg-amber-500",
   CALL:          "bg-cyan-500",

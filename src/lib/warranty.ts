@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { addMonths } from "date-fns";
 import type { Prisma } from "@prisma/client";
@@ -259,4 +260,45 @@ export async function verifyWarranty(activationToken: string) {
         ? Math.ceil((installation.expiresAt.getTime() - now.getTime()) / 86_400_000)
         : 0,
   };
+}
+
+/**
+ * Lets the Usuario (end car owner) set a simple password on their own
+ * installation, so they can check on it later with just their short
+ * installationCode instead of the long activationToken. Knowing the token
+ * already proves legitimacy, same as activating.
+ */
+export async function setInstallationPortalPassword(
+  activationToken: string,
+  password: string
+): Promise<void> {
+  const installation = await prisma.warrantyInstallation.findUnique({
+    where: { activationToken },
+    select: { id: true },
+  });
+  if (!installation) throw new Error(`Installation with token ${activationToken} not found`);
+
+  const portalPasswordHash = await bcrypt.hash(password, 10);
+  await prisma.warrantyInstallation.update({
+    where: { id: installation.id },
+    data: { portalPasswordHash },
+  });
+}
+
+/**
+ * Verifies a Usuario's simple installationCode + password login. Returns the
+ * same shape as verifyWarranty() (no extra data exposed), or null if the
+ * installation/password don't match or no password was ever set.
+ */
+export async function verifyInstallationLogin(installationCode: string, password: string) {
+  const installation = await prisma.warrantyInstallation.findUnique({
+    where: { installationCode },
+    select: { activationToken: true, portalPasswordHash: true },
+  });
+  if (!installation?.portalPasswordHash) return null;
+
+  const matches = await bcrypt.compare(password, installation.portalPasswordHash);
+  if (!matches) return null;
+
+  return verifyWarranty(installation.activationToken);
 }

@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface UserData {
@@ -18,6 +19,15 @@ interface UserData {
   email: string;
   role: string;
   createdAt: string;
+}
+
+interface MailboxInfo {
+  configured: boolean;
+  mailAddress: string | null;
+  enabled: boolean;
+  lastPolledAt: string | null;
+  lastPollError: string | null;
+  consecutiveFailures: number;
 }
 
 export default function SettingsPage() {
@@ -34,6 +44,13 @@ export default function SettingsPage() {
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", role: "" });
   const [savingEdit, setSavingEdit] = useState(false);
+
+  const [mailboxUser, setMailboxUser] = useState<UserData | null>(null);
+  const [mailboxInfo, setMailboxInfo] = useState<MailboxInfo | null>(null);
+  const [mailboxForm, setMailboxForm] = useState({ mailAddress: "", mailPassword: "", enabled: true });
+  const [mailboxLoading, setMailboxLoading] = useState(false);
+  const [savingMailbox, setSavingMailbox] = useState(false);
+  const [mailboxError, setMailboxError] = useState("");
 
   // Fixed message
   const [msgTitle, setMsgTitle] = useState("Mensaje fijo");
@@ -180,6 +197,56 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : "Error al actualizar usuario");
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function openMailboxDialog(u: UserData) {
+    setMailboxUser(u);
+    setMailboxError("");
+    setMailboxInfo(null);
+    setMailboxLoading(true);
+    try {
+      const res = await fetch(`/api/settings/users/${u.id}/mailbox`);
+      if (!res.ok) throw new Error("No se pudo cargar la casilla");
+      const data: MailboxInfo = await res.json();
+      setMailboxInfo(data);
+      setMailboxForm({ mailAddress: data.mailAddress || u.email, mailPassword: "", enabled: data.enabled ?? true });
+    } catch (err) {
+      setMailboxError(err instanceof Error ? err.message : "Error al cargar la casilla");
+      setMailboxForm({ mailAddress: u.email, mailPassword: "", enabled: true });
+    } finally {
+      setMailboxLoading(false);
+    }
+  }
+
+  async function saveMailbox() {
+    if (!mailboxUser) return;
+    if (!mailboxForm.mailAddress) {
+      setMailboxError("La dirección de la casilla es requerida");
+      return;
+    }
+    setSavingMailbox(true);
+    setMailboxError("");
+    try {
+      const res = await fetch(`/api/settings/users/${mailboxUser.id}/mailbox`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mailAddress: mailboxForm.mailAddress,
+          ...(mailboxForm.mailPassword ? { mailPassword: mailboxForm.mailPassword } : {}),
+          enabled: mailboxForm.enabled,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Error al guardar la casilla");
+      }
+      setSuccess("Casilla de correo guardada");
+      setMailboxUser(null);
+    } catch (err) {
+      setMailboxError(err instanceof Error ? err.message : "Error al guardar la casilla");
+    } finally {
+      setSavingMailbox(false);
     }
   }
 
@@ -347,6 +414,14 @@ export default function SettingsPage() {
                           </>
                         ) : (
                           <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Casilla de correo"
+                              onClick={() => openMailboxDialog(u)}
+                            >
+                              <Mail className="h-4 w-4" />
+                            </Button>
                             {u.id !== session?.user?.id && (
                               <>
                                 <Button
@@ -460,6 +535,70 @@ export default function SettingsPage() {
           </>
         )}
       </div>
+
+      <Dialog open={!!mailboxUser} onOpenChange={(open) => { if (!open) setMailboxUser(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />Casilla de correo de {mailboxUser?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {mailboxLoading ? (
+            <p className="text-sm text-muted-foreground">Cargando...</p>
+          ) : (
+            <div className="space-y-4">
+              {mailboxError && (
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{mailboxError}</p>
+              )}
+              {mailboxInfo?.configured && (
+                <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                  <p>Última revisión: {mailboxInfo.lastPolledAt ? formatDate(mailboxInfo.lastPolledAt) : "nunca"}</p>
+                  {mailboxInfo.lastPollError && (
+                    <p className="text-red-600">
+                      Último error ({mailboxInfo.consecutiveFailures} seguidos): {mailboxInfo.lastPollError}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label>Dirección de la casilla (Hostinger)</Label>
+                <Input
+                  type="email"
+                  placeholder="operador@empresa.com"
+                  value={mailboxForm.mailAddress}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, mailAddress: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Contraseña de la casilla</Label>
+                <Input
+                  type="password"
+                  placeholder={mailboxInfo?.configured ? "Dejar en blanco para no cambiarla" : "Contraseña de la casilla"}
+                  value={mailboxForm.mailPassword}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, mailPassword: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <Label className="text-sm">Habilitada</Label>
+                <input
+                  type="checkbox"
+                  checked={mailboxForm.enabled}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, enabled: e.target.checked })}
+                  className="h-4 w-4"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMailboxUser(null)} disabled={savingMailbox}>
+              Cancelar
+            </Button>
+            <Button onClick={saveMailbox} disabled={savingMailbox || mailboxLoading}>
+              {savingMailbox ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

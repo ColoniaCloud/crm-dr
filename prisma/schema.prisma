@@ -119,6 +119,8 @@ model User {
   paymentAuditLogs PaymentAuditLog[] @relation("PaymentAuditUser")
   operatorAuditLogs OperatorAuditLog[]
   assignedWarrantyClaims WarrantyClaim[]
+  mailAccount       MailAccount?
+  mailboxEmails     Email[]          @relation("MailboxOwner")
 
   @@map("users")
 }
@@ -207,7 +209,11 @@ model Contact {
   payments        Payment[]
   activities      ActivityLog[]    @relation("ContactActivities")
   leadActivities  LeadActivity[]   @relation("LeadActivities")
+  emails          Email[]          @relation("ContactEmails")
+  portalAccount   ClientPortalAccount?
+  portalNotifications PortalNotification[]
 
+  @@index([email])
   @@map("contacts")
 }
 
@@ -631,6 +637,7 @@ model ActivityLog {
 enum LeadActivityType {
   NOTE
   EMAIL_SENT
+  EMAIL_RECEIVED
   QUOTE_SENT
   VISIT
   CALL
@@ -671,6 +678,68 @@ model WhatsAppMessage {
 
   @@index([sentAt])
   @@map("whatsapp_messages")
+}
+
+// ─── Correo por-operador (casilla real de Hostinger, IMAP + SMTP) ────────────
+
+enum EmailDirection {
+  IN
+  OUT
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  RECEIVED
+}
+
+model MailAccount {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mailAddress         String    @unique
+  encryptedPassword   String    @db.Text
+  enabled             Boolean   @default(true)
+  imapUidValidity     Int?
+  imapLastUid         Int       @default(0)
+  lastPolledAt        DateTime?
+  lastPollError       String?   @db.Text
+  consecutiveFailures Int       @default(0)
+  pausedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("mail_accounts")
+}
+
+model Email {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation("MailboxOwner", fields: [userId], references: [id], onDelete: Cascade)
+  contactId    String?
+  contact      Contact?       @relation("ContactEmails", fields: [contactId], references: [id], onDelete: SetNull)
+  direction    EmailDirection
+  status       EmailStatus
+  subject      String?        @db.Text
+  bodyHtml     String?        @db.LongText
+  bodyText     String?        @db.LongText
+  fromAddress  String
+  toAddress    String         @db.Text
+  ccAddress    String?        @db.Text
+  messageId    String
+  inReplyTo    String?
+  imapUid      Int?
+  errorMessage String?        @db.Text
+  read         Boolean        @default(false)
+  sentAt       DateTime?
+  receivedAt   DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@unique([userId, messageId])
+  @@index([contactId])
+  @@index([userId, direction])
+  @@index([userId, read])
+  @@map("emails")
 }
 
 // ─── Auditoría de operadores ──────────────────────────────────────────────────
@@ -783,6 +852,7 @@ model WarrantyInstallation {
   activatedAt        DateTime?
   expiresAt          DateTime?
   notes              String?                    @db.Text
+  portalPasswordHash String?
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
@@ -828,4 +898,46 @@ model WarrantyApiClient {
   lastUsedAt DateTime?
 
   @@map("warranty_api_clients")
+}
+
+// ─── Portal de clientes — API server-to-server para el sitio externo ────────
+
+model PortalApiClient {
+  id         String    @id @default(cuid())
+  name       String
+  apiKeyHash String    @unique
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@map("portal_api_clients")
+}
+
+model ClientPortalAccount {
+  id           String    @id @default(cuid())
+  contactId    String    @unique
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email        String    @unique
+  passwordHash String
+  enabled      Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("client_portal_accounts")
+}
+
+model PortalNotification {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String   @db.Text
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([contactId, read])
+  @@map("portal_notifications")
 }

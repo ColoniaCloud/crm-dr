@@ -114,7 +114,7 @@ const quoteStatusLabels: Record<string, string> = {
 };
 
 const activityTypeLabels: Record<string, string> = {
-  NOTE: "Nota", EMAIL_SENT: "Email enviado", QUOTE_SENT: "Presupuesto enviado",
+  NOTE: "Nota", EMAIL_SENT: "Email enviado", EMAIL_RECEIVED: "Email recibido", QUOTE_SENT: "Presupuesto enviado",
   VISIT: "Visita", CALL: "Llamada", STATUS_CHANGE: "Cambio de estado", OTHER: "Otro",
 };
 
@@ -1040,6 +1040,14 @@ export default function LeadDetailPage() {
                     <RotateCw className="h-3.5 w-3.5 text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => fetchActivities()} />
                     Cronología
                   </h3>
+                  {lead?.email && (
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-xs" asChild>
+                      <Link href={`/mail?contactId=${leadId}&to=${encodeURIComponent(lead.email)}`}>
+                        <Mail className="h-3.5 w-3.5" />
+                        Correo
+                      </Link>
+                    </Button>
+                  )}
                 </div>
 
                 {/* ── Notas (antes de la timeline) ── */}

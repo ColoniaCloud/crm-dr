@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { isAdminRole } from "@/lib/utils";
+import { getClientProfile } from "@/lib/client-portal";
 const log = createLogger("api/clients/[id]");
 
 export async function GET(
@@ -13,59 +14,14 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const contact = await prisma.contact.findFirst({
-      where: { id, type: "CLIENT" },
-      include: {
-        sales: {
-          include: {
-            items: { include: { product: { select: { id: true, name: true } } } },
-            payments: true,
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        payments: {
-          include: { sale: { select: { number: true } } },
-          orderBy: { paidAt: "desc" },
-        },
-      },
-    });
+    const [profile, contact] = await Promise.all([
+      getClientProfile(id),
+      prisma.contact.findFirst({ where: { id, type: "CLIENT" } }),
+    ]);
 
-    if (!contact) {
+    if (!profile || !contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
-
-    // Calculate balance: sum of (sale.total - payments per sale)
-    let balance = 0;
-    const purchases = contact.sales.map((sale) => {
-      const paidAmount = sale.payments.reduce((s, p) => s + Number(p.amount), 0);
-      const saleTotal = Number(sale.total);
-      balance += saleTotal - paidAmount;
-
-      let paymentStatus = "PENDING";
-      if (paidAmount >= saleTotal) paymentStatus = "PAID";
-      else if (paidAmount > 0) paymentStatus = "PARTIAL";
-
-      return {
-        id: sale.id,
-        saleNumber: `#${sale.number}`,
-        total: saleTotal,
-        paymentStatus,
-        createdAt: sale.createdAt.toISOString(),
-        items: sale.items.map((item) => ({
-          productName: item.product.name,
-          quantity: item.quantity,
-          unitPrice: Number(item.unitPrice),
-        })),
-      };
-    });
-
-    const payments = contact.payments.map((p) => ({
-      id: p.id,
-      amount: Number(p.amount),
-      method: p.method || "OTHER",
-      date: p.paidAt.toISOString(),
-      saleNumber: p.sale ? `#${p.sale.number}` : "—",
-    }));
 
     // Parse suppliers as JSON array or fallback
     let suppliers: string[] = [];
@@ -83,7 +39,7 @@ export async function GET(
       leadNumber: contact.leadNumber,
       firstName: contact.firstName,
       lastName: contact.lastName,
-      name: `${contact.firstName} ${contact.lastName}`,
+      name: profile.name,
       company: contact.company,
       sector: contact.sector,
       email: contact.email,
@@ -98,9 +54,9 @@ export async function GET(
       notes: contact.notes || "",
       suppliers,
       priceRange: contact.currentSupplierPrices || "",
-      purchases,
-      payments,
-      balance,
+      purchases: profile.purchases,
+      payments: profile.payments,
+      balance: profile.balance,
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching client");
