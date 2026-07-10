@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/api-auth";
+import { requireMailConfigAdmin } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { encrypt } from "@/lib/mail-crypto";
 import { logOperatorAction } from "@/lib/notifications";
@@ -13,7 +13,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireMailConfigAdmin();
   if (!gate.success) return gate.response;
 
   try {
@@ -53,7 +53,7 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireMailConfigAdmin();
   if (!gate.success) return gate.response;
   const { session } = gate;
 

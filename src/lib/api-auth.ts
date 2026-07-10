@@ -34,3 +34,32 @@ export async function requireRole(
   }
   return { success: true, session };
 }
+
+// Business rule: regardless of role, only this specific person is allowed to
+// configure other users' mailbox (IMAP/SMTP) credentials for the /mail feature.
+const MAIL_CONFIG_ADMIN_EMAIL = "manuel@wpuruguay.com";
+
+/**
+ * Guards the mailbox-credentials admin route (src/app/api/settings/users/[id]/mailbox).
+ * Mirrors requireRole's result shape, but gates by a specific user's email
+ * instead of by role.
+ */
+export async function requireMailConfigAdmin(): Promise<
+  | { success: true; session: Session }
+  | { success: false; response: NextResponse }
+> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      response: NextResponse.json({ error: "No autorizado" }, { status: 401 }),
+    };
+  }
+  if (session.user.email?.toLowerCase() !== MAIL_CONFIG_ADMIN_EMAIL) {
+    return {
+      success: false,
+      response: NextResponse.json({ error: "Acceso restringido" }, { status: 403 }),
+    };
+  }
+  return { success: true, session };
+}

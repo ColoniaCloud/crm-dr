@@ -61,6 +61,8 @@ export default function SettingsPage() {
   const [savingMsg, setSavingMsg] = useState(false);
 
   const isSuperAdmin = session?.user?.role === "SUPERADMIN";
+  // Business rule: regardless of role, only this specific person configures mailboxes.
+  const isMailConfigAdmin = session?.user?.email?.toLowerCase() === "manuel@wpuruguay.com";
 
   useEffect(() => {
     if (isSuperAdmin) fetchUsers();
@@ -414,14 +416,16 @@ export default function SettingsPage() {
                           </>
                         ) : (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Casilla de correo"
-                              onClick={() => openMailboxDialog(u)}
-                            >
-                              <Mail className="h-4 w-4" />
-                            </Button>
+                            {isMailConfigAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Casilla de correo"
+                                onClick={() => openMailboxDialog(u)}
+                              >
+                                <Mail className="h-4 w-4" />
+                              </Button>
+                            )}
                             {u.id !== session?.user?.id && (
                               <>
                                 <Button
