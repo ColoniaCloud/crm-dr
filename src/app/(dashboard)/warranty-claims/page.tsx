@@ -134,7 +134,7 @@ export default function WarrantyClaimsPage() {
         </div>
         {session?.user?.role === "SUPERADMIN" && (
           <Button variant="outline" asChild>
-            <Link href="/warranty-claims/api-clients">
+            <Link href="/settings">
               <KeyRound className="h-4 w-4 mr-2" />
               API Keys
             </Link>

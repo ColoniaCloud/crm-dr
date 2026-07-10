@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { ApiKeyManager } from "@/components/settings/api-key-manager";
 
 interface UserData {
   id: string;
@@ -462,6 +463,27 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>)}
+
+      {isSuperAdmin && (
+        <>
+          <ApiKeyManager
+            title="API Keys de Garantías"
+            description="Claves para talleres y sitios externos que activan/consultan garantías"
+            namePlaceholder="Nombre del partner (ej. Taller Norte)"
+            listUrl="/api/warranty-api-clients"
+            createUrl="/api/warranty-api-clients"
+            toggleUrl={(id) => `/api/warranty-api-clients/${id}`}
+          />
+          <ApiKeyManager
+            title="API Keys del Portal de Clientes"
+            description="Claves de servidor a servidor para el sitio externo donde los clientes ven su stock, instalaciones, garantías y pagos"
+            namePlaceholder="Nombre del sitio/integración (ej. Portal Clientes Web)"
+            listUrl="/api/portal-api-clients"
+            createUrl="/api/portal-api-clients"
+            toggleUrl={(id) => `/api/portal-api-clients/${id}`}
+          />
+        </>
+      )}
 
       <Card>
         <CardHeader><CardTitle>Información del Sistema</CardTitle></CardHeader>

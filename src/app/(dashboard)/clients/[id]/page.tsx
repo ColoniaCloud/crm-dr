@@ -31,7 +31,8 @@ import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { useSession } from "next-auth/react";
 import { isAdminRole } from "@/lib/utils";
 import dynamic from "next/dynamic";
-import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy, KeyRound } from "lucide-react";
+import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "lucide-react";
+import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
   ssr: false,
@@ -111,14 +112,6 @@ export default function ClientDetailPage() {
   const [selectedInstallation, setSelectedInstallation] = useState<any | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
 
-  // Portal access (Cliente login for kristallfilm.com)
-  const [portalAccountOpen, setPortalAccountOpen] = useState(false);
-  const [portalAccountInfo, setPortalAccountInfo] = useState<{ configured: boolean; email: string | null; enabled: boolean; lastLoginAt: string | null } | null>(null);
-  const [portalAccountForm, setPortalAccountForm] = useState({ email: "", password: "", enabled: true });
-  const [portalAccountLoading, setPortalAccountLoading] = useState(false);
-  const [savingPortalAccount, setSavingPortalAccount] = useState(false);
-  const [portalAccountError, setPortalAccountError] = useState("");
-
   // Edit mode
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -168,53 +161,6 @@ export default function ClientDetailPage() {
       alert("Error al guardar los cambios");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function openPortalAccountDialog() {
-    setPortalAccountOpen(true);
-    setPortalAccountError("");
-    setPortalAccountLoading(true);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/portal-account`);
-      if (!res.ok) throw new Error("No se pudo cargar el acceso al portal");
-      const data = await res.json();
-      setPortalAccountInfo(data);
-      setPortalAccountForm({ email: data.email || client?.email || "", password: "", enabled: data.enabled ?? true });
-    } catch (err) {
-      setPortalAccountError(err instanceof Error ? err.message : "Error al cargar el acceso al portal");
-      setPortalAccountForm({ email: client?.email || "", password: "", enabled: true });
-    } finally {
-      setPortalAccountLoading(false);
-    }
-  }
-
-  async function savePortalAccount() {
-    if (!portalAccountForm.email) {
-      setPortalAccountError("El email es requerido");
-      return;
-    }
-    setSavingPortalAccount(true);
-    setPortalAccountError("");
-    try {
-      const res = await fetch(`/api/clients/${clientId}/portal-account`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: portalAccountForm.email,
-          ...(portalAccountForm.password ? { password: portalAccountForm.password } : {}),
-          enabled: portalAccountForm.enabled,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Error al guardar el acceso al portal");
-      }
-      setPortalAccountOpen(false);
-    } catch (err) {
-      setPortalAccountError(err instanceof Error ? err.message : "Error al guardar el acceso al portal");
-    } finally {
-      setSavingPortalAccount(false);
     }
   }
 
@@ -565,16 +511,7 @@ export default function ClientDetailPage() {
 
         {/* Portal access (Cliente login for kristallfilm.com) */}
         {isAdminUser && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <KeyRound className="h-4 w-4" />Acceso al Portal
-              </CardTitle>
-              <Button variant="outline" size="sm" onClick={openPortalAccountDialog}>
-                Configurar
-              </Button>
-            </CardHeader>
-          </Card>
+          <ClientPortalAccess clientId={clientId} clientEmail={client?.email ?? null} />
         )}
 
         {/* Summary */}
@@ -1014,68 +951,6 @@ export default function ClientDetailPage() {
       </Dialog>
 
       <CallDialog open={callDialogOpen} onOpenChange={setCallDialogOpen} contactId={clientId} />
-
-      <Dialog open={portalAccountOpen} onOpenChange={(open) => { if (!open) setPortalAccountOpen(false); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" />Acceso al Portal de Clientes
-            </DialogTitle>
-            <DialogDescription>
-              Habilita el login de este cliente en kristallfilm.com. Solo un admin puede otorgar este acceso.
-            </DialogDescription>
-          </DialogHeader>
-          {portalAccountLoading ? (
-            <p className="text-sm text-muted-foreground">Cargando...</p>
-          ) : (
-            <div className="space-y-4">
-              {portalAccountError && (
-                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{portalAccountError}</p>
-              )}
-              {portalAccountInfo?.configured && (
-                <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Último login: {portalAccountInfo.lastLoginAt ? formatDate(portalAccountInfo.lastLoginAt) : "nunca"}
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label>Email de acceso</Label>
-                <Input
-                  type="email"
-                  placeholder="cliente@empresa.com"
-                  value={portalAccountForm.email}
-                  onChange={(e) => setPortalAccountForm({ ...portalAccountForm, email: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Contraseña</Label>
-                <Input
-                  type="password"
-                  placeholder={portalAccountInfo?.configured ? "Dejar en blanco para no cambiarla" : "Mínimo 6 caracteres"}
-                  value={portalAccountForm.password}
-                  onChange={(e) => setPortalAccountForm({ ...portalAccountForm, password: e.target.value })}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-md border p-3">
-                <Label className="text-sm">Habilitado</Label>
-                <input
-                  type="checkbox"
-                  checked={portalAccountForm.enabled}
-                  onChange={(e) => setPortalAccountForm({ ...portalAccountForm, enabled: e.target.checked })}
-                  className="h-4 w-4"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPortalAccountOpen(false)} disabled={savingPortalAccount}>
-              Cancelar
-            </Button>
-            <Button onClick={savePortalAccount} disabled={savingPortalAccount || portalAccountLoading}>
-              {savingPortalAccount ? "Guardando..." : "Guardar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

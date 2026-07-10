@@ -32,7 +32,6 @@ import {
   Plus,
   MessageSquare,
   ShieldCheck,
-  KeyRound,
 } from "lucide-react";
 import {
   Sidebar,
@@ -324,22 +323,6 @@ export function AppSidebar() {
                     <Link href="/whatsapp" onClick={handleNavClick}>
                       <MessageCircle className="text-primary" />
                       <span>WhatsApp</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {/* Portal de Clientes (API keys) — SUPERADMIN only */}
-              {isSuperAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive("/client-portal")}
-                    tooltip="Portal Clientes"
-                  >
-                    <Link href="/client-portal" onClick={handleNavClick}>
-                      <KeyRound className="text-primary" />
-                      <span>Portal Clientes</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
