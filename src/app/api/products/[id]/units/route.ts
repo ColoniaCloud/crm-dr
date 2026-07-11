@@ -3,32 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
+import { createProductUnits } from "@/lib/product-units";
 import { requireRole } from "@/lib/api-auth";
 const log = createLogger("api/products/[id]/units");
-
-// Abbreviation map for unit code generation
-const ABBREV: Record<string, string> = {
-  AUTOMOTIVE_PREMIUM: "PREM",
-  AUTOMOTIVE_NANOCERAMIC: "NCRC",
-  AUTOMOTIVE_NANOCARBON: "NCRB",
-  AUTOMOTIVE_SAFETY: "SAFE",
-  AUTOMOTIVE_PPF: "PPF",
-  AUTOMOTIVE: "AUTO",
-  ARCHITECTURAL: "ARQ",
-  PPF: "PPF",
-};
-
-function getAbbrev(category: string, subcategory?: string | null): string {
-  if (subcategory) {
-    const key = `${category}_${subcategory}`;
-    if (ABBREV[key]) return ABBREV[key];
-  }
-  return ABBREV[category] ?? category.slice(0, 4).toUpperCase();
-}
-
-function pad4(n: number): string {
-  return String(n).padStart(4, "0");
-}
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
@@ -47,6 +24,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   }
 }
 
+// Generates trazability codes to catch up with stock that doesn't have them
+// yet (e.g. legacy stock loaded before this system existed). Does NOT add to
+// stock — stock only moves via purchase orders / stock movements, which
+// generate their own matching codes automatically. Capped to the gap between
+// current stock and units already coded, so this can never outrun reality.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
   if (!gate.success) return gate.response;
@@ -54,50 +36,46 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   try {
     const { id: productId } = await params;
-    const { quantity = 1 } = await request.json();
+    const { quantity } = await request.json().catch(() => ({}));
 
     const product = await prisma.product.findUnique({
       where: { id: productId },
-      select: { category: true, subcategory: true, shade: true },
+      select: { stock: true },
     });
     if (!product) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
 
-    const abbrev = getAbbrev(product.category, product.subcategory);
-    const shade = (product.shade ?? "00").replace(/[^0-9a-zA-Z]/g, "");
-
-    // Count existing units to generate sequential codes
     const existingCount = await prisma.productUnit.count({ where: { productId } });
+    const gap = Math.max(product.stock - existingCount, 0);
 
-    const units: { productId: string; code: string }[] = [];
-    for (let i = 0; i < quantity; i++) {
-      const seq = pad4(existingCount + i + 1);
-      const code = `${abbrev}-${shade}-${seq}`;
-      units.push({ productId, code });
+    if (gap === 0) {
+      return NextResponse.json(
+        { error: "Ya hay una unidad generada por cada unidad de stock actual" },
+        { status: 400 }
+      );
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.productUnit.createMany({ data: units, skipDuplicates: true });
+    const requested = quantity === undefined ? gap : parseInt(quantity);
+    if (!Number.isFinite(requested) || requested < 1) {
+      return NextResponse.json({ error: "Cantidad inválida" }, { status: 400 });
+    }
+    if (requested > gap) {
+      return NextResponse.json(
+        { error: `Solo podés generar ${gap} unidad(es) más para alcanzar el stock actual (${product.stock})` },
+        { status: 400 }
+      );
+    }
 
-      // Update product stock
-      await tx.product.update({
-        where: { id: productId },
-        data: { stock: { increment: quantity } },
-      });
-
-      // Link each unit to a warranty roll if the product has WarrantyConfig
-      const createdUnits = await tx.productUnit.findMany({
-        where: { productId, code: { in: units.map((u) => u.code) } },
-        select: { id: true },
-        orderBy: { createdAt: "asc" },
-      });
-      await ensureWarrantyRolls(tx, productId, quantity, {
+    const created = await prisma.$transaction(async (tx) => {
+      const units = await createProductUnits(tx, productId, requested);
+      await ensureWarrantyRolls(tx, productId, requested, {
         type: "UNIT_CREATION",
-        unitIds: createdUnits.map((u) => u.id),
+        unitIds: units.map((u) => u.id),
       });
+      return units;
     });
 
-    await logOperatorAction({ userId: session.user.id, action: "CREATE_UNITS", entityType: "PRODUCT", entityId: productId, description: `Creó ${units.length} unidad(es) de producto`, link: `/products/${productId}` });
-    return NextResponse.json({ created: units.length, codes: units.map((u) => u.code) }, { status: 201 });
+    await logOperatorAction({ userId: session.user.id, action: "CREATE_UNITS", entityType: "PRODUCT", entityId: productId, description: `Creó ${created.length} unidad(es) de producto`, link: `/products/${productId}` });
+    return NextResponse.json({ created: created.length, codes: created.map((u) => u.code) }, { status: 201 });
   } catch (error) {
     log.error({ err: error }, "Error creating units");
     return NextResponse.json({ error: "Error al crear unidades" }, { status: 500 });

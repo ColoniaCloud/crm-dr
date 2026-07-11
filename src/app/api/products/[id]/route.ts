@@ -15,7 +15,25 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         discounts: true,
         priceTiers: { orderBy: { minQty: "asc" } },
         units: {
-          include: { assignedTo: { select: { id: true, name: true, email: true } } },
+          include: {
+            saleItem: {
+              select: {
+                sale: {
+                  select: {
+                    id: true,
+                    number: true,
+                    status: true,
+                    total: true,
+                    contact: { select: { firstName: true, lastName: true, company: true } },
+                    payments: { select: { amount: true } },
+                  },
+                },
+              },
+            },
+            warrantyRoll: {
+              select: { installations: { select: { activatedAt: true } } },
+            },
+          },
           orderBy: { createdAt: "asc" },
         },
       },

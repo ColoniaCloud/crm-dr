@@ -97,10 +97,11 @@ export async function PUT(
         include: { items: true },
       });
 
-      // Assign warranty rolls FIFO when sale transitions to CONFIRMED
+      // Assign warranty rolls when sale transitions to CONFIRMED — FIFO,
+      // unless the item already points at a specific traced unit (rollo)
       if (status === "CONFIRMED" && existing.status !== "CONFIRMED") {
         for (const item of existing.items) {
-          await linkRollToSaleItem(tx, item.id, item.productId);
+          await linkRollToSaleItem(tx, item.id, item.productId, item.productUnitId);
         }
       }
 

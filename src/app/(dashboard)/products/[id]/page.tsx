@@ -26,7 +26,6 @@ import {
   Pencil, DollarSign, Layers, Tag, BarChart3, Info,
 } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
-import { UserSearchSelect } from "@/components/user-search-select";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SUBCATEGORIES: Record<string, { value: string; label: string }[]> = {
@@ -85,11 +84,20 @@ interface PriceTier {
 interface ProductUnit {
   id: string;
   code: string;
-  assignedToId: string | null;
-  assignedTo: { id: string; name: string; email: string } | null;
-  assignedAt: string | null;
-  notes: string | null;
   createdAt: string;
+  saleItem: {
+    sale: {
+      id: string;
+      number: number;
+      status: string;
+      total: string;
+      contact: { firstName: string; lastName: string; company: string | null };
+      payments: { amount: string }[];
+    };
+  } | null;
+  warrantyRoll: {
+    installations: { activatedAt: string | null }[];
+  } | null;
 }
 
 interface ProductDetail {
@@ -108,12 +116,6 @@ interface ProductDetail {
   active: boolean;
   discounts: Discount[];
   units: ProductUnit[];
-}
-
-interface UserOption {
-  id: string;
-  name: string;
-  email: string;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -143,17 +145,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Units
-  const [users, setUsers] = useState<UserOption[]>([]);
   const [addUnitsOpen, setAddUnitsOpen] = useState(false);
   const [unitsQty, setUnitsQty] = useState("1");
   const [addingUnits, setAddingUnits] = useState(false);
   const [newCodes, setNewCodes] = useState<string[]>([]);
-
-  // Assign modal
-  const [assignUnit, setAssignUnit] = useState<ProductUnit | null>(null);
-  const [assignUserId, setAssignUserId] = useState("");
-  const [assignNotes, setAssignNotes] = useState("");
-  const [assigning, setAssigning] = useState(false);
+  const [detachingUnitId, setDetachingUnitId] = useState<string | null>(null);
 
   // ── Fetch ───────────────────────────────────────────────────────────────────
   async function fetchProduct() {
@@ -191,14 +187,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     if (data.imageUrl) setImagePreview(data.imageUrl);
   }
 
-  async function fetchUsers() {
-    try {
-      const res = await fetch("/api/users");
-      if (res.ok) setUsers(await res.json());
-    } catch { /* silent */ }
-  }
-
-  useEffect(() => { fetchProduct(); fetchUsers(); }, [id]);
+  useEffect(() => { fetchProduct(); }, [id]);
 
   function openEditModal() {
     if (product) populateForm(product);
@@ -334,26 +323,24 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  // ── Assign unit ─────────────────────────────────────────────────────────────
-  async function handleAssign(e: React.FormEvent) {
-    e.preventDefault();
-    if (!assignUnit) return;
-    setAssigning(true);
+  // ── Send / reassign unit (creates a Sale for this rollo) ──────────────────────
+  function goToSaleForUnit(unit: ProductUnit) {
+    router.push(`/sales?productId=${id}&unitId=${unit.id}&code=${encodeURIComponent(unit.code)}`);
+  }
+
+  async function handleReassignUnit(unit: ProductUnit) {
+    const saleNumber = unit.saleItem?.sale.number;
+    if (!confirm(`El rollo ${unit.code} ya está en la venta #${saleNumber}. ¿Quitarlo de esa venta para asignarlo a una nueva?`)) return;
+    setDetachingUnitId(unit.id);
     try {
-      const res = await fetch(`/api/products/${id}/units/${assignUnit.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: assignUserId || null, notes: assignNotes }),
-      });
-      if (!res.ok) throw new Error("Error al asignar");
-      setAssignUnit(null);
-      setAssignUserId("");
-      setAssignNotes("");
-      fetchProduct();
+      const res = await fetch(`/api/products/${id}/units/${unit.id}/detach-sale`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || "Error al reasignar");
+      goToSaleForUnit(unit);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
-      setAssigning(false);
+      setDetachingUnitId(null);
     }
   }
 
@@ -619,7 +606,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 Cada unidad tiene un código único: <code className="bg-muted px-1 rounded text-xs">[SUBCATEGORÍA]-[TONALIDAD]-[SECUENCIA]</code>
               </p>
             </div>
-            <Button onClick={() => { setAddUnitsOpen(true); setNewCodes([]); }} className="gap-2">
+            <Button
+              onClick={() => {
+                const gap = Math.max((product?.stock ?? 0) - (product?.units.length ?? 0), 0);
+                setUnitsQty(String(gap || 1));
+                setAddUnitsOpen(true);
+                setNewCodes([]);
+              }}
+              className="gap-2"
+            >
               <Plus size={16} /> Agregar unidades
             </Button>
           </div>
@@ -635,9 +630,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <form onSubmit={handleAddUnits} className="space-y-4">
                 <div className="space-y-1">
                   <Label>Cantidad de unidades *</Label>
-                  <Input type="number" min="1" max="500" value={unitsQty}
+                  <Input type="number" min="1" max={Math.max((product?.stock ?? 0) - (product?.units.length ?? 0), 1)} value={unitsQty}
                     onChange={(e) => setUnitsQty(e.target.value)} required />
-                  <p className="text-xs text-muted-foreground">Se generará un código único por cada unidad.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Se generará un código único por cada unidad. Stock actual: {product?.stock ?? 0}, con código: {product?.units.length ?? 0} — no se puede generar más de lo que falta para alcanzar el stock (esto no suma stock nuevo).
+                  </p>
                 </div>
                 {newCodes.length > 0 && (
                   <div className="rounded-md border p-3 space-y-1 max-h-40 overflow-y-auto">
@@ -657,44 +654,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </DialogContent>
           </Dialog>
 
-          {/* Assign unit dialog */}
-          <Dialog open={!!assignUnit} onOpenChange={(open) => { if (!open) setAssignUnit(null); }}>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Send size={16} className="text-primary" />
-                  Enviar unidad
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAssign} className="space-y-3">
-                <div className="rounded-md bg-muted/40 border px-3 py-2">
-                  <p className="text-xs text-muted-foreground">Código</p>
-                  <code className="text-sm font-mono font-bold">{assignUnit?.code}</code>
-                </div>
-                <div className="space-y-1">
-                  <Label>Asignar a usuario</Label>
-                  <UserSearchSelect
-                    users={users}
-                    value={assignUserId}
-                    onValueChange={setAssignUserId}
-                    placeholder="Seleccionar usuario..."
-                    showUnassign
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Notas de envío</Label>
-                  <Textarea value={assignNotes} onChange={(e) => setAssignNotes(e.target.value)} rows={2} placeholder="Opcional..." />
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" type="button" onClick={() => setAssignUnit(null)}>Cancelar</Button>
-                  <Button type="submit" disabled={assigning} className="gap-2">
-                    <Send size={14} />
-                    {assigning ? "Enviando..." : "Enviar"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
 
           {/* Units table */}
           {!product?.units?.length ? (
@@ -708,57 +667,69 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <TableHeader>
                   <TableRow>
                     <TableHead>Código</TableHead>
-                    <TableHead>Asignado a</TableHead>
-                    <TableHead>Fecha asignación</TableHead>
-                    <TableHead>Notas</TableHead>
+                    <TableHead>Venta</TableHead>
                     <TableHead>Fecha creación</TableHead>
                     <TableHead>Acción</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {product.units.map((unit) => (
-                    <TableRow key={unit.id}>
-                      <TableCell>
-                        <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded font-bold tracking-wide">
-                          {unit.code}
-                        </code>
-                      </TableCell>
-                      <TableCell>
-                        {unit.assignedTo ? (
-                          <div>
-                            <p className="text-sm font-medium">{unit.assignedTo.name}</p>
-                            <p className="text-xs text-muted-foreground">{unit.assignedTo.email}</p>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Sin asignar</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {unit.assignedAt ? new Date(unit.assignedAt).toLocaleDateString("es-AR") : "-"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
-                        {unit.notes ?? "-"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(unit.createdAt).toLocaleDateString("es-AR")}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => {
-                            setAssignUnit(unit);
-                            setAssignUserId(unit.assignedToId ?? "");
-                            setAssignNotes(unit.notes ?? "");
-                          }}
-                        >
-                          <Send size={13} />
-                          Enviar a
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {product.units.map((unit) => {
+                    const sale = unit.saleItem?.sale;
+                    const paidAmount = sale ? sale.payments.reduce((s, p) => s + Number(p.amount), 0) : 0;
+                    const isPaidComplete = sale ? paidAmount >= Number(sale.total) : false;
+                    const hasActivatedWarranty = unit.warrantyRoll?.installations.some((i) => i.activatedAt) ?? false;
+                    const isLocked = isPaidComplete || hasActivatedWarranty;
+
+                    return (
+                      <TableRow key={unit.id}>
+                        <TableCell>
+                          <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded font-bold tracking-wide">
+                            {unit.code}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          {sale ? (
+                            <div>
+                              <p className="text-sm font-medium">
+                                #{sale.number} — {sale.contact.company || `${sale.contact.firstName} ${sale.contact.lastName}`}
+                              </p>
+                              {isLocked && (
+                                <p className="text-xs text-muted-foreground">
+                                  {isPaidComplete ? "Pagado" : "Garantía activada"}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Sin vender</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(unit.createdAt).toLocaleDateString("es-AR")}
+                        </TableCell>
+                        <TableCell>
+                          {!sale ? (
+                            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => goToSaleForUnit(unit)}>
+                              <Send size={13} />
+                              Enviar a
+                            </Button>
+                          ) : isLocked ? (
+                            <span className="text-xs text-muted-foreground italic">Bloqueado</span>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              disabled={detachingUnitId === unit.id}
+                              onClick={() => handleReassignUnit(unit)}
+                            >
+                              <Send size={13} />
+                              {detachingUnitId === unit.id ? "Reasignando..." : "Reasignar"}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -768,8 +739,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           {product && product.units.length > 0 && (
             <div className="mt-4 flex items-center gap-6 text-sm text-muted-foreground border-t pt-4">
               <span>Total: <strong className="text-foreground">{product.units.length}</strong> unidades</span>
-              <span>Asignadas: <strong className="text-foreground">{product.units.filter((u) => u.assignedToId).length}</strong></span>
-              <span>Disponibles: <strong className="text-green-600">{product.units.filter((u) => !u.assignedToId).length}</strong></span>
+              <span>Vendidas: <strong className="text-foreground">{product.units.filter((u) => u.saleItem).length}</strong></span>
+              <span>Disponibles: <strong className="text-green-600">{product.units.filter((u) => !u.saleItem).length}</strong></span>
             </div>
           )}
         </CardContent>

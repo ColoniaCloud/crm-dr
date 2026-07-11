@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
+import { createProductUnits } from "@/lib/product-units";
 const log = createLogger("api/stock-movements");
 
 export async function GET(request: Request) {
@@ -88,9 +89,11 @@ export async function POST(request: Request) {
       });
 
       if (type === "ENTRADA") {
+        const units = await createProductUnits(tx, productId, Math.abs(qty));
         await ensureWarrantyRolls(tx, productId, Math.abs(qty), {
           type: "MANUAL_ADJUSTMENT",
           referenceId: movement.id,
+          unitIds: units.map((u) => u.id),
         });
       }
 

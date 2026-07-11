@@ -326,6 +326,7 @@ model ProductUnit {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   warrantyRoll WarrantyRoll?
+  saleItem     SaleItem?
 
   @@map("product_units")
 }
@@ -397,15 +398,17 @@ model Sale {
 }
 
 model SaleItem {
-  id          String    @id @default(cuid())
-  saleId      String
-  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product   @relation(fields: [productId], references: [id])
-  quantity    Int
-  unitPrice   Decimal   @db.Decimal(10, 2)
-  total       Decimal   @db.Decimal(10, 2)
-  warrantyRoll WarrantyRoll?
+  id            String       @id @default(cuid())
+  saleId        String
+  sale          Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id])
+  quantity      Int
+  unitPrice     Decimal      @db.Decimal(10, 2)
+  total         Decimal      @db.Decimal(10, 2)
+  productUnitId String?      @unique
+  productUnit   ProductUnit? @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
+  warrantyRoll  WarrantyRoll?
 
   @@map("sale_items")
 }

@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
+import { createProductUnits } from "@/lib/product-units";
 const log = createLogger("api/purchase-orders/[id]/receive");
 
 // POST /api/purchase-orders/[id]/receive
@@ -92,12 +93,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     });
 
-    // Create warranty lots for products that have a WarrantyConfig
+    // Generate trazability codes for the received units, and link them to
+    // warranty rolls for products that have a WarrantyConfig
     await prisma.$transaction(async (tx) => {
       for (const item of order.items) {
+        const units = await createProductUnits(tx, item.productId, item.quantity);
         await ensureWarrantyRolls(tx, item.productId, item.quantity, {
           type: "PURCHASE_ORDER",
           referenceId: id,
+          unitIds: units.map((u) => u.id),
         });
       }
     });

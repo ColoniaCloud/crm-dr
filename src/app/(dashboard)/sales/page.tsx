@@ -44,6 +44,9 @@ function SalesPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const preselectedContactId = searchParams.get("contactId") || "";
+  const preselectedProductId = searchParams.get("productId") || "";
+  const preselectedUnitId = searchParams.get("unitId") || "";
+  const preselectedUnitCode = searchParams.get("code") || "";
   const userRole = (session?.user?.role as string) || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
   const [sales, setSales] = useState<Sale[]>([]);
@@ -51,14 +54,34 @@ function SalesPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(!!preselectedContactId);
+  const [showForm, setShowForm] = useState(!!preselectedContactId || !!preselectedProductId);
   const [form, setForm] = useState({
     contactId: preselectedContactId, type: "REGULAR",
-    items: [{ productId: "", quantity: 1, unitPrice: 0 }] as Array<{ productId: string; quantity: number; unitPrice: number }>,
+    items: [
+      preselectedProductId
+        ? { productId: preselectedProductId, quantity: 1, unitPrice: 0, productUnitId: preselectedUnitId || undefined }
+        : { productId: "", quantity: 1, unitPrice: 0 },
+    ] as Array<{ productId: string; quantity: number; unitPrice: number; productUnitId?: string }>,
     discount: 0, notes: "", requiresFactura: false,
   });
 
   useEffect(() => { fetchAll(); }, []);
+
+  // Backfill the preloaded rollo's price once products finish loading
+  useEffect(() => {
+    if (!preselectedProductId || products.length === 0) return;
+    const p = products.find((p) => p.id === preselectedProductId);
+    if (!p) return;
+    setForm((f) => ({
+      ...f,
+      items: f.items.map((item, idx) =>
+        idx === 0 && item.productUnitId === preselectedUnitId
+          ? { ...item, unitPrice: parseFloat(p.price) }
+          : item
+      ),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, preselectedProductId, preselectedUnitId]);
 
   async function fetchAll() {
     setLoading(true);
@@ -97,6 +120,9 @@ function SalesPage() {
     if (field === "productId") {
       const p = products.find((p) => p.id === value);
       if (p) items[idx].unitPrice = parseFloat(p.price);
+      // Changing the product means this row no longer represents the
+      // specific rollo it was preloaded with.
+      delete items[idx].productUnitId;
     }
     setForm({ ...form, items });
   }
@@ -231,19 +257,26 @@ function SalesPage() {
             <div>
               <Label>Productos</Label>
               {form.items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 mt-2">
-                  <ProductSearchSelect
-                    products={products}
-                    value={item.productId}
-                    onValueChange={(v) => updateItem(idx, "productId", v)}
-                    placeholder="Seleccionar"
-                    showPrice={false}
-                    className="flex-1"
-                  />
-                  <Input type="number" className="w-20" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Math.max(1, parseInt(e.target.value) || 1))} min={1} />
-                  <Input type="number" className="w-28" value={item.unitPrice} onChange={(e) => updateItem(idx, "unitPrice", parseFloat(e.target.value) || 0)} />
-                  <span className="flex items-center w-28 text-sm">{formatCurrency(item.quantity * item.unitPrice)}</span>
-                  {form.items.length > 1 && <Button variant="ghost" size="icon" aria-label="Eliminar item" onClick={() => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })}><Trash2 className="h-4 w-4" /></Button>}
+                <div key={idx} className="mt-2">
+                  {item.productUnitId && (
+                    <p className="text-xs text-primary font-medium mb-1">
+                      Rollo: {idx === 0 && preselectedUnitCode ? preselectedUnitCode : item.productUnitId}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <ProductSearchSelect
+                      products={products}
+                      value={item.productId}
+                      onValueChange={(v) => updateItem(idx, "productId", v)}
+                      placeholder="Seleccionar"
+                      showPrice={false}
+                      className="flex-1"
+                    />
+                    <Input type="number" className="w-20" value={item.quantity} disabled={!!item.productUnitId} onChange={(e) => updateItem(idx, "quantity", Math.max(1, parseInt(e.target.value) || 1))} min={1} />
+                    <Input type="number" className="w-28" value={item.unitPrice} onChange={(e) => updateItem(idx, "unitPrice", parseFloat(e.target.value) || 0)} />
+                    <span className="flex items-center w-28 text-sm">{formatCurrency(item.quantity * item.unitPrice)}</span>
+                    {form.items.length > 1 && <Button variant="ghost" size="icon" aria-label="Eliminar item" onClick={() => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })}><Trash2 className="h-4 w-4" /></Button>}
+                  </div>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="mt-2" onClick={() => setForm({ ...form, items: [...form.items, { productId: "", quantity: 1, unitPrice: 0 }] })}><Plus className="h-4 w-4 mr-1" />Item</Button>

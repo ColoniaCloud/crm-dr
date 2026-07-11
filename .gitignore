@@ -47,3 +47,6 @@ next-env.d.ts
 # internal agent/claude dirs
 .agent/
 .claude/
+
+# markdown docs (not tracked in git, kept local-only)
+*.md

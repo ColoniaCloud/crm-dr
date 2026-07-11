@@ -120,19 +120,25 @@ export async function getRollsWhere(where: Prisma.WarrantyRollWhereInput) {
 }
 
 /**
- * Assigns the oldest IN_STOCK roll for a product to a SaleItem (FIFO)
- * and creates one PENDING installation slot on it.
- * No-op if no roll is available.
+ * Links a WarrantyRoll to a SaleItem and creates one PENDING installation
+ * slot on it. If the SaleItem already points at a specific traced unit
+ * (productUnitId), it must use THAT unit's roll — not a random one — so the
+ * warranty system stays consistent with what was actually sold. Otherwise
+ * falls back to FIFO: the oldest IN_STOCK roll for the product.
+ * No-op if no matching roll is available.
  */
 export async function linkRollToSaleItem(
   tx: Tx,
   saleItemId: string,
-  productId: string
+  productId: string,
+  productUnitId?: string | null
 ): Promise<void> {
-  const roll = await tx.warrantyRoll.findFirst({
-    where: { productId, status: "IN_STOCK", saleItemId: null },
-    orderBy: { createdAt: "asc" },
-  });
+  const roll = productUnitId
+    ? await tx.warrantyRoll.findFirst({ where: { unitId: productUnitId, status: "IN_STOCK", saleItemId: null } })
+    : await tx.warrantyRoll.findFirst({
+        where: { productId, status: "IN_STOCK", saleItemId: null },
+        orderBy: { createdAt: "asc" },
+      });
   if (!roll) return;
 
   await tx.warrantyRoll.update({

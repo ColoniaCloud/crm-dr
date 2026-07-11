@@ -12,6 +12,7 @@ const saleItemSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
+  productUnitId: z.string().optional(),
 });
 
 const createSaleSchema = z.object({
@@ -95,7 +96,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = validateBody(createSaleSchema, body);
     if (!parsed.success) return parsed.response;
-    const { contactId, items, type, discount, notes, requiresFactura } = parsed.data;
+    const { contactId, type, discount, notes, requiresFactura } = parsed.data;
+
+    // A specific traced roll (productUnitId) is always exactly 1 unit —
+    // ignore whatever quantity the client sent for those items.
+    const items = parsed.data.items.map((item) =>
+      item.productUnitId ? { ...item, quantity: 1 } : item
+    );
 
     const subtotal = items.reduce(
       (sum: number, item: { quantity: number; unitPrice: number }) =>
@@ -106,6 +113,22 @@ export async function POST(request: Request) {
     const total = subtotal - discount + tax;
 
     const result = await prisma.$transaction(async (tx) => {
+      // Validate any traced units (rollos) being sold: must exist, belong to
+      // the right product, and not already be tied to another sale.
+      for (const item of items) {
+        if (!item.productUnitId) continue;
+        const unit = await tx.productUnit.findUnique({
+          where: { id: item.productUnitId },
+          select: { productId: true, saleItem: { select: { id: true } } },
+        });
+        if (!unit || unit.productId !== item.productId) {
+          throw new Error("La unidad seleccionada no corresponde a ese producto");
+        }
+        if (unit.saleItem) {
+          throw new Error("Esa unidad ya está vendida en otra venta");
+        }
+      }
+
       // Create sale with items
       const sale = await tx.sale.create({
         data: {
@@ -119,14 +142,13 @@ export async function POST(request: Request) {
           total,
           notes,
           items: {
-            create: items.map(
-              (item: { productId: string; quantity: number; unitPrice: number }) => ({
-                productId: item.productId,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                total: item.quantity * item.unitPrice,
-              })
-            ),
+            create: items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              total: item.quantity * item.unitPrice,
+              productUnitId: item.productUnitId ?? null,
+            })),
           },
         },
         include: {
