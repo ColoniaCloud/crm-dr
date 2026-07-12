@@ -17,7 +17,7 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
-  CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign,
+  CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
 } from "lucide-react";
 
 interface SaleItem {
@@ -119,6 +119,7 @@ export default function SaleDetailPage() {
   const router = useRouter();
   const saleId = params.id as string;
   const isSuperAdmin = session?.user?.role === "SUPERADMIN";
+  const isAdmin = isSuperAdmin || session?.user?.role === "ADMIN";
 
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,6 +129,12 @@ export default function SaleDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // Register payment dialog
+  const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
+  const [createPaymentForm, setCreatePaymentForm] = useState({ amount: "", method: "CASH", reference: "", notes: "" });
+  const [creatingPayment, setCreatingPayment] = useState(false);
+  const [createPaymentError, setCreatePaymentError] = useState("");
 
   // Edit payment dialog
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
@@ -217,6 +224,41 @@ export default function SaleDetailPage() {
       setEditTotalError(err instanceof Error ? err.message : "Error al guardar");
     } finally {
       setEditTotalSaving(false);
+    }
+  }
+
+  function openCreatePayment() {
+    setCreatePaymentForm({ amount: "", method: "CASH", reference: "", notes: "" });
+    setCreatePaymentError("");
+    setCreatePaymentOpen(true);
+  }
+
+  async function handleCreatePayment() {
+    setCreatingPayment(true);
+    setCreatePaymentError("");
+    try {
+      const res = await fetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          saleId,
+          amount: parseFloat(createPaymentForm.amount),
+          method: createPaymentForm.method,
+          reference: createPaymentForm.reference || undefined,
+          notes: createPaymentForm.notes || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Error al registrar el pago");
+      }
+      setCreatePaymentOpen(false);
+      await fetchSale();
+      if (auditExpanded) await fetchAuditLogs();
+    } catch (err) {
+      setCreatePaymentError(err instanceof Error ? err.message : "Error al registrar el pago");
+    } finally {
+      setCreatingPayment(false);
     }
   }
 
@@ -432,7 +474,8 @@ export default function SaleDetailPage() {
         </Card>
       </div>
 
-      {/* Sale Items */}
+      {/* Sale Items + Payments */}
+      <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Productos</CardTitle>
@@ -500,8 +543,13 @@ export default function SaleDetailPage() {
 
       {/* Payments */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" />Pagos Registrados</CardTitle>
+          {isAdmin && (
+            <Button size="sm" onClick={openCreatePayment}>
+              <Plus className="h-4 w-4 mr-1" />Registrar pago
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {sale.payments.length > 0 ? (
@@ -557,6 +605,7 @@ export default function SaleDetailPage() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* Audit Log (SUPERADMIN only) */}
       {isSuperAdmin && (
@@ -739,6 +788,72 @@ export default function SaleDetailPage() {
             <Button variant="outline" onClick={() => setEditTotalOpen(false)}>Cancelar</Button>
             <Button onClick={handleEditTotal} disabled={editTotalSaving || !editTotalForm.total}>
               {editTotalSaving ? "Guardando..." : "Guardar cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Payment Dialog */}
+      <Dialog open={createPaymentOpen} onOpenChange={(open) => { if (!open) setCreatePaymentOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />Registrar Pago — Venta #{sale.number}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Monto *</Label>
+                <Input
+                  type="number"
+                  value={createPaymentForm.amount}
+                  onChange={(e) => setCreatePaymentForm({ ...createPaymentForm, amount: e.target.value })}
+                  min={0}
+                  step={0.01}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Método de pago *</Label>
+                <Select value={createPaymentForm.method} onValueChange={(v) => setCreatePaymentForm({ ...createPaymentForm, method: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CASH">Efectivo</SelectItem>
+                    <SelectItem value="TRANSFER">Transferencia</SelectItem>
+                    <SelectItem value="CHECK">Cheque</SelectItem>
+                    <SelectItem value="CARD">Tarjeta</SelectItem>
+                    <SelectItem value="OTHER">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Referencia</Label>
+              <Input
+                value={createPaymentForm.reference}
+                onChange={(e) => setCreatePaymentForm({ ...createPaymentForm, reference: e.target.value })}
+                placeholder="Número de transferencia, cheque, etc."
+              />
+            </div>
+            <div>
+              <Label>Notas</Label>
+              <Textarea
+                value={createPaymentForm.notes}
+                onChange={(e) => setCreatePaymentForm({ ...createPaymentForm, notes: e.target.value })}
+                placeholder="Observaciones adicionales..."
+                rows={3}
+              />
+            </div>
+            {remaining > 0 && (
+              <p className="text-xs text-muted-foreground">Saldo pendiente: {formatCurrency(remaining)}</p>
+            )}
+            {createPaymentError && <p className="text-sm text-destructive">{createPaymentError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreatePaymentOpen(false)}>Cancelar</Button>
+            <Button onClick={handleCreatePayment} disabled={creatingPayment || !createPaymentForm.amount}>
+              {creatingPayment ? "Registrando..." : "Registrar Pago"}
             </Button>
           </DialogFooter>
         </DialogContent>
