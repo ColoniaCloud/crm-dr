@@ -31,7 +31,7 @@ export async function POST(
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    return NextResponse.json(result.installation, { status: 201 });
+    return NextResponse.json({ ...result.installation, rollStatus: result.rollStatus }, { status: 201 });
   } catch (error) {
     log.error({ err: error }, "Error creating additional installation");
     return NextResponse.json({ error: "Error al generar la instalación" }, { status: 500 });

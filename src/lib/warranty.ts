@@ -204,7 +204,11 @@ export async function createAdditionalInstallation(
   contactId: string,
   fullRollCode: string
 ): Promise<
-  | { ok: true; installation: { id: string; installationNumber: number; installationCode: string; activationToken: string; status: string } }
+  | {
+      ok: true;
+      installation: { id: string; installationNumber: number; installationCode: string; activationToken: string; status: string };
+      rollStatus: string;
+    }
   | { ok: false; error: string; status: number }
 > {
   const result = await prisma.$transaction(async (tx) => {
@@ -240,11 +244,12 @@ export async function createAdditionalInstallation(
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
     });
 
-    if (nextNumber >= maxInstallations) {
+    const rollStatus = nextNumber >= maxInstallations ? "EXHAUSTED" : roll.status;
+    if (rollStatus === "EXHAUSTED") {
       await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
     }
 
-    return { ok: true as const, installation };
+    return { ok: true as const, installation, rollStatus };
   });
 
   if (result.ok) {
