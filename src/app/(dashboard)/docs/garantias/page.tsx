@@ -65,18 +65,21 @@ export default function WarrantyDocsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Step n={1} title="Configurar garantía en el producto">
-            Desde <strong>Productos</strong>, activá <code className="rounded bg-muted px-1 text-xs">WarrantyConfig</code> con
-            meses de garantía de rollo, meses de garantía de instalación y máximo de instalaciones por rollo.
-            Sin esta configuración, el producto nunca genera códigos de rollo.
+            Desde <strong>Productos</strong> (alta o edición), tildá el casillero <em>&quot;Este producto tiene garantía&quot;</em> y
+            completá meses de garantía de rollo, meses de garantía de instalación y máximo de instalaciones por rollo
+            (quedan pre-completados con valores por defecto). Sin esto, el producto nunca genera códigos de rollo.
           </Step>
           <Step n={2} title="Entra stock → se genera el rollo">
             El código se genera automáticamente en <strong>cualquier</strong> entrada de stock: recepción
             de una Orden de Compra, un ajuste manual de tipo <em>ENTRADA</em> en Movimientos de Stock,
-            o el alta de unidades sueltas desde la ficha del producto.
+            o el alta de unidades sueltas desde la ficha del producto. Si el producto no tiene garantía
+            configurada, se muestra un aviso no bloqueante en cada uno de estos tres lugares.
           </Step>
-          <Step n={3} title="Venta confirmada → se asigna el rollo">
-            Al confirmar una venta, el rollo <em>IN_STOCK</em> más antiguo (FIFO) se asigna al ítem
-            vendido y se crea el primer slot de instalación en estado <em>PENDING</em>.
+          <Step n={3} title="Venta creada → se asigna el rollo">
+            Al crear la venta, el rollo <em>IN_STOCK</em> más antiguo (FIFO) se asigna automáticamente al ítem
+            vendido y se crea el primer slot de instalación en estado <em>PENDING</em> — no hace falta ningún
+            paso adicional de confirmación. El link de activación aparece directamente en la pantalla de
+            éxito al terminar de cargar la venta.
           </Step>
           <Step n={4} title="Cliente activa la garantía">
             Desde la ficha del cliente en el CRM se copia el link{" "}

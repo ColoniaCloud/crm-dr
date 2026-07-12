@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate, calcTax } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 
 interface Sale {
@@ -29,6 +29,15 @@ interface Sale {
 
 interface Product { id: string; name: string; price: string; stock: number; }
 interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; }
+
+interface CreatedSaleItem {
+  product: { name: string };
+  warrantyRoll: {
+    fullRollCode: string;
+    installations: { activationToken: string; status: string }[];
+  } | null;
+}
+interface CreatedSale { number: number; items: CreatedSaleItem[]; }
 
 export default function SalesPageWrapper() {
   return (
@@ -64,6 +73,8 @@ function SalesPage() {
     ] as Array<{ productId: string; quantity: number; unitPrice: number; productUnitId?: string }>,
     discount: 0, notes: "", requiresFactura: false,
   });
+  const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -148,6 +159,9 @@ function SalesPage() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Error al crear venta");
       }
+      const created: CreatedSale = await res.json();
+      const hasWarrantyLink = created.items.some((i) => i.warrantyRoll?.installations.some((inst) => inst.status === "PENDING"));
+      setCreatedSale(hasWarrantyLink ? created : null);
       setShowForm(false);
       setForm({ contactId: "", type: "REGULAR", items: [{ productId: "", quantity: 1, unitPrice: 0 }], discount: 0, notes: "", requiresFactura: false });
       fetchAll();
@@ -228,6 +242,50 @@ function SalesPage() {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {createdSale && (
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              Venta #{createdSale.number} — links de garantía generados
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {createdSale.items.map((item, idx) => {
+              const pending = item.warrantyRoll?.installations.find((i) => i.status === "PENDING");
+              if (!pending) return null;
+              const url = `${window.location.origin}/garantia/${pending.activationToken}`;
+              return (
+                <div key={idx} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{item.product.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{url}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(url).catch(() => {});
+                      setCopiedToken(pending.activationToken);
+                      setTimeout(() => setCopiedToken(null), 2000);
+                    }}
+                  >
+                    {copiedToken === pending.activationToken ? (
+                      <Check className="h-4 w-4 mr-1 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4 mr-1" />
+                    )}
+                    {copiedToken === pending.activationToken ? "Copiado" : "Copiar link"}
+                  </Button>
+                </div>
+              );
+            })}
+            <Button variant="ghost" size="sm" onClick={() => setCreatedSale(null)}>Cerrar</Button>
+          </CardContent>
+        </Card>
+      )}
 
       {showForm && (
         <Card>

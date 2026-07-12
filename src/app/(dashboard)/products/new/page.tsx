@@ -66,6 +66,10 @@ const EMPTY_FORM = {
   cost: "",
   description: "",
   imageUrl: "",
+  warrantyEnabled: false,
+  rollWarrantyMonths: "24",
+  installWarrantyMonths: "12",
+  maxInstallations: "15",
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -172,6 +176,13 @@ export default function NewProductPage() {
           description: form.description || null,
           imageUrl: form.imageUrl || null,
           discounts: discounts.filter((d) => d.value > 0),
+          warrantyConfig: form.warrantyEnabled
+            ? {
+                rollWarrantyMonths: parseInt(form.rollWarrantyMonths) || 24,
+                installWarrantyMonths: parseInt(form.installWarrantyMonths) || 12,
+                maxInstallations: parseInt(form.maxInstallations) || 15,
+              }
+            : null,
         }),
       });
       if (!res.ok) throw new Error("Error al crear producto");
@@ -292,6 +303,36 @@ export default function NewProductPage() {
                 <Label>Costo</Label>
                 <Input type="number" step="0.01" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="Opcional" />
               </div>
+            </div>
+
+            {/* Garantía */}
+            <div className="space-y-2 rounded-md border px-3 py-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="warrantyEnabled"
+                  checked={form.warrantyEnabled}
+                  onChange={(e) => setForm({ ...form, warrantyEnabled: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="warrantyEnabled" className="cursor-pointer">Este producto tiene garantía</Label>
+              </div>
+              {form.warrantyEnabled && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Meses garantía del rollo</Label>
+                    <Input type="number" min="0" value={form.rollWarrantyMonths} onChange={(e) => setForm({ ...form, rollWarrantyMonths: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Meses garantía instalación</Label>
+                    <Input type="number" min="0" value={form.installWarrantyMonths} onChange={(e) => setForm({ ...form, installWarrantyMonths: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Máx. instalaciones por rollo</Label>
+                    <Input type="number" min="1" value={form.maxInstallations} onChange={(e) => setForm({ ...form, maxInstallations: e.target.value })} />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Imagen */}

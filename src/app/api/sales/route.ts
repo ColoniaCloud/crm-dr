@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
+import { linkRollToSaleItem } from "@/lib/warranty";
+import { notifyNewPurchase } from "@/lib/client-portal";
 import { calcTax } from "@/lib/utils";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
@@ -191,6 +193,13 @@ export async function POST(request: Request) {
         });
       }
 
+      // Assign a warranty roll (FIFO, or the traced unit's roll if one was
+      // selected) to each item that has one available. No-op per item if the
+      // product has no WarrantyConfig or no IN_STOCK roll is available.
+      for (const item of sale.items) {
+        await linkRollToSaleItem(tx, item.id, item.productId, item.productUnitId);
+      }
+
       // Auto-convert lead to client
       if (sale.contact.type === "LEAD") {
         await tx.contact.update({
@@ -207,7 +216,12 @@ export async function POST(request: Request) {
       include: {
         contact: { include: { assignedTo: { select: { id: true, name: true, email: true } } } },
         user: { select: { id: true, name: true } },
-        items: { include: { product: true } },
+        items: {
+          include: {
+            product: true,
+            warrantyRoll: { include: { installations: true } },
+          },
+        },
         remito: true,
         payments: true,
       },
@@ -216,6 +230,11 @@ export async function POST(request: Request) {
     const contactName = sale?.contact.company || `${sale?.contact.firstName} ${sale?.contact.lastName}`.trim() || "";
     const operatorName = session.user.name || "Operador";
     const wasConverted = result.contact.type === "LEAD";
+
+    // Portal notification for the client (no-op for LEAD contacts, but the
+    // conversion above already ran inside the same transaction, so this
+    // still fires correctly on a lead's first purchase).
+    await notifyNewPurchase(result.contactId, result.number, Number(result.total));
 
     // Notify the contact's assigned user about the sale
     if (sale?.contact.assignedTo) {

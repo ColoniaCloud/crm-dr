@@ -14,6 +14,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       include: {
         discounts: true,
         priceTiers: { orderBy: { minQty: "asc" } },
+        warrantyConfig: true,
         units: {
           include: {
             saleItem: {
@@ -31,7 +32,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
               },
             },
             warrantyRoll: {
-              select: { installations: { select: { activatedAt: true } } },
+              select: {
+                fullRollCode: true,
+                status: true,
+                installations: { select: { activatedAt: true } },
+              },
             },
           },
           orderBy: { createdAt: "asc" },
@@ -53,10 +58,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const body = await request.json();
-    const { discounts, priceTiers, ...productData } = body;
+    const { discounts, priceTiers, warrantyConfig, ...productData } = body;
 
     const product = await prisma.$transaction(async (tx) => {
       const updated = await tx.product.update({ where: { id }, data: productData });
+
+      if (warrantyConfig !== undefined) {
+        if (warrantyConfig === null) {
+          await tx.warrantyConfig.deleteMany({ where: { productId: id } });
+        } else {
+          await tx.warrantyConfig.upsert({
+            where: { productId: id },
+            create: {
+              productId: id,
+              rollWarrantyMonths: warrantyConfig.rollWarrantyMonths,
+              installWarrantyMonths: warrantyConfig.installWarrantyMonths,
+              maxInstallations: warrantyConfig.maxInstallations,
+            },
+            update: {
+              rollWarrantyMonths: warrantyConfig.rollWarrantyMonths,
+              installWarrantyMonths: warrantyConfig.installWarrantyMonths,
+              maxInstallations: warrantyConfig.maxInstallations,
+            },
+          });
+        }
+      }
 
       if (discounts !== undefined) {
         await tx.productDiscount.deleteMany({ where: { productId: id } });

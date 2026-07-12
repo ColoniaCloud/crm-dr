@@ -175,7 +175,7 @@ export async function createClientClaim(
   return { ok: true, id: claim.id, status: claim.status };
 }
 
-/** Notifies a CLIENT contact's portal of a newly confirmed purchase. */
+/** Notifies a CLIENT contact's portal of a newly registered purchase. */
 export async function notifyNewPurchase(contactId: string, saleNumber: number, total: number) {
   const contact = await prisma.contact.findFirst({ where: { id: contactId, type: "CLIENT" }, select: { id: true } });
   if (!contact) return;
@@ -184,8 +184,8 @@ export async function notifyNewPurchase(contactId: string, saleNumber: number, t
     data: {
       contactId,
       type: "NEW_PURCHASE",
-      title: "Nueva compra confirmada",
-      message: `Se confirmó tu compra #${saleNumber} por un total de $${total}.`,
+      title: "Nueva compra registrada",
+      message: `Se registró tu compra #${saleNumber} por un total de $${total}.`,
     },
   });
 }

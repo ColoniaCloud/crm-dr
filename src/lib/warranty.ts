@@ -158,6 +158,32 @@ export async function linkRollToSaleItem(
 }
 
 /**
+ * Undoes linkRollToSaleItem when a SaleItem is about to be deleted (sale
+ * deletion, unit reassignment, or a cascading contact/client/lead delete).
+ * If the client already activated the warranty (an ACTIVE installation
+ * exists), the roll is left alone — returning an activated roll to the
+ * sellable FIFO pool would let two different customers end up holding the
+ * same "unique" warranty code, which is worse than leaving it orphaned.
+ * No-op if the SaleItem never had a roll assigned.
+ */
+export async function releaseRollForSaleItem(tx: Tx, saleItemId: string): Promise<void> {
+  const roll = await tx.warrantyRoll.findUnique({
+    where: { saleItemId },
+    include: { installations: { select: { status: true } } },
+  });
+  if (!roll) return;
+
+  const hasActiveInstallation = roll.installations.some((i) => i.status === "ACTIVE");
+  if (hasActiveInstallation) return;
+
+  await tx.warrantyInstallation.deleteMany({ where: { rollId: roll.id, status: "PENDING" } });
+  await tx.warrantyRoll.update({
+    where: { id: roll.id },
+    data: { saleItemId: null, status: "IN_STOCK" },
+  });
+}
+
+/**
  * Activates a warranty installation slot with client and asset data.
  * Expiry is calculated from warrantyConfig.warrantyMonths (defaults to 12).
  */

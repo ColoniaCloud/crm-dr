@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/api-auth";
 import { logOperatorAction } from "@/lib/notifications";
 import { calcTax } from "@/lib/utils";
 import { createLogger } from "@/lib/logger";
+import { releaseRollForSaleItem } from "@/lib/warranty";
 
 const log = createLogger("api/products/[id]/units/[unitId]/detach-sale");
 
@@ -100,6 +101,7 @@ export async function POST(
         });
       }
 
+      await releaseRollForSaleItem(tx, saleItem.id);
       await tx.saleItem.delete({ where: { id: saleItem.id } });
 
       const remainingItems = sale.items.length - 1;

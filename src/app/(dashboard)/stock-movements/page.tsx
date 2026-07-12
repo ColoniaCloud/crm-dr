@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus } from "lucide-react";
+import { Plus, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ interface Product {
   name: string;
   sku: string | null;
   stock: number;
+  warrantyConfig: { id: string } | null;
 }
 
 interface StockMovement {
@@ -285,6 +286,16 @@ export default function StockMovementsPage() {
                 placeholder="Descripción del ajuste..."
               />
             </div>
+            {(() => {
+              const selectedProduct = products.find((p) => p.id === form.productId);
+              if (form.type !== "ENTRADA" || !selectedProduct || selectedProduct.warrantyConfig) return null;
+              return (
+                <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Este producto no tiene garantía configurada — estos códigos serán solo de trazabilidad, sin garantía.
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>

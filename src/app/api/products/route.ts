@@ -40,6 +40,7 @@ export async function GET(request: Request) {
       where,
       include: {
         discounts: true,
+        warrantyConfig: { select: { id: true } },
         _count: { select: { units: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -63,10 +64,21 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { discounts, priceTiers, ...productData } = body;
+    const { discounts, priceTiers, warrantyConfig, ...productData } = body;
 
     const product = await prisma.$transaction(async (tx) => {
       const created = await tx.product.create({ data: productData });
+
+      if (warrantyConfig) {
+        await tx.warrantyConfig.create({
+          data: {
+            productId: created.id,
+            rollWarrantyMonths: warrantyConfig.rollWarrantyMonths,
+            installWarrantyMonths: warrantyConfig.installWarrantyMonths,
+            maxInstallations: warrantyConfig.maxInstallations,
+          },
+        });
+      }
 
       if (discounts && discounts.length > 0) {
         await tx.productDiscount.createMany({
@@ -92,7 +104,12 @@ export async function POST(request: Request) {
 
       return tx.product.findUnique({
         where: { id: created.id },
-        include: { discounts: true, priceTiers: { orderBy: { minQty: "asc" } }, _count: { select: { units: true } } },
+        include: {
+          discounts: true,
+          priceTiers: { orderBy: { minQty: "asc" } },
+          warrantyConfig: true,
+          _count: { select: { units: true } },
+        },
       });
     });
 

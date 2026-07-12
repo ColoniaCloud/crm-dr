@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   ArrowLeft, Package, Sparkles, Plus, Trash2, Send, QrCode, Check, ImagePlus,
-  Pencil, DollarSign, Layers, Tag, BarChart3, Info,
+  Pencil, DollarSign, Layers, Tag, BarChart3, Info, AlertTriangle,
 } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
 
@@ -66,6 +66,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   PPF: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
 };
 
+const ROLL_STATUS_LABEL: Record<string, string> = {
+  IN_STOCK: "En stock",
+  SOLD: "Vendido",
+  IN_USE: "En uso",
+  EXHAUSTED: "Agotado",
+  VOIDED: "Anulado",
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Discount {
   id?: string;
@@ -96,8 +104,17 @@ interface ProductUnit {
     };
   } | null;
   warrantyRoll: {
+    fullRollCode: string;
+    status: string;
     installations: { activatedAt: string | null }[];
   } | null;
+}
+
+interface WarrantyConfig {
+  id: string;
+  rollWarrantyMonths: number;
+  installWarrantyMonths: number;
+  maxInstallations: number;
 }
 
 interface ProductDetail {
@@ -116,6 +133,7 @@ interface ProductDetail {
   active: boolean;
   discounts: Discount[];
   units: ProductUnit[];
+  warrantyConfig: WarrantyConfig | null;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -137,6 +155,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [form, setForm] = useState({
     name: "", category: "AUTOMOTIVE", subcategory: "", brand: "",
     shade: "", stock: "0", minStock: "0", price: "", cost: "", description: "", imageUrl: "",
+    warrantyEnabled: false, rollWarrantyMonths: "24", installWarrantyMonths: "12", maxInstallations: "15",
   });
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
@@ -180,6 +199,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       cost: data.cost != null ? String(data.cost) : "",
       description: data.description ?? "",
       imageUrl: data.imageUrl ?? "",
+      warrantyEnabled: !!data.warrantyConfig,
+      rollWarrantyMonths: String(data.warrantyConfig?.rollWarrantyMonths ?? 24),
+      installWarrantyMonths: String(data.warrantyConfig?.installWarrantyMonths ?? 12),
+      maxInstallations: String(data.warrantyConfig?.maxInstallations ?? 15),
     });
     setDiscounts(data.discounts.map((d) => ({ ...d, value: Number(d.value), label: d.label ?? "" })));
     const rawTiers = (data as ProductDetail & { priceTiers?: PriceTier[] }).priceTiers ?? [];
@@ -216,6 +239,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           imageUrl: form.imageUrl || null,
           discounts: discounts.filter((d) => d.value > 0),
           priceTiers: priceTiers.filter((t) => t.price > 0 && t.minQty > 0),
+          warrantyConfig: form.warrantyEnabled
+            ? {
+                rollWarrantyMonths: parseInt(form.rollWarrantyMonths) || 24,
+                installWarrantyMonths: parseInt(form.installWarrantyMonths) || 12,
+                maxInstallations: parseInt(form.maxInstallations) || 15,
+              }
+            : null,
         }),
       });
       if (!res.ok) throw new Error("Error al guardar");
@@ -636,6 +666,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     Se generará un código único por cada unidad. Stock actual: {product?.stock ?? 0}, con código: {product?.units.length ?? 0} — no se puede generar más de lo que falta para alcanzar el stock (esto no suma stock nuevo).
                   </p>
                 </div>
+                {product && !product.warrantyConfig && (
+                  <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Este producto no tiene garantía configurada — estos códigos serán solo de trazabilidad, sin garantía.
+                  </div>
+                )}
                 {newCodes.length > 0 && (
                   <div className="rounded-md border p-3 space-y-1 max-h-40 overflow-y-auto">
                     <p className="text-xs font-medium text-green-700 mb-2">{"✓"} {newCodes.length} unidades creadas:</p>
@@ -667,6 +703,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <TableHeader>
                   <TableRow>
                     <TableHead>Código</TableHead>
+                    <TableHead>Garantía</TableHead>
                     <TableHead>Venta</TableHead>
                     <TableHead>Fecha creación</TableHead>
                     <TableHead>Acción</TableHead>
@@ -686,6 +723,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded font-bold tracking-wide">
                             {unit.code}
                           </code>
+                        </TableCell>
+                        <TableCell>
+                          {!product.warrantyConfig ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : !unit.warrantyRoll ? (
+                            <span className="text-xs text-muted-foreground italic">Sin rollo</span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <code className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded">
+                                {unit.warrantyRoll.fullRollCode}
+                              </code>
+                              <Badge variant="secondary" className="text-[10px]">
+                                {ROLL_STATUS_LABEL[unit.warrantyRoll.status] ?? unit.warrantyRoll.status}
+                              </Badge>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           {sale ? (
@@ -831,6 +884,39 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <Input type="number" step="0.01" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="Opcional" />
                 </div>
               )}
+            </div>
+
+            {/* Garantía */}
+            <div className="space-y-2 rounded-md border px-3 py-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="warrantyEnabledEdit"
+                  checked={form.warrantyEnabled}
+                  onChange={(e) => setForm({ ...form, warrantyEnabled: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="warrantyEnabledEdit" className="cursor-pointer">Este producto tiene garantía</Label>
+              </div>
+              {form.warrantyEnabled && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Meses garantía del rollo</Label>
+                    <Input type="number" min="0" value={form.rollWarrantyMonths} onChange={(e) => setForm({ ...form, rollWarrantyMonths: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Meses garantía instalación</Label>
+                    <Input type="number" min="0" value={form.installWarrantyMonths} onChange={(e) => setForm({ ...form, installWarrantyMonths: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Máx. instalaciones por rollo</Label>
+                    <Input type="number" min="1" value={form.maxInstallations} onChange={(e) => setForm({ ...form, maxInstallations: e.target.value })} />
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Activar garantía no genera códigos retroactivos para stock o unidades ya existentes — solo aplica a partir de la próxima entrada de stock.
+              </p>
             </div>
 
             {/* Imagen */}

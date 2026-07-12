@@ -4,8 +4,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable } from "@/lib/notifications";
-import { linkRollToSaleItem } from "@/lib/warranty";
-import { notifyNewPurchase } from "@/lib/client-portal";
+import { releaseRollForSaleItem } from "@/lib/warranty";
 
 const log = createLogger("api/sales/[id]");
 
@@ -79,7 +78,6 @@ export async function PUT(
     const existing = await prisma.sale.findUnique({
       where: { id },
       include: {
-        items: true,
         contact: { select: { firstName: true, lastName: true, company: true } },
       },
     });
@@ -90,22 +88,9 @@ export async function PUT(
     const body = await request.json();
     const { status, ...rest } = body as { status?: string; [key: string]: unknown };
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.update({
-        where: { id },
-        data: { ...(status ? { status: status as Prisma.SaleUpdateInput["status"] } : {}), ...rest },
-        include: { items: true },
-      });
-
-      // Assign warranty rolls when sale transitions to CONFIRMED — FIFO,
-      // unless the item already points at a specific traced unit (rollo)
-      if (status === "CONFIRMED" && existing.status !== "CONFIRMED") {
-        for (const item of existing.items) {
-          await linkRollToSaleItem(tx, item.id, item.productId, item.productUnitId);
-        }
-      }
-
-      return sale;
+    const updated = await prisma.sale.update({
+      where: { id },
+      data: { ...(status ? { status: status as Prisma.SaleUpdateInput["status"] } : {}), ...rest },
     });
 
     const cName =
@@ -119,10 +104,6 @@ export async function PUT(
       description: `Actualizó venta #${existing.number} de "${cName}"${status ? ` → ${status}` : ""}`,
       link: `/sales/${id}`,
     });
-
-    if (status === "CONFIRMED" && existing.status !== "CONFIRMED") {
-      await notifyNewPurchase(existing.contactId, updated.number, Number(updated.total));
-    }
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -279,6 +260,9 @@ export async function DELETE(
             },
           });
         }
+      }
+      for (const item of saleItems) {
+        await releaseRollForSaleItem(tx, item.id);
       }
       await tx.payment.deleteMany({ where: { saleId: id } });
       await tx.remito.deleteMany({ where: { saleId: id } });

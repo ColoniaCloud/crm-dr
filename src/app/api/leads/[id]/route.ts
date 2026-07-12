@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
 import { isAdminRole } from "@/lib/utils";
+import { releaseRollForSaleItem } from "@/lib/warranty";
 const log = createLogger("api/leads/[id]");
 
 export async function GET(
@@ -230,6 +231,10 @@ export async function DELETE(
       // 2. Remitos + sale items via sale IDs
       const saleIds = (await tx.sale.findMany({ where: { contactId: id }, select: { id: true } })).map((s) => s.id);
       if (saleIds.length > 0) {
+        const saleItemIds = (await tx.saleItem.findMany({ where: { saleId: { in: saleIds } }, select: { id: true } })).map((i) => i.id);
+        for (const saleItemId of saleItemIds) {
+          await releaseRollForSaleItem(tx, saleItemId);
+        }
         await tx.remito.deleteMany({ where: { saleId: { in: saleIds } } });
         await tx.saleItem.deleteMany({ where: { saleId: { in: saleIds } } });
       }

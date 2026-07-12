@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Plus, Trash2, PackageCheck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, PackageCheck, AlertTriangle } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
 
 interface Product {
@@ -21,6 +21,7 @@ interface Product {
   sku: string | null;
   category: string;
   stock: number;
+  warrantyConfig: { id: string } | null;
 }
 
 interface PurchaseOrderItem {
@@ -366,6 +367,19 @@ export default function PurchaseOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {order.status !== "RECEIVED" && (() => {
+        const unconfigured = Array.from(new Set(
+          order.items.filter((i) => !i.product.warrantyConfig).map((i) => i.product.name)
+        ));
+        if (unconfigured.length === 0) return null;
+        return (
+          <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Los siguientes productos no tienen garantía configurada: {unconfigured.join(", ")} — sus códigos serán solo de trazabilidad.
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-3 gap-4">
         <Card>

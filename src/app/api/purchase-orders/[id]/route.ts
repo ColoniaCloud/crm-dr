@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       where: { id },
       include: {
         supplier: true,
-        items: { include: { product: { select: { id: true, name: true, sku: true, category: true, stock: true } } } },
+        items: { include: { product: { select: { id: true, name: true, sku: true, category: true, stock: true, warrantyConfig: { select: { id: true } } } } } },
         importCosts: true,
       },
     });
