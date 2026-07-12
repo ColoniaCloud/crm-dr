@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { addMonths } from "date-fns";
 import type { Prisma } from "@prisma/client";
+import { notifyAdmins } from "@/lib/notifications";
 
 type Tx = Prisma.TransactionClient;
 
@@ -59,7 +60,14 @@ export async function ensureWarrantyRolls(
 
 const ROLL_TRACE_INCLUDE = {
   lot: true,
-  product: { select: { id: true, name: true, sku: true } },
+  product: {
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      warrantyConfig: { select: { maxInstallations: true } },
+    },
+  },
   saleItem: {
     include: {
       sale: {
@@ -181,6 +189,74 @@ export async function releaseRollForSaleItem(tx: Tx, saleItemId: string): Promis
     where: { id: roll.id },
     data: { saleItemId: null, status: "IN_STOCK" },
   });
+}
+
+const DEFAULT_MAX_INSTALLATIONS = 15;
+
+/**
+ * Creates an additional installation slot on a roll already owned by a
+ * CLIENT contact (structural ownership: sold to them via a completed Sale,
+ * same check as createClientClaim in client-portal.ts). Lets a partner like
+ * NL360 self-serve a new sub-code each time they cut a fresh piece off a
+ * roll they bought, up to the product's maxInstallations.
+ */
+export async function createAdditionalInstallation(
+  contactId: string,
+  fullRollCode: string
+): Promise<
+  | { ok: true; installation: { id: string; installationNumber: number; installationCode: string; activationToken: string; status: string } }
+  | { ok: false; error: string; status: number }
+> {
+  const result = await prisma.$transaction(async (tx) => {
+    const roll = await tx.warrantyRoll.findFirst({
+      where: { fullRollCode, saleItem: { sale: { contactId } } },
+      include: {
+        installations: { select: { id: true } },
+        product: { select: { warrantyConfig: { select: { maxInstallations: true } } } },
+      },
+    });
+    if (!roll) {
+      return { ok: false as const, error: "Rollo no encontrado", status: 404 };
+    }
+    if (roll.status === "VOIDED" || roll.status === "EXHAUSTED") {
+      return { ok: false as const, error: "Este rollo ya no admite más instalaciones", status: 400 };
+    }
+
+    const maxInstallations = roll.product.warrantyConfig?.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
+    const nextNumber = roll.installations.length + 1;
+
+    if (roll.installations.length >= maxInstallations) {
+      await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
+      return { ok: false as const, error: "Este rollo ya no admite más instalaciones", status: 400 };
+    }
+
+    const installation = await tx.warrantyInstallation.create({
+      data: {
+        rollId: roll.id,
+        installationNumber: nextNumber,
+        installationCode: `${fullRollCode}-I${nextNumber}`,
+        status: "PENDING",
+      },
+      select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
+    });
+
+    if (nextNumber >= maxInstallations) {
+      await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
+    }
+
+    return { ok: true as const, installation };
+  });
+
+  if (result.ok) {
+    await notifyAdmins({
+      type: "WARRANTY_SUBCODE_CREATED",
+      title: "Nuevo sub-código de garantía (portal de clientes)",
+      message: `Se generó una nueva instalación (${result.installation.installationCode}) sobre el rollo ${fullRollCode}`,
+      link: "/warranty-claims",
+    });
+  }
+
+  return result;
 }
 
 /**
