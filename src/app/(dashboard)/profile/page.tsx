@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Lock, Camera, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { User, Mail, Lock, Camera, CheckCircle2, Eye, EyeOff, History, Search, MessageCircle } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 
 interface ProfileData {
   id: string;
@@ -16,6 +19,22 @@ interface ProfileData {
   email: string;
   role: string;
   avatarUrl: string | null;
+}
+
+interface LogItem {
+  id: string;
+  kind: "email" | "whatsapp";
+  status: string;
+  createdAt: string;
+  userName: string | null;
+  contactName: string | null;
+  direction?: "IN" | "OUT";
+  subject?: string | null;
+  toAddress?: string;
+  fromAddress?: string;
+  phone?: string;
+  message?: string;
+  error?: string | null;
 }
 
 export default function ProfilePage() {
@@ -40,6 +59,47 @@ export default function ProfilePage() {
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
 
+  // Registro de comunicaciones de todos los usuarios — el backend solo lo
+  // habilita para dos personas puntuales (ver requireCommsLogViewer); si el
+  // fetch vuelve 403, la sección directamente no se muestra.
+  const [logsAllowed, setLogsAllowed] = useState(false);
+  const [activeLogTab, setActiveLogTab] = useState<"email" | "whatsapp">("email");
+  const [emailLogs, setEmailLogs] = useState<LogItem[]>([]);
+  const [waLogs, setWaLogs] = useState<LogItem[]>([]);
+  const [emailHasMore, setEmailHasMore] = useState(false);
+  const [waHasMore, setWaHasMore] = useState(false);
+  const [emailSearch, setEmailSearch] = useState("");
+  const [waSearch, setWaSearch] = useState("");
+  const [emailSearchInput, setEmailSearchInput] = useState("");
+  const [waSearchInput, setWaSearchInput] = useState("");
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const loadLog = useCallback(async (type: "email" | "whatsapp", search: string, append: boolean) => {
+    setLogsLoading(true);
+    try {
+      const skip = append ? (type === "email" ? emailLogs.length : waLogs.length) : 0;
+      const params = new URLSearchParams({ type, take: "30", skip: String(skip) });
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/profile/activity-log?${params}`);
+      if (res.status === 403) {
+        setLogsAllowed(false);
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      setLogsAllowed(true);
+      if (type === "email") {
+        setEmailLogs((prev) => (append ? [...prev, ...data.items] : data.items));
+        setEmailHasMore(data.hasMore);
+      } else {
+        setWaLogs((prev) => (append ? [...prev, ...data.items] : data.items));
+        setWaHasMore(data.hasMore);
+      }
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [emailLogs.length, waLogs.length]);
+
   useEffect(() => {
     fetch("/api/profile")
       .then((r) => r.json())
@@ -50,7 +110,35 @@ export default function ProfilePage() {
         setAvatarUrl(data.avatarUrl || "");
       })
       .finally(() => setLoading(false));
+
+    loadLog("email", "", false);
+    loadLog("whatsapp", "", false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleEmailSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setEmailSearch(emailSearchInput);
+    loadLog("email", emailSearchInput, false);
+  }
+
+  function handleWaSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setWaSearch(waSearchInput);
+    loadLog("whatsapp", waSearchInput, false);
+  }
+
+  function emailStatusBadge(item: LogItem) {
+    if (item.status === "FAILED") return <Badge variant="destructive" className="text-[10px]">Falló</Badge>;
+    if (item.direction === "IN") return <Badge variant="secondary" className="text-[10px]">Recibido</Badge>;
+    return <Badge className="text-[10px]">Enviado</Badge>;
+  }
+
+  function waStatusBadge(item: LogItem) {
+    return item.status === "FAILED"
+      ? <Badge variant="destructive" className="text-[10px]">Falló</Badge>
+      : <Badge className="text-[10px]">Enviado</Badge>;
+  }
 
   function handleAvatarFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -272,6 +360,165 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Registro de comunicaciones de todos los usuarios — solo visible para
+          las dos personas habilitadas por el backend (requireCommsLogViewer) */}
+      {logsAllowed && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History size={16} className="text-primary" />
+              Registro de comunicaciones — todos los usuarios
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeLogTab} onValueChange={(v) => setActiveLogTab(v as "email" | "whatsapp")}>
+              <TabsList>
+                <TabsTrigger value="email"><Mail size={14} className="mr-1.5" />Emails</TabsTrigger>
+                <TabsTrigger value="whatsapp"><MessageCircle size={14} className="mr-1.5" />WhatsApp</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="email" className="space-y-3">
+                <form onSubmit={handleEmailSearchSubmit} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-8"
+                      placeholder="Buscar por asunto, destinatario u operador..."
+                      value={emailSearchInput}
+                      onChange={(e) => setEmailSearchInput(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" size="sm">Buscar</Button>
+                </form>
+
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Operador</TableHead>
+                        <TableHead>Para / De</TableHead>
+                        <TableHead>Asunto</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {emailLogs.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                            Sin emails registrados
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {emailLogs.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDateTime(item.createdAt)}
+                          </TableCell>
+                          <TableCell className="text-sm font-medium">{item.userName ?? "—"}</TableCell>
+                          <TableCell className="text-sm">
+                            {item.direction === "IN" ? item.fromAddress : item.toAddress}
+                            {item.contactName && (
+                              <span className="block text-xs text-muted-foreground">{item.contactName}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm max-w-[240px] truncate">
+                            {item.subject || "(sin asunto)"}
+                          </TableCell>
+                          <TableCell>{emailStatusBadge(item)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {emailHasMore && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={logsLoading}
+                      onClick={() => loadLog("email", emailSearch, true)}
+                    >
+                      {logsLoading ? "Cargando..." : "Cargar más"}
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="whatsapp" className="space-y-3">
+                <form onSubmit={handleWaSearchSubmit} className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-8"
+                      placeholder="Buscar por mensaje, teléfono u operador..."
+                      value={waSearchInput}
+                      onChange={(e) => setWaSearchInput(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" size="sm">Buscar</Button>
+                </form>
+
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Operador</TableHead>
+                        <TableHead>Destinatario</TableHead>
+                        <TableHead>Mensaje</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {waLogs.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                            Sin mensajes de WhatsApp registrados
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {waLogs.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {formatDateTime(item.createdAt)}
+                          </TableCell>
+                          <TableCell className="text-sm font-medium">{item.userName ?? "—"}</TableCell>
+                          <TableCell className="text-sm">
+                            {item.phone}
+                            {item.contactName && (
+                              <span className="block text-xs text-muted-foreground">{item.contactName}</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm max-w-[240px] truncate" title={item.message}>
+                            {item.message}
+                          </TableCell>
+                          <TableCell>{waStatusBadge(item)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {waHasMore && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={logsLoading}
+                      onClick={() => loadLog("whatsapp", waSearch, true)}
+                    >
+                      {logsLoading ? "Cargando..." : "Cargar más"}
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

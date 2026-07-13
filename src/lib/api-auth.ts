@@ -63,3 +63,31 @@ export async function requireMailConfigAdmin(): Promise<
   }
   return { success: true, session };
 }
+
+// Business rule: regardless of role, only these two specific people can see the
+// cross-user log of every email and WhatsApp message sent (src/app/api/profile/activity-log).
+const COMMS_LOG_VIEWER_EMAILS = ["manuel@wpuruguay.com", "drpolarizados.contacto@gmail.com"];
+
+/**
+ * Guards the cross-user communications log route. Mirrors requireRole's result
+ * shape, but gates by a fixed allowlist of emails instead of by role.
+ */
+export async function requireCommsLogViewer(): Promise<
+  | { success: true; session: Session }
+  | { success: false; response: NextResponse }
+> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return {
+      success: false,
+      response: NextResponse.json({ error: "No autorizado" }, { status: 401 }),
+    };
+  }
+  if (!COMMS_LOG_VIEWER_EMAILS.includes(session.user.email?.toLowerCase() ?? "")) {
+    return {
+      success: false,
+      response: NextResponse.json({ error: "Acceso restringido" }, { status: 403 }),
+    };
+  }
+  return { success: true, session };
+}
