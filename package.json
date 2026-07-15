@@ -46,6 +46,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "imapflow": "^1.4.6",
+    "jose": "^6.2.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "leaflet": "^1.9.4",
