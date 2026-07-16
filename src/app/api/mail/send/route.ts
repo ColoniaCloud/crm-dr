@@ -6,17 +6,36 @@ import { validateBody } from "@/lib/api-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { isUserMailConfigured, sendUserMail } from "@/lib/user-mailer";
 import { logOperatorAction } from "@/lib/notifications";
+import { stripHtml } from "@/lib/mail-poller";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/mail/send");
 
+// Business rule: todo email saliente del CRM lleva copia (CC, visible para el
+// destinatario) a la casilla de Gmail de Carlos. Fijo a propósito — no es
+// configurable ni visible desde la UI de redacción.
+const ALWAYS_CC_ADDRESS = "drpolarizados.contacto@gmail.com";
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
 const sendSchema = z.object({
   to: z.string().email(),
   subject: z.string().min(1),
-  body: z.string().min(1),
-  cc: z.string().email().optional(),
+  html: z.string().min(1),
   contactId: z.string().optional(),
   inReplyTo: z.string().optional(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().min(1),
+        contentType: z.string().min(1),
+        data: z.string().min(1),
+      })
+    )
+    .max(MAX_ATTACHMENTS)
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -35,7 +54,7 @@ export async function POST(request: Request) {
   const json = await request.json().catch(() => null);
   const validation = validateBody(sendSchema, json);
   if (!validation.success) return validation.response;
-  const { to, subject, body, cc, contactId, inReplyTo } = validation.data;
+  const { to, subject, html, contactId, inReplyTo, attachments } = validation.data;
 
   if (!(await isUserMailConfigured(session.user.id))) {
     return NextResponse.json(
@@ -44,14 +63,37 @@ export async function POST(request: Request) {
     );
   }
 
-  const html = body.replace(/\n/g, "<br/>");
+  if (attachments?.length) {
+    let totalBytes = 0;
+    for (const a of attachments) {
+      const bytes = Math.ceil((a.data.length * 3) / 4);
+      if (bytes > MAX_ATTACHMENT_BYTES) {
+        return NextResponse.json({ error: `El archivo "${a.filename}" supera el máximo de 10MB` }, { status: 400 });
+      }
+      totalBytes += bytes;
+    }
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      return NextResponse.json({ error: "El total de adjuntos supera el máximo de 20MB" }, { status: 400 });
+    }
+  }
+
+  const bodyText = stripHtml(html);
   let status: "SENT" | "FAILED" = "SENT";
   let messageId = `failed-${Date.now()}-${session.user.id}@local`;
   let mailAddress = "";
   let errorMessage: string | null = null;
 
   try {
-    const result = await sendUserMail({ userId: session.user.id, to, subject, html, cc, inReplyTo });
+    const result = await sendUserMail({
+      userId: session.user.id,
+      to,
+      subject,
+      html,
+      text: bodyText,
+      cc: ALWAYS_CC_ADDRESS,
+      inReplyTo,
+      attachments,
+    });
     messageId = result.messageId;
     mailAddress = result.mailAddress;
   } catch (err) {
@@ -68,10 +110,10 @@ export async function POST(request: Request) {
       status,
       subject,
       bodyHtml: html,
-      bodyText: body,
+      bodyText,
       fromAddress: mailAddress,
       toAddress: to,
-      ccAddress: cc || null,
+      ccAddress: ALWAYS_CC_ADDRESS,
       messageId,
       inReplyTo: inReplyTo || null,
       errorMessage,

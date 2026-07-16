@@ -31,6 +31,7 @@ export async function sendUserMail(params: {
   text?: string;
   cc?: string;
   inReplyTo?: string;
+  attachments?: Array<{ filename: string; contentType: string; data: string }>;
 }): Promise<{ messageId: string; mailAddress: string }> {
   const backupAddress = process.env.MAIL_BACKUP_ADDRESS;
   if (!backupAddress) {
@@ -64,6 +65,11 @@ export async function sendUserMail(params: {
     text: params.text,
     inReplyTo: params.inReplyTo,
     references: params.inReplyTo,
+    attachments: params.attachments?.map((a) => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      content: Buffer.from(a.data, "base64"),
+    })),
   });
 
   return { messageId: info.messageId, mailAddress: account.mailAddress };

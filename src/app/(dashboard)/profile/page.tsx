@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { User, Mail, Lock, Camera, CheckCircle2, Eye, EyeOff, History, Search, MessageCircle } from "lucide-react";
@@ -63,6 +64,7 @@ export default function ProfilePage() {
   // habilita para dos personas puntuales (ver requireCommsLogViewer); si el
   // fetch vuelve 403, la sección directamente no se muestra.
   const [logsAllowed, setLogsAllowed] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [activeLogTab, setActiveLogTab] = useState<"email" | "whatsapp">("email");
   const [emailLogs, setEmailLogs] = useState<LogItem[]>([]);
   const [waLogs, setWaLogs] = useState<LogItem[]>([]);
@@ -362,7 +364,8 @@ export default function ProfilePage() {
       </Card>
 
       {/* Registro de comunicaciones de todos los usuarios — solo visible para
-          las dos personas habilitadas por el backend (requireCommsLogViewer) */}
+          las dos personas habilitadas por el backend (requireCommsLogViewer).
+          Los datos ya se precargan arriba; el botón solo revela la vista. */}
       {logsAllowed && (
         <Card>
           <CardHeader>
@@ -372,6 +375,26 @@ export default function ProfilePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Archivo histórico de todos los emails y mensajes de WhatsApp entrantes y salientes del equipo.
+            </p>
+            <Button variant="outline" className="gap-2" onClick={() => setHistoryOpen(true)}>
+              <History size={16} />
+              Ver historial de comunicaciones
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History size={16} className="text-primary" />
+              Registro de comunicaciones — todos los usuarios
+            </DialogTitle>
+          </DialogHeader>
+          <div>
             <Tabs value={activeLogTab} onValueChange={(v) => setActiveLogTab(v as "email" | "whatsapp")}>
               <TabsList>
                 <TabsTrigger value="email"><Mail size={14} className="mr-1.5" />Emails</TabsTrigger>
@@ -516,9 +539,9 @@ export default function ProfilePage() {
                 )}
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

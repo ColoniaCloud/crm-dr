@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense, type FormEvent } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, Send, RotateCw, Plus } from "lucide-react";
+import { RichTextEditor } from "@/components/mail/rich-text-editor";
+import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
 interface EmailItem {
@@ -27,7 +27,25 @@ interface EmailItem {
   contact: { id: string; firstName: string; lastName: string; company: string | null } | null;
 }
 
+interface StagedAttachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  dataUrl: string;
+}
+
 type Filter = "all" | "unread" | "IN" | "OUT";
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function MailPageInner() {
   const searchParams = useSearchParams();
@@ -38,9 +56,12 @@ function MailPageInner() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<EmailItem | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [composeForm, setComposeForm] = useState({ to: "", subject: "", body: "", cc: "" });
+  const [composeKey, setComposeKey] = useState(0);
+  const [composeForm, setComposeForm] = useState({ to: "", subject: "", html: "" });
+  const [attachments, setAttachments] = useState<StagedAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchEmails = useCallback(async () => {
     setLoading(true);
@@ -87,12 +108,57 @@ function MailPageInner() {
 
   function openCompose(prefill?: Partial<typeof composeForm>) {
     setError("");
-    setComposeForm({ to: "", subject: "", body: "", cc: "", ...prefill });
+    setAttachments([]);
+    setComposeForm({ to: "", subject: "", html: "", ...prefill });
+    setComposeKey((k) => k + 1);
     setComposeOpen(true);
+  }
+
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    if (attachments.length + files.length > MAX_ATTACHMENTS) {
+      setError(`Máximo ${MAX_ATTACHMENTS} adjuntos por email`);
+      return;
+    }
+    const oversized = files.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      setError(`"${oversized.name}" supera el máximo de 10MB por archivo`);
+      return;
+    }
+    const currentTotal = attachments.reduce((sum, a) => sum + a.size, 0);
+    const newTotal = currentTotal + files.reduce((sum, f) => sum + f.size, 0);
+    if (newTotal > MAX_TOTAL_ATTACHMENT_BYTES) {
+      setError("El total de adjuntos supera el máximo de 20MB");
+      return;
+    }
+
+    setError("");
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setAttachments((prev) => [
+          ...prev,
+          { id: `${file.name}-${file.size}-${Date.now()}`, filename: file.name, contentType: file.type || "application/octet-stream", size: file.size, dataUrl },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function handleSend(e: FormEvent) {
     e.preventDefault();
+    if (!composeForm.html || composeForm.html.replace(/<[^>]+>/g, "").trim() === "") {
+      setError("El mensaje no puede estar vacío");
+      return;
+    }
     setSending(true);
     setError("");
     try {
@@ -102,9 +168,17 @@ function MailPageInner() {
         body: JSON.stringify({
           to: composeForm.to,
           subject: composeForm.subject,
-          body: composeForm.body,
-          ...(composeForm.cc ? { cc: composeForm.cc } : {}),
+          html: composeForm.html,
           ...(contactId ? { contactId } : {}),
+          ...(attachments.length
+            ? {
+                attachments: attachments.map((a) => ({
+                  filename: a.filename,
+                  contentType: a.contentType,
+                  data: a.dataUrl.split(",")[1] || "",
+                })),
+              }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -224,38 +298,65 @@ function MailPageInner() {
         </Card>
       </div>
 
-      <Dialog open={composeOpen} onOpenChange={(open) => { setComposeOpen(open); if (!open) setError(""); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+      <Sheet open={composeOpen} onOpenChange={(open) => { setComposeOpen(open); if (!open) setError(""); }}>
+        <SheetContent side="right" className="w-full sm:w-[40%] sm:max-w-none p-0 flex flex-col gap-0">
+          <SheetHeader className="p-4 border-b space-y-0">
+            <SheetTitle className="flex items-center gap-2">
               <Send className="h-4 w-4" />Redactar email
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSend} className="space-y-3">
-            <div className="space-y-1">
-              <Label>Para *</Label>
-              <Input type="email" value={composeForm.to} onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })} required />
+            </SheetTitle>
+          </SheetHeader>
+          <form onSubmit={handleSend} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="space-y-1">
+                <Label>Para *</Label>
+                <Input type="email" value={composeForm.to} onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })} required />
+              </div>
+              <div className="space-y-1">
+                <Label>Asunto *</Label>
+                <Input value={composeForm.subject} onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })} required />
+              </div>
+              <div className="space-y-1">
+                <Label>Mensaje *</Label>
+                <RichTextEditor
+                  resetKey={composeKey}
+                  initialHtml={composeForm.html}
+                  onChange={(html) => setComposeForm((f) => ({ ...f, html }))}
+                  placeholder="Escribí tu mensaje..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+                <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => fileInputRef.current?.click()}>
+                  <Paperclip className="h-3.5 w-3.5" />Adjuntar archivos o imágenes
+                </Button>
+                {attachments.length > 0 && (
+                  <ul className="space-y-1">
+                    {attachments.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs">
+                        <span className="flex items-center gap-1.5 truncate">
+                          <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{a.filename}</span>
+                          <span className="text-muted-foreground shrink-0">({formatBytes(a.size)})</span>
+                        </span>
+                        <button type="button" onClick={() => removeAttachment(a.id)} className="text-muted-foreground hover:text-destructive shrink-0">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
             </div>
-            <div className="space-y-1">
-              <Label>CC</Label>
-              <Input type="email" value={composeForm.cc} onChange={(e) => setComposeForm({ ...composeForm, cc: e.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <Label>Asunto *</Label>
-              <Input value={composeForm.subject} onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })} required />
-            </div>
-            <div className="space-y-1">
-              <Label>Mensaje *</Label>
-              <Textarea value={composeForm.body} onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })} rows={8} required />
-            </div>
-            {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-            <DialogFooter>
+            <SheetFooter className="p-4 border-t">
               <Button variant="outline" type="button" onClick={() => setComposeOpen(false)}>Cancelar</Button>
               <Button type="submit" disabled={sending}>{sending ? "Enviando..." : "Enviar"}</Button>
-            </DialogFooter>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
