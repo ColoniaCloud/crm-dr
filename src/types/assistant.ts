@@ -11,6 +11,8 @@ export interface AssistantTableAction {
   title: string;
   columns: string[];
   rows: Record<string, string | number | boolean | null>[];
+  /** Ruta interna (ej. "/sales/abc123") por fila, en el mismo orden que `rows`. `null` si esa fila no navega a ningún lado. */
+  rowLinks?: (string | null)[];
 }
 
 export interface AssistantCampaignAction {

@@ -57,6 +57,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Cuando el usuario sube un CSV para importar contactos, analizá las columnas y confirmá antes de importar.
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
+- Para pedidos como "quién me debe", "saldos pendientes" o "clientes con deuda", usá list_pending_balances.
 - Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
 - Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
@@ -353,6 +354,17 @@ const TOOLS: Anthropic.Tool[] = [
       type: "object",
       properties: {
         search: { type: "string", description: "Número de venta o nombre/empresa del cliente. Vacío para las últimas ventas." },
+        message: { type: "string" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "list_pending_balances",
+    description: "Lista las ventas con saldo pendiente de cobro (total menos pagos registrados), ordenadas de mayor a menor saldo, mostrando empresa/cliente, saldo pendiente y un link a la venta. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
         message: { type: "string" },
       },
       required: ["message"],
@@ -1279,6 +1291,50 @@ export async function runAssistant(params: {
             Estado: s.status,
           };
         }),
+      };
+
+      return { data: { message: msg, action }, status: 200 };
+    }
+
+    // ── list_pending_balances ─────────────────────────────────────────────────
+    if (toolBlock.name === "list_pending_balances") {
+      if (!isAdminOrAbove(actor.role)) {
+        return { data: { message: "Solo ADMIN/SUPERADMIN pueden consultar saldos pendientes." }, status: 200 };
+      }
+      const msg = input.message as string;
+
+      const sales = await prisma.sale.findMany({
+        where: { status: { not: "CANCELLED" } },
+        orderBy: { createdAt: "desc" },
+        include: {
+          contact: { select: { firstName: true, lastName: true, company: true } },
+          payments: { select: { amount: true } },
+        },
+      });
+
+      const pending = sales
+        .map((s) => {
+          const paid = s.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+          return { sale: s, balance: Number(s.total) - paid };
+        })
+        .filter((x) => x.balance > 0.01)
+        .sort((a, b) => b.balance - a.balance)
+        .slice(0, 30);
+
+      if (pending.length === 0) {
+        return { data: { message: `${msg}\n\nNo hay ventas con saldo pendiente.` }, status: 200 };
+      }
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Saldos pendientes (${pending.length})`,
+        columns: ["#", "Empresa / Cliente", "Saldo pendiente"],
+        rows: pending.map(({ sale: s, balance }) => ({
+          "#": String(s.number),
+          "Empresa / Cliente": s.contact.company || `${s.contact.firstName} ${s.contact.lastName}`.trim(),
+          "Saldo pendiente": `$${balance.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`,
+        })),
+        rowLinks: pending.map(({ sale: s }) => `/sales/${s.id}`),
       };
 
       return { data: { message: msg, action }, status: 200 };

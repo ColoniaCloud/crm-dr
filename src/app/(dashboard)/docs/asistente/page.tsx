@@ -120,6 +120,7 @@ export default function AssistantDocsPage() {
             <FunctionRow name="Buscar ventas" description="Por número de venta o cliente, mostrando total, pagado y estado." role="ADMIN+" />
             <FunctionRow name="Buscar presupuestos" description="Por número o cliente, mostrando estado y total." role="ADMIN+" />
             <FunctionRow name="Registrar un pago" description="Carga un pago sobre una venta existente indicando monto y método." role="ADMIN+" />
+            <FunctionRow name="Saldos pendientes" description="Lista las ventas con saldo pendiente de cobro (empresa/cliente y monto), ordenadas de mayor a menor, con link directo a cada venta." role="ADMIN+" />
           </div>
 
           <div>

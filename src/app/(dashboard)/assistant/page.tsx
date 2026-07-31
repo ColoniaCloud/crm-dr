@@ -81,6 +81,9 @@ const SUGGESTIONS = [
 
 // ── Table render component ────────────────────────────────────────────────────
 function TableMessage({ data }: { data: AssistantTableAction }) {
+  const router = useRouter();
+  const hasLinks = data.rowLinks?.some((l) => !!l) ?? false;
+
   return (
     <div className="w-full overflow-x-auto rounded-lg border mt-2">
       {data.title && (
@@ -96,18 +99,34 @@ function TableMessage({ data }: { data: AssistantTableAction }) {
                 {col}
               </th>
             ))}
+            {hasLinks && <th className="px-3 py-2" />}
           </tr>
         </thead>
         <tbody>
-          {data.rows.map((row, i) => (
-            <tr key={i} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-              {data.columns.map((col) => (
-                <td key={col} className="px-3 py-2 whitespace-nowrap">
-                  {String(row[col] ?? "-")}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {data.rows.map((row, i) => {
+            const link = data.rowLinks?.[i];
+            return (
+              <tr
+                key={i}
+                onClick={link ? () => router.push(link) : undefined}
+                className={cn(
+                  "border-b last:border-0 transition-colors",
+                  link ? "cursor-pointer hover:bg-primary/10" : "hover:bg-muted/20"
+                )}
+              >
+                {data.columns.map((col) => (
+                  <td key={col} className="px-3 py-2 whitespace-nowrap">
+                    {String(row[col] ?? "-")}
+                  </td>
+                ))}
+                {hasLinks && (
+                  <td className="px-3 py-2 text-right">
+                    {link && <ArrowRight className="h-3.5 w-3.5 text-primary inline" />}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
