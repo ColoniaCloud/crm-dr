@@ -78,7 +78,7 @@ function parseAddressField(address: string): {
   if (!address) return { cleanAddress: "", city: null, province: null };
 
   // Remove "Argentina" suffix
-  let cleaned = address.replace(/,?\s*Argentina\s*$/i, "").trim();
+  const cleaned = address.replace(/,?\s*Argentina\s*$/i, "").trim();
 
   // Split by commas
   const parts = cleaned.split(",").map((p) => p.trim()).filter(Boolean);

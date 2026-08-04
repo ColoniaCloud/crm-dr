@@ -18,16 +18,41 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const account = await prisma.clientPortalAccount.findUnique({
-      where: { contactId: id },
-      select: { email: true, enabled: true, lastLoginAt: true },
-    });
+    const [account, contact] = await Promise.all([
+      prisma.clientPortalAccount.findUnique({
+        where: { contactId: id },
+        select: {
+          email: true,
+          enabled: true,
+          lastLoginAt: true,
+          accessLevel: true,
+          activatedAt: true,
+          whatsapp: true,
+          whatsappUpdatedAt: true,
+        },
+      }),
+      prisma.contact.findUnique({ where: { id }, select: { email: true, whatsapp: true } }),
+    ]);
+
+    // El WhatsApp que el cliente carga en el portal NO pisa el del CRM. Si
+    // difieren se le muestra al operador para que decida cuál vale.
+    const whatsappMismatch =
+      account?.whatsapp && contact?.whatsapp && account.whatsapp !== contact.whatsapp
+        ? { portal: account.whatsapp, crm: contact.whatsapp, updatedAt: account.whatsappUpdatedAt }
+        : null;
 
     return NextResponse.json({
       configured: Boolean(account),
       email: account?.email ?? null,
       enabled: account?.enabled ?? false,
       lastLoginAt: account?.lastLoginAt ?? null,
+      accessLevel: account?.accessLevel ?? null,
+      activatedAt: account?.activatedAt ?? null,
+      whatsapp: account?.whatsapp ?? null,
+      whatsappMismatch,
+      // Sin email en la ficha no se le puede mandar la invitación.
+      contactEmail: contact?.email ?? null,
+      canInvite: Boolean(contact?.email),
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching portal account");
@@ -39,6 +64,9 @@ const putSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6).optional(),
   enabled: z.boolean().optional(),
+  // BASIC lo obtiene cualquier Cliente que active su cuenta. INSTALLER es la
+  // habilitación manual del segundo nivel y exige la cuenta ya activada.
+  accessLevel: z.enum(["BASIC", "INSTALLER"]).optional(),
 });
 
 export async function PUT(
@@ -52,7 +80,7 @@ export async function PUT(
   const json = await request.json().catch(() => null);
   const validation = validateBody(putSchema, json);
   if (!validation.success) return validation.response;
-  const { email, password, enabled } = validation.data;
+  const { email, password, enabled, accessLevel } = validation.data;
 
   try {
     const { id } = await params;
@@ -81,22 +109,28 @@ export async function PUT(
         email,
         passwordHash: passwordHash as string,
         enabled: enabled ?? true,
+        accessLevel: accessLevel ?? "BASIC",
       },
       update: {
         email,
         ...(passwordHash ? { passwordHash } : {}),
         ...(enabled !== undefined ? { enabled } : {}),
+        ...(accessLevel !== undefined ? { accessLevel } : {}),
       },
-      select: { email: true, enabled: true },
+      select: { email: true, enabled: true, accessLevel: true },
     });
 
     const contactName = contact.company || `${contact.firstName} ${contact.lastName}`.trim();
+    const cambioNivel =
+      accessLevel !== undefined && accessLevel !== existing?.accessLevel
+        ? ` — nivel ${accessLevel}`
+        : "";
     await logOperatorAction({
       userId: session.user.id,
       action: "CONFIGURE_PORTAL_ACCESS",
       entityType: "CLIENT",
       entityId: id,
-      description: `Configuró el acceso al portal (${account.email}) de "${contactName}"`,
+      description: `Configuró el acceso al portal (${account.email}) de "${contactName}"${cambioNivel}`,
       link: `/clients/${id}`,
     });
 

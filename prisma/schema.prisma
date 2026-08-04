@@ -93,6 +93,42 @@ enum PaymentAuditAction {
   DELETED
 }
 
+// ─── Cuenta corriente del cliente: planes de cuotas y ajustes ────────────────
+
+enum PaymentPlanFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+// Solo estados que son una DECISIÓN humana. "Completado" y "en mora" no están
+// acá a propósito: se calculan desde las cuotas y los pagos, así no pueden
+// quedar desactualizados.
+enum PaymentPlanStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum AccountAdjustmentType {
+  OPENING_BALANCE // deuda anterior a la carga en el CRM
+  CREDIT_NOTE     // nota de crédito / devolución
+  DEBIT_NOTE      // interés por mora, gasto reclamado
+  WRITE_OFF       // condonación
+}
+
+// ─── Portal de clientes: niveles de acceso y alta de cuenta ─────────────────
+
+enum PortalAccessLevel {
+  BASIC     // "Panel Clientes": compras, cuenta corriente, notificaciones
+  INSTALLER // suma stock, instalaciones, sub-códigos y reclamos
+}
+
+enum PortalTokenPurpose {
+  ACTIVATION
+  PASSWORD_RESET
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
@@ -121,6 +157,8 @@ model User {
   assignedWarrantyClaims WarrantyClaim[]
   mailAccount       MailAccount?
   mailboxEmails     Email[]          @relation("MailboxOwner")
+  paymentPlans       PaymentPlan[]       @relation("PaymentPlanCreatedBy")
+  accountAdjustments AccountAdjustment[] @relation("AccountAdjustmentCreatedBy")
 
   @@map("users")
 }
@@ -212,6 +250,8 @@ model Contact {
   emails          Email[]          @relation("ContactEmails")
   portalAccount   ClientPortalAccount?
   portalNotifications PortalNotification[]
+  accountAdjustments  AccountAdjustment[]
+  portalTokens        PortalAccessToken[]
 
   @@index([email])
   @@map("contacts")
@@ -385,6 +425,10 @@ model Sale {
   discount      Decimal       @default(0) @db.Decimal(10, 2)
   tax           Decimal       @default(0) @db.Decimal(10, 2)
   total         Decimal       @db.Decimal(10, 2)
+  // Hoy siempre ARS (auditado en agosto 2026: no existe ni una venta pactada en
+  // otra moneda). La columna existe para no migrar el día que se venda a Uruguay.
+  currency      Currency      @default(ARS)
+  exchangeRate  Decimal?      @db.Decimal(10, 4)
   notes         String?       @db.Text
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -393,6 +437,7 @@ model Sale {
   remito           Remito?
   payments         Payment[]
   paymentAuditLogs PaymentAuditLog[]
+  paymentPlan      PaymentPlan?
 
   @@map("sales")
 }
@@ -436,6 +481,8 @@ model Payment {
   contactId   String
   contact     Contact       @relation(fields: [contactId], references: [id])
   amount      Decimal       @db.Decimal(10, 2)
+  currency    Currency      @default(ARS)
+  exchangeRate Decimal?     @db.Decimal(10, 4)
   method      String?
   reference   String?
   notes       String?       @db.Text
@@ -444,6 +491,10 @@ model Payment {
   updatedAt   DateTime      @updatedAt
 
   auditLogs   PaymentAuditLog[]
+  // Imputación a cuotas. Es OPCIONAL y solo sirve para mostrar qué cuota cubrió
+  // este pago: el saldo del cliente NUNCA se calcula desde acá, siempre desde
+  // total - pagos. Una imputación mal hecha no puede corromper el saldo.
+  allocations PaymentAllocation[]
 
   @@map("payments")
 }
@@ -922,12 +973,56 @@ model ClientPortalAccount {
   contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
   email        String    @unique
   passwordHash String
+  // Kill switch del admin. Distinto de accessLevel: `enabled: false` bloquea
+  // todo el portal; accessLevel solo decide cuánto ve adentro.
   enabled      Boolean   @default(true)
+  // BASIC lo obtiene cualquier CLIENT que active su cuenta. INSTALLER lo habilita
+  // a mano un operador, y exige que la cuenta ya esté activada.
+  accessLevel  PortalAccessLevel @default(BASIC)
+  activatedAt  DateTime?
+  // WhatsApp que el cliente confirmó o cargó en el portal. NO pisa
+  // Contact.whatsapp: si difieren, se le avisa al operador para que decida cuál
+  // vale. Ver getWhatsappMismatch() del lado del CRM.
+  whatsapp          String?
+  whatsappUpdatedAt DateTime?
+  // Reservado para el SSO de Google. El flujo está diferido a una fase
+  // posterior; la columna se agrega ahora para no volver a migrar.
+  // OJO: falta el @unique a propósito. Agregarlo acá hace que `db push` pida
+  // --accept-data-loss (falso positivo suyo al crear un índice único junto con
+  // la columna). Va junto con el flujo de SSO, que es cuando empieza a hacer falta.
+  googleId     String?
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  tokens       PortalAccessToken[]
+
   @@map("client_portal_accounts")
+}
+
+/// Token de un solo uso para activar la cuenta o recuperar la contraseña.
+/// Se guarda hasheado, igual que las api keys — el valor en claro solo viaja
+/// en el mail y nunca queda en la base.
+model PortalAccessToken {
+  id          String    @id @default(cuid())
+  // Siempre presente: es el ancla. En una ACTIVATION la cuenta todavía no
+  // existe, así que accountId va en null hasta que el cliente elige contraseña.
+  contactId   String
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  accountId   String?
+  account     ClientPortalAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  purpose     PortalTokenPurpose
+  // Email al que se envió, congelado. Si después cambia el email del contacto,
+  // el token viejo deja de servir en lugar de habilitar una casilla distinta.
+  sentToEmail String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([contactId, purpose])
+  @@index([expiresAt])
+  @@map("portal_access_tokens")
 }
 
 model PortalNotification {
@@ -943,4 +1038,109 @@ model PortalNotification {
 
   @@index([contactId, read])
   @@map("portal_notifications")
+}
+
+// ─── Cuenta corriente: plan de cuotas, imputación y ajustes ──────────────────
+//
+// El plan es OPCIONAL. Una venta puede cobrarse de tres formas y las tres son
+// válidas para el modelo:
+//   1. Contado          — un Payment que cubre el total, sin plan.
+//   2. Pagos libres     — varios Payment sueltos, sin plan ni vencimientos.
+//                         Es lo que ya viene pasando (10 de 44 ventas al
+//                         2026-08, una con 4 pagos).
+//   3. Cuotas formales  — un PaymentPlan con N cuotas y sus vencimientos.
+//
+// Se puede pasar de (2) a (3) sin anular nada: al crear el plan, los pagos que
+// ya existían se imputan hacia atrás con la regla FIFO (cuota más vieja
+// primero). Y si el plan se cancela, la venta vuelve a comportarse como (2) con
+// el saldo intacto.
+
+/// Acuerdo de pago en cuotas sobre una venta. Como máximo uno por venta.
+model PaymentPlan {
+  id               String               @id @default(cuid())
+  saleId           String               @unique
+  sale             Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  installmentCount Int
+  frequency        PaymentPlanFrequency @default(MONTHLY)
+  firstDueDate     DateTime
+  // Total a pagar en cuotas. Hoy siempre == sale.total porque no se cobra
+  // recargo por financiar (auditado: cero menciones a interés en 44 ventas).
+  // Existe como columna propia para que el día que se cobre no haya que migrar.
+  financedTotal    Decimal              @db.Decimal(10, 2)
+  interestRate     Decimal?             @db.Decimal(5, 2)
+  status           PaymentPlanStatus    @default(ACTIVE)
+  notes            String?              @db.Text
+  createdById      String
+  createdBy        User                 @relation("PaymentPlanCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  installments     PaymentInstallment[]
+
+  @@map("payment_plans")
+}
+
+/// Una cuota del plan: cuánto y para cuándo.
+///
+/// No tiene columna de estado a propósito. Si "pagada" / "parcial" / "vencida"
+/// fueran campos guardados, alguien tendría que acordarse de actualizarlos y
+/// terminarían desfasados — el mismo malentendido que generó Sale.status.
+/// Se calculan al leer, desde las allocations y la fecha.
+model PaymentInstallment {
+  id        String      @id @default(cuid())
+  planId    String
+  plan      PaymentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  number    Int
+  dueDate   DateTime
+  amount    Decimal     @db.Decimal(10, 2)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  allocations PaymentAllocation[]
+
+  @@unique([planId, number])
+  @@index([dueDate])
+  @@map("payment_installments")
+}
+
+/// Imputación de un pago a una cuota, con el monto aplicado.
+///
+/// Es N:N con monto y no una simple referencia porque un pago puede cubrir una
+/// cuota y media, y una cuota puede cubrirse con tres pagos parciales. Sin el
+/// monto habría que inventar reglas frágiles para repartirlo.
+model PaymentAllocation {
+  id            String             @id @default(cuid())
+  paymentId     String
+  payment       Payment            @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  installmentId String
+  installment   PaymentInstallment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  amount        Decimal            @db.Decimal(10, 2)
+  createdAt     DateTime           @default(now())
+
+  @@unique([paymentId, installmentId])
+  @@index([installmentId])
+  @@map("payment_allocations")
+}
+
+/// Movimiento de cuenta corriente que no viene de una venta ni de un pago:
+/// nota de crédito, devolución, condonación, o saldo anterior al CRM.
+///
+/// No hay saldos previos a abril 2026 (confirmado con el cliente), así que
+/// OPENING_BALANCE queda disponible pero sin uso inmediato.
+model AccountAdjustment {
+  id          String                @id @default(cuid())
+  contactId   String
+  contact     Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type        AccountAdjustmentType
+  // Con signo: positivo aumenta la deuda del cliente, negativo la reduce.
+  amount      Decimal               @db.Decimal(10, 2)
+  currency    Currency              @default(ARS)
+  description String                @db.Text
+  effectiveAt DateTime              @default(now())
+  createdById String
+  createdBy   User                  @relation("AccountAdjustmentCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime              @default(now())
+
+  @@index([contactId, effectiveAt])
+  @@map("account_adjustments")
 }

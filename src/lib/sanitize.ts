@@ -14,7 +14,7 @@ const JAVASCRIPT_HREF = /href\s*=\s*["']\s*javascript:[^"']*["']/gi;
  */
 export function sanitizeHtml(html: string): string {
   // Reemplaza <script> por <template> para evitar warnings de React/Next.js
-  let sanitized = html
+  const sanitized = html
     .replace(/<script/gi, '<template')
     .replace(/<\/script/gi, '</template')
     .replace(DANGEROUS_TAGS, "")

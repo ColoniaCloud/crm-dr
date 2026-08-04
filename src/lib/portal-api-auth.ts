@@ -55,3 +55,35 @@ export async function requirePortalApiKey(
   }
   return { success: true, client };
 }
+
+/**
+ * Exige que el Cliente tenga nivel `INSTALLER` (stock, garantías, reclamos).
+ *
+ * Defensa en profundidad. La API confía en que kristall-web manda el
+ * `contactId` del Cliente que realmente inició sesión — eso no cambia. Pero
+ * ahora que cualquier Cliente puede tener cuenta, el CRM además verifica de su
+ * lado que ese contacto tenga habilitado el segundo nivel, en vez de depender
+ * solo de que el sitio externo esconda los botones.
+ *
+ * Falla cerrado: si el contacto no tiene cuenta de portal, o está deshabilitada,
+ * o es BASIC, se rechaza.
+ */
+export async function requireInstallerLevel(
+  contactId: string
+): Promise<{ success: true } | { success: false; response: NextResponse }> {
+  const account = await prisma.clientPortalAccount.findUnique({
+    where: { contactId },
+    select: { enabled: true, accessLevel: true },
+  });
+
+  if (!account || !account.enabled || account.accessLevel !== "INSTALLER") {
+    return {
+      success: false,
+      response: NextResponse.json(
+        { error: "Este cliente no tiene habilitado el portal de instalador" },
+        { status: 403 }
+      ),
+    };
+  }
+  return { success: true };
+}

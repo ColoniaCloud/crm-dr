@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
+import PaymentPlanCard from "@/components/sales/payment-plan-card";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
@@ -540,6 +541,14 @@ export default function SaleDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Plan de cuotas — opcional; la venta funciona igual sin él */}
+      <PaymentPlanCard
+        saleId={saleId}
+        saleTotal={totalNum}
+        isAdmin={isAdmin}
+        onChanged={fetchSale}
+      />
 
       {/* Payments */}
       <Card>

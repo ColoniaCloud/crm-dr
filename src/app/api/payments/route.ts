@@ -6,6 +6,7 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
+import { rebuildAllocations } from "@/lib/account";
 const log = createLogger("api/payments");
 
 const createPaymentSchema = z.object({
@@ -145,6 +146,9 @@ export async function POST(request: Request) {
         },
       },
     });
+
+    // Si la venta tiene plan de cuotas, imputa este pago. Sin plan no hace nada.
+    await rebuildAllocations(saleId);
 
     const pName = payment.contact.company || `${payment.contact.firstName} ${payment.contact.lastName}`.trim();
     await logOperatorAction({ userId: session.user.id, action: "CREATE_PAYMENT", entityType: "PAYMENT", entityId: payment.id, description: `Registró pago $${amount} de "${pName}"`, link: `/sales/${saleId}` });

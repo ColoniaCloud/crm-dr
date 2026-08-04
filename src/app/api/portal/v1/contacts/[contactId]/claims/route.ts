@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireInstallerLevel } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateBody } from "@/lib/api-validation";
 import { findClientContact, getClientClaims, createClientClaim } from "@/lib/client-portal";
@@ -26,6 +26,9 @@ export async function GET(
     if (!contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
+
+    const level = await requireInstallerLevel(contactId);
+    if (!level.success) return level.response;
 
     const claims = await getClientClaims(contactId);
     return NextResponse.json(claims);
@@ -65,6 +68,9 @@ export async function POST(
     if (!contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
+
+    const level = await requireInstallerLevel(contactId);
+    if (!level.success) return level.response;
 
     const result = await createClientClaim(contactId, validation.data);
     if (!result.ok) {

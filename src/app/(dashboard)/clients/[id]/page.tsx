@@ -33,6 +33,7 @@ import { isAdminRole } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "lucide-react";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
+import { ClientAccountStatement } from "@/components/clients/client-account-statement";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
   ssr: false,
@@ -595,6 +596,9 @@ export default function ClientDetailPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Cuenta corriente — exactamente lo mismo que ve el cliente en su Panel */}
+      <ClientAccountStatement clientId={clientId} />
 
       {/* Purchase History */}
       <Card>

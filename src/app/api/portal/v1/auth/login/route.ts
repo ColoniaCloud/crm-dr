@@ -62,6 +62,10 @@ export async function POST(request: Request) {
       contactId: account.contact.id,
       name: `${account.contact.firstName} ${account.contact.lastName}`,
       company: account.contact.company,
+      // Con qué nivel entra: BASIC ve compras y cuenta corriente; INSTALLER suma
+      // stock, garantías y reclamos. Guardalo en tu sesión para armar el menú.
+      // El CRM igual lo verifica de su lado en cada endpoint de instalador.
+      accessLevel: account.accessLevel,
     });
   } catch (error) {
     log.error({ err: error }, "Error during portal login");

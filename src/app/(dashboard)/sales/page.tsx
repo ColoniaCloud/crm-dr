@@ -91,7 +91,6 @@ function SalesPage() {
           : item
       ),
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, preselectedProductId, preselectedUnitId]);
 
   async function fetchAll() {

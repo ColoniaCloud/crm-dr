@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireInstallerLevel } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { findClientContact } from "@/lib/client-portal";
 import { createAdditionalInstallation } from "@/lib/warranty";
@@ -25,6 +25,9 @@ export async function POST(
     if (!contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
+
+    const level = await requireInstallerLevel(contactId);
+    if (!level.success) return level.response;
 
     const result = await createAdditionalInstallation(contactId, fullRollCode);
     if (!result.ok) {

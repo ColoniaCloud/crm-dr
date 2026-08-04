@@ -6,6 +6,7 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { ensurePaymentAuditTable, logOperatorAction } from "@/lib/notifications";
+import { rebuildAllocations } from "@/lib/account";
 
 const log = createLogger("api/payments/[id]");
 
@@ -73,6 +74,10 @@ export async function PUT(
         paidAt: paidAt ? new Date(paidAt) : existing.paidAt,
       },
     });
+
+    // El monto o la fecha pueden haber cambiado, así que las imputaciones a
+    // cuotas se recalculan enteras (la función es idempotente).
+    await rebuildAllocations(existing.sale.id);
 
     const contactName =
       existing.contact.company ||
@@ -178,6 +183,10 @@ export async function DELETE(
     `;
 
     await prisma.payment.delete({ where: { id } });
+
+    // Al desaparecer el pago, sus imputaciones se van por cascada; el rebuild
+    // recorre los pagos que quedaron y vuelve a llenar las cuotas desde cero.
+    await rebuildAllocations(existing.sale.id);
 
     await logOperatorAction({
       userId: session.user.id,

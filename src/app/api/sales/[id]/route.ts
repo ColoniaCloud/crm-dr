@@ -49,6 +49,14 @@ export async function GET(
           orderBy: { paidAt: "desc" },
         },
         remito: true,
+        paymentPlan: {
+          include: {
+            installments: {
+              orderBy: { number: "asc" },
+              include: { allocations: { select: { amount: true } } },
+            },
+          },
+        },
       },
     });
 

@@ -7,6 +7,7 @@ import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { validateBody } from "@/lib/api-validation";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { rebuildAllocations } from "@/lib/account";
 
 const log = createLogger("api/mobile/v1/payments");
 
@@ -88,6 +89,9 @@ export async function POST(request: Request) {
         contact: { select: { id: true, firstName: true, lastName: true, company: true } },
       },
     });
+
+    // Si la venta tiene plan de cuotas, imputa este pago. Sin plan no hace nada.
+    await rebuildAllocations(saleId);
 
     const contactName =
       payment.contact.company || `${payment.contact.firstName} ${payment.contact.lastName}`.trim();

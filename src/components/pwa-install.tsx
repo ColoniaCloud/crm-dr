@@ -47,7 +47,6 @@ export function PWAInstallProvider({ children }: { children: React.ReactNode }) 
 
     const ua = navigator.userAgent;
     const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ios = /iPhone|iPad|iPod/i.test(ua) && !("MSStream" in window);
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
