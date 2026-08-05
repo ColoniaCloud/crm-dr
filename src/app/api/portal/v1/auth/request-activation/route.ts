@@ -101,20 +101,41 @@ export async function POST(request: Request) {
     });
 
     const link = `${portalBaseUrl()}/cliente/activar/${token}`;
-    await transporter.sendMail({
-      from: FROM(),
-      to: contact.email!,
-      subject: "Activá tu acceso al Panel de Clientes — Kristall Film",
-      html: `
-        <p>Hola ${escapeHtml(contact.firstName)},</p>
-        <p>Recibimos un pedido para activar tu acceso al <strong>Panel de Clientes</strong>.</p>
-        <p>Creá tu contraseña desde este link:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>Vence el ${expiresAt.toLocaleString("es-AR")} y se usa una sola vez.
-        Si no lo pediste, ignorá este mensaje.</p>
-        <p>— Equipo Kristall Film</p>
-      `,
-    });
+    try {
+      await transporter.sendMail({
+        from: FROM(),
+        to: contact.email!,
+        subject: "Activá tu acceso al Panel de Clientes — Kristall Film",
+        html: `
+          <p>Hola ${escapeHtml(contact.firstName)},</p>
+          <p>Recibimos un pedido para activar tu acceso al <strong>Panel de Clientes</strong>.</p>
+          <p>Creá tu contraseña desde este link:</p>
+          <p><a href="${link}">${link}</a></p>
+          <p>Vence el ${expiresAt.toLocaleString("es-AR")} y se usa una sola vez.
+          Si no lo pediste, ignorá este mensaje.</p>
+          <p>— Equipo Kristall Film</p>
+        `,
+      });
+    } catch (mailError: unknown) {
+      // El fallo de envío se separa del catch general a propósito: antes caía en
+      // el 500 genérico y el motivo real quedaba invisible desde afuera, que es
+      // justo lo que complica diagnosticar sin acceso a los logs del servidor.
+      // Para ver el detalle en producción: GET /api/settings/smtp-check (SUPERADMIN).
+      const e = mailError as { code?: string; command?: string; message?: string };
+      log.error(
+        { err: mailError, code: e.code, command: e.command, smtpHost: process.env.SMTP_HOST, smtpUser: process.env.SMTP_USER },
+        "SMTP send failed for activation email"
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Encontramos tu cuenta, pero no pudimos enviarte el mail. Escribinos y te lo resolvemos.",
+          // Pista para quien opera, no para el cliente final.
+          diagnostico: `SMTP ${e.code ?? "error"}: ${(e.message ?? "").split("\n")[0]}`,
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       found: true,
