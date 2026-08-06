@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable } from "@/lib/notifications";
-import { releaseRollForSaleItem } from "@/lib/warranty";
+import { confirmSale, restoreSaleStock } from "@/lib/sales";
 
 const log = createLogger("api/sales/[id]");
 
@@ -43,6 +43,15 @@ export async function GET(
             product: {
               select: { id: true, name: true, category: true, sku: true },
             },
+            warrantyRoll: {
+              select: {
+                fullRollCode: true,
+                installations: {
+                  where: { status: "PENDING" },
+                  select: { activationToken: true, status: true },
+                },
+              },
+            },
           },
         },
         payments: {
@@ -71,6 +80,17 @@ export async function GET(
   }
 }
 
+// Same-tier gate as creating/deleting a sale (OPERATOR can't do either).
+// DELIVERED and CANCELLED are terminal — nothing transitions out of them
+// through this endpoint (CANCELLED sales aren't un-cancelled; a mistaken
+// DELIVERED would need a SUPERADMIN to sort out, same as any other data fix).
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["DELIVERED", "CANCELLED"],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -78,6 +98,9 @@ export async function PUT(
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (session.user.role !== "ADMIN" && session.user.role !== "SUPERADMIN") {
+    return NextResponse.json({ error: "Acceso restringido" }, { status: 403 });
   }
 
   const { id } = await params;
@@ -96,14 +119,36 @@ export async function PUT(
     const body = await request.json();
     const { status, ...rest } = body as { status?: string; [key: string]: unknown };
 
-    const updated = await prisma.sale.update({
-      where: { id },
-      data: { ...(status ? { status: status as Prisma.SaleUpdateInput["status"] } : {}), ...rest },
-    });
-
     const cName =
       existing.contact.company ||
       `${existing.contact.firstName} ${existing.contact.lastName}`.trim();
+
+    if (status && status !== existing.status) {
+      const allowed = VALID_TRANSITIONS[existing.status] ?? [];
+      if (!allowed.includes(status)) {
+        return NextResponse.json(
+          { error: `No se puede pasar una venta de ${existing.status} a ${status}` },
+          { status: 400 }
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        if (status === "CONFIRMED") {
+          await confirmSale(tx, id, session.user.id);
+        } else if (status === "CANCELLED") {
+          await restoreSaleStock(tx, id, session.user.id, `Venta #${existing.number} cancelada`);
+          await tx.sale.update({ where: { id }, data: { status: "CANCELLED", ...rest } });
+        } else {
+          // DELIVERED: no stock/warranty side effects, already handled at CONFIRMED.
+          await tx.sale.update({ where: { id }, data: { status: status as Prisma.SaleUpdateInput["status"], ...rest } });
+        }
+      });
+    } else if (Object.keys(rest).length > 0) {
+      await prisma.sale.update({ where: { id }, data: rest });
+    }
+
+    const updated = await prisma.sale.findUnique({ where: { id } });
+
     await logOperatorAction({
       userId: session.user.id,
       action: "UPDATE_SALE",
@@ -115,8 +160,9 @@ export async function PUT(
 
     return NextResponse.json(updated);
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al actualizar venta";
     log.error({ err: error }, "Error updating sale");
-    return NextResponse.json({ error: "Error al actualizar venta" }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
@@ -242,36 +288,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
     }
 
-    await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
-      // Restore stock for each item before deleting
-      const saleItems = await tx.saleItem.findMany({ where: { saleId: id } });
-      for (const item of saleItems) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (product) {
-          const stockBefore = product.stock;
-          const stockAfter = stockBefore + item.quantity;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: stockAfter },
-          });
-          await tx.stockMovement.create({
-            data: {
-              productId: item.productId,
-              type: "DEVOLUCION",
-              quantity: item.quantity,
-              stockBefore,
-              stockAfter,
-              referenceId: id,
-              referenceType: "SALE",
-              reason: `Venta #${sale.number} eliminada`,
-              userId: session.user.id,
-            },
-          });
-        }
-      }
-      for (const item of saleItems) {
-        await releaseRollForSaleItem(tx, item.id);
-      }
+    await prisma.$transaction(async (tx) => {
+      // No-op if the sale was still PENDING (nothing was ever decremented);
+      // restores stock + releases the warranty roll if it had been CONFIRMED
+      // or DELIVERED — same logic CANCELLED uses via PUT.
+      await restoreSaleStock(tx, id, session.user.id, `Venta #${sale.number} eliminada`);
       await tx.payment.deleteMany({ where: { saleId: id } });
       await tx.remito.deleteMany({ where: { saleId: id } });
       await tx.saleItem.deleteMany({ where: { saleId: id } });

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
-import { linkRollToSaleItem } from "@/lib/warranty";
+import { confirmSale } from "@/lib/sales";
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { calcTax } from "@/lib/utils";
 import { validateBody } from "@/lib/api-validation";
@@ -121,32 +121,13 @@ export async function POST(request: Request) {
 
       await tx.remito.create({ data: { saleId: sale.id } });
 
-      for (const item of items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product || product.stock < item.quantity) {
-          throw new Error(`Stock insuficiente para ${product?.name ?? item.productId}`);
-        }
-        const stockBefore = product.stock;
-        const stockAfter = stockBefore - item.quantity;
-        await tx.product.update({ where: { id: item.productId }, data: { stock: stockAfter } });
-        await tx.stockMovement.create({
-          data: {
-            productId: item.productId,
-            type: "SALIDA",
-            quantity: item.quantity,
-            stockBefore,
-            stockAfter,
-            referenceId: sale.id,
-            referenceType: "SALE",
-            reason: `Venta #${sale.number} (app móvil)`,
-            userId,
-          },
-        });
-      }
-
-      for (const item of sale.items) {
-        await linkRollToSaleItem(tx, item.id, item.productId, null);
-      }
+      // A point-of-sale transaction is final the moment it's entered — there's
+      // no "confirm later" step at a physical register, unlike the desktop
+      // CRM's PENDING sales. So this creates AND confirms in the same
+      // transaction, which is what actually moves stock and assigns the
+      // warranty roll. If stock is short, the whole sale fails to create
+      // (same behavior as before this change).
+      await confirmSale(tx, sale.id, userId, " (app móvil)");
 
       if (sale.contact.type === "LEAD") {
         await tx.contact.update({ where: { id: contactId }, data: { type: "CLIENT" } });

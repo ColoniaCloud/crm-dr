@@ -10,10 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Search, ChevronRight, KeyRound } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { RollsByLocation } from "@/components/warranty/rolls-by-location";
 
 interface Claim {
   id: string;
@@ -141,6 +143,18 @@ export default function WarrantyClaimsPage() {
           </Button>
         )}
       </div>
+
+      <Tabs defaultValue="reclamos">
+        <TabsList>
+          <TabsTrigger value="reclamos">Reclamos</TabsTrigger>
+          <TabsTrigger value="ubicaciones">Rollos por ubicación</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="ubicaciones" className="mt-4">
+          <RollsByLocation />
+        </TabsContent>
+
+        <TabsContent value="reclamos" className="mt-4 space-y-4">
 
       {/* Buscador de código de rollo */}
       <Card>
@@ -275,6 +289,9 @@ export default function WarrantyClaimsPage() {
           </div>
         </CardContent>
       </Card>
+
+        </TabsContent>
+      </Tabs>
 
       {/* Detalle del reclamo */}
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>

@@ -19,6 +19,7 @@ import PaymentPlanCard from "@/components/sales/payment-plan-card";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
+  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck,
 } from "lucide-react";
 
 interface SaleItem {
@@ -27,6 +28,10 @@ interface SaleItem {
   unitPrice: string;
   total: string;
   product: { id: string; name: string; category: string | null; sku: string | null };
+  warrantyRoll: {
+    fullRollCode: string;
+    installations: { activationToken: string; status: string }[];
+  } | null;
 }
 
 interface Payment {
@@ -113,6 +118,20 @@ const saleTypeLabel: Record<string, string> = {
   CONSIGNMENT: "Consignación",
 };
 
+const saleStatusLabel: Record<string, string> = {
+  PENDING: "Por confirmar",
+  CONFIRMED: "Confirmada",
+  DELIVERED: "Entregada",
+  CANCELLED: "Cancelada",
+};
+
+const saleStatusBadgeClass: Record<string, string> = {
+  PENDING: "bg-amber-100 text-amber-800 border-0",
+  CONFIRMED: "bg-blue-100 text-blue-800 border-0",
+  DELIVERED: "bg-green-100 text-green-800 border-0",
+  CANCELLED: "bg-red-100 text-red-800 border-0",
+};
+
 export default function SaleDetailPage() {
   const { data: session } = useSession();
   const { format: formatCurrency } = useCurrency();
@@ -130,6 +149,12 @@ export default function SaleDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // Status transitions (Confirmar / Marcar entregado / Cancelar)
+  const [statusActionLoading, setStatusActionLoading] = useState(false);
+  const [statusActionError, setStatusActionError] = useState("");
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   // Register payment dialog
   const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
@@ -347,6 +372,26 @@ export default function SaleDetailPage() {
     }
   }
 
+  async function changeSaleStatus(status: "CONFIRMED" | "DELIVERED" | "CANCELLED") {
+    setStatusActionLoading(true);
+    setStatusActionError("");
+    try {
+      const res = await fetch(`/api/sales/${saleId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Error al actualizar la venta");
+      setCancelDialogOpen(false);
+      await fetchSale();
+    } catch (err) {
+      setStatusActionError(err instanceof Error ? err.message : "Error al actualizar la venta");
+    } finally {
+      setStatusActionLoading(false);
+    }
+  }
+
   async function toggleAuditLogs() {
     if (!auditExpanded) {
       setAuditExpanded(true);
@@ -388,11 +433,31 @@ export default function SaleDetailPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
+          <Badge className={saleStatusBadgeClass[sale.status] ?? ""}>
+            {saleStatusLabel[sale.status] ?? sale.status}
+          </Badge>
           <Badge className={isPaid ? "bg-green-100 text-green-800 border-0" : "bg-amber-100 text-amber-800 border-0"}>
-            {isPaid ? "Pagado" : "Pendiente"}
+            {isPaid ? "Pagado" : "Pendiente de pago"}
           </Badge>
           <Badge variant="outline">{saleTypeLabel[sale.type] || sale.type}</Badge>
           {sale.requiresFactura && <Badge variant="outline">Factura</Badge>}
+          {isAdmin && sale.status === "PENDING" && (
+            <Button size="sm" onClick={() => changeSaleStatus("CONFIRMED")} disabled={statusActionLoading}>
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              {statusActionLoading ? "Confirmando..." : "Confirmar venta"}
+            </Button>
+          )}
+          {isAdmin && sale.status === "CONFIRMED" && (
+            <Button size="sm" variant="outline" onClick={() => changeSaleStatus("DELIVERED")} disabled={statusActionLoading}>
+              <PackageCheck className="h-4 w-4 mr-1" />
+              {statusActionLoading ? "Guardando..." : "Marcar entregado"}
+            </Button>
+          )}
+          {isAdmin && (sale.status === "PENDING" || sale.status === "CONFIRMED") && (
+            <Button size="sm" variant="outline" onClick={() => setCancelDialogOpen(true)} disabled={statusActionLoading}>
+              <XCircle className="h-4 w-4 mr-1" />Cancelar venta
+            </Button>
+          )}
           {isSuperAdmin && (
             <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
               <Trash2 className="h-4 w-4 mr-1" />Eliminar
@@ -402,6 +467,43 @@ export default function SaleDetailPage() {
       </div>
 
       {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+      {statusActionError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{statusActionError}</div>}
+
+      {sale.status !== "PENDING" && sale.items.some((i) => i.warrantyRoll?.installations.some((inst) => inst.status === "PENDING")) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-green-600" />Garantías — links de activación</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sale.items.map((item) => {
+              const pending = item.warrantyRoll?.installations.find((i) => i.status === "PENDING");
+              if (!pending) return null;
+              const url = `${window.location.origin}/garantia/${pending.activationToken}`;
+              return (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{item.product.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{url}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(url).catch(() => {});
+                      setCopiedToken(pending.activationToken);
+                      setTimeout(() => setCopiedToken(null), 2000);
+                    }}
+                  >
+                    {copiedToken === pending.activationToken ? <Check className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
+                    {copiedToken === pending.activationToken ? "Copiado" : "Copiar link"}
+                  </Button>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Client Info */}
@@ -995,6 +1097,28 @@ export default function SaleDetailPage() {
               disabled={deleting || deleteConfirmName.trim().toLowerCase() !== contactName.toLowerCase()}
             >
               {deleting ? "Eliminando..." : "Eliminar Venta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5" />Cancelar Venta #{sale.number}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {sale.status === "CONFIRMED"
+              ? "El stock que se descontó al confirmar vuelve a estar disponible, y se libera el rollo de garantía si todavía no fue activado."
+              : "Esta venta todavía no había movido stock — se marca cancelada sin más efectos."}
+          </p>
+          {statusActionError && <p className="text-sm text-destructive">{statusActionError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>Volver</Button>
+            <Button variant="destructive" onClick={() => changeSaleStatus("CANCELLED")} disabled={statusActionLoading}>
+              {statusActionLoading ? "Cancelando..." : "Cancelar venta"}
             </Button>
           </DialogFooter>
         </DialogContent>

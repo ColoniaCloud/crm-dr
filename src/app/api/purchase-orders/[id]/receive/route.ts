@@ -67,12 +67,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           data: { costLanded: costLandedPerUnit },
         });
 
+        // Weighted-average cost: blend what's already in stock with what's
+        // arriving now, instead of letting the newest purchase silently
+        // overwrite Product.cost. If there's no prior stock (or no cost was
+        // ever recorded), the new landed cost stands on its own — nothing to
+        // average against yet.
+        const previousCost = item.product.cost ? Number(item.product.cost) : null;
+        const newAverageCost =
+          stockBefore > 0 && previousCost !== null
+            ? (stockBefore * previousCost + item.quantity * costLandedPerUnit) / stockAfter
+            : costLandedPerUnit;
+
         // Update product stock and cost
         await tx.product.update({
           where: { id: item.productId },
           data: {
             stock: stockAfter,
-            cost: costLandedPerUnit,
+            cost: newAverageCost,
           },
         });
 

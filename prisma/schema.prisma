@@ -159,6 +159,7 @@ model User {
   mailboxEmails     Email[]          @relation("MailboxOwner")
   paymentPlans       PaymentPlan[]       @relation("PaymentPlanCreatedBy")
   accountAdjustments AccountAdjustment[] @relation("AccountAdjustmentCreatedBy")
+  warrantyRollLocationEvents WarrantyRollLocationEvent[]
 
   @@map("users")
 }
@@ -252,6 +253,9 @@ model Contact {
   portalNotifications PortalNotification[]
   accountAdjustments  AccountAdjustment[]
   portalTokens        PortalAccessToken[]
+  // Puntos de Reventa (stock consignado) que viven en el taller de este
+  // Contact cuando es un instalador. Solo aplica a Location.type = PUNTO_REVENTA.
+  locations           Location[]
 
   @@index([email])
   @@map("contacts")
@@ -823,6 +827,56 @@ enum WarrantyRollStatus {
   VOIDED
 }
 
+// Custodia física de un rollo mientras sigue siendo stock de la empresa
+// (eje independiente del WarrantyRollStatus, que es el estado de garantía).
+// DEPOSITO y LOCAL son singleton (una sola fila cada uno); PUNTO_REVENTA puede
+// tener varias filas, cada una atada a un Contact (el instalador en cuyo
+// taller vive el stock consignado — ver Location.contactId).
+enum LocationType {
+  DEPOSITO
+  LOCAL
+  PUNTO_REVENTA
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  type      LocationType
+  name      String
+  // Solo para PUNTO_REVENTA: a qué instalador (Contact tipo CLIENT) pertenece
+  // el taller donde vive este stock consignado. DEPOSITO/LOCAL lo dejan null.
+  contactId String?
+  contact   Contact?     @relation(fields: [contactId], references: [id])
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  rolls          WarrantyRoll[]
+  eventsFrom     WarrantyRollLocationEvent[] @relation("LocationEventFrom")
+  eventsTo       WarrantyRollLocationEvent[] @relation("LocationEventTo")
+
+  @@map("locations")
+}
+
+/// Log de traslados de un rollo entre ubicaciones (Depósito/Local/Punto de
+/// Reventa). Existe mientras el rollo sigue IN_STOCK — una vez vendido, su
+/// "ubicación" pasa a ser la venta/Contact, no esto (ver WarrantyRoll.currentLocationId).
+model WarrantyRollLocationEvent {
+  id             String    @id @default(cuid())
+  rollId         String
+  roll           WarrantyRoll @relation(fields: [rollId], references: [id], onDelete: Cascade)
+  fromLocationId String?
+  fromLocation   Location? @relation("LocationEventFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String
+  toLocation     Location  @relation("LocationEventTo", fields: [toLocationId], references: [id])
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  reason         String?
+  createdAt      DateTime  @default(now())
+
+  @@index([rollId])
+  @@map("warranty_roll_location_events")
+}
+
 enum WarrantyInstallationStatus {
   PENDING
   ACTIVE
@@ -879,10 +933,16 @@ model WarrantyRoll {
   unit         ProductUnit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
   fullRollCode String             @unique
   status       WarrantyRollStatus @default(IN_STOCK)
+  // Custodia física mientras el rollo es IN_STOCK (Depósito/Local/Punto de
+  // Reventa). Se limpia a null en cuanto el rollo se vende — a partir de ahí
+  // "dónde está" se responde vía saleItem.sale.contactId, no acá.
+  currentLocationId String?
+  currentLocation   Location?      @relation(fields: [currentLocationId], references: [id])
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 
   installations WarrantyInstallation[]
+  locationEvents WarrantyRollLocationEvent[]
 
   @@map("warranty_rolls")
 }

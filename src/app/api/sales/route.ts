@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
-import { linkRollToSaleItem } from "@/lib/warranty";
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { calcTax } from "@/lib/utils";
 import { z } from "zod";
@@ -166,39 +165,10 @@ export async function POST(request: Request) {
         },
       });
 
-      // Auto-update stock (validate before decrement) + create stock movements
-      for (const item of items as Array<{ productId: string; quantity: number }>) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product || product.stock < item.quantity) {
-          throw new Error(`Stock insuficiente para ${product?.name ?? item.productId}`);
-        }
-        const stockBefore = product.stock;
-        const stockAfter = stockBefore - item.quantity;
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: stockAfter },
-        });
-        await tx.stockMovement.create({
-          data: {
-            productId: item.productId,
-            type: "SALIDA",
-            quantity: item.quantity,
-            stockBefore,
-            stockAfter,
-            referenceId: sale.id,
-            referenceType: "SALE",
-            reason: `Venta #${sale.number}`,
-            userId: session.user.id,
-          },
-        });
-      }
-
-      // Assign a warranty roll (FIFO, or the traced unit's roll if one was
-      // selected) to each item that has one available. No-op per item if the
-      // product has no WarrantyConfig or no IN_STOCK roll is available.
-      for (const item of sale.items) {
-        await linkRollToSaleItem(tx, item.id, item.productId, item.productUnitId);
-      }
+      // Stock doesn't move and no warranty roll gets assigned here anymore —
+      // that only happens when the sale is CONFIRMED (see confirmSale() in
+      // src/lib/sales.ts). A PENDING sale reserves nothing; it's just a
+      // record waiting to be confirmed once there's stock for it.
 
       // Auto-convert lead to client
       if (sale.contact.type === "LEAD") {

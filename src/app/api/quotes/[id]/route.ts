@@ -203,32 +203,11 @@ export async function POST(
         },
       });
 
-      // d. Update stock (decrease product quantities, validate first) + audit trail
-      for (const item of quote.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product || product.stock < item.quantity) {
-          throw new Error(`Stock insuficiente para ${product?.name ?? item.productId}`);
-        }
-        const stockBefore = product.stock;
-        const stockAfter = stockBefore - item.quantity;
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: stockAfter },
-        });
-        await tx.stockMovement.create({
-          data: {
-            productId: item.productId,
-            type: "SALIDA",
-            quantity: item.quantity,
-            stockBefore,
-            stockAfter,
-            referenceId: sale.id,
-            referenceType: "SALE",
-            reason: `Venta #${sale.number} (desde presupuesto #${quote.number})`,
-            userId: session.user.id,
-          },
-        });
-      }
+      // d. Stock doesn't move here — the Sale is created PENDING, same as
+      // every other creation path. It only moves (and warranty rolls get
+      // assigned) when the sale is CONFIRMED, via confirmSale() in
+      // src/lib/sales.ts. This also fixes a pre-existing gap: sales created
+      // this way never used to get a warranty roll linked at all.
 
       // e. Convert the contact from LEAD to CLIENT if they're a LEAD
       if (quote.contact.type === "LEAD") {

@@ -20,6 +20,17 @@ function buildLotNumber(prefix: string, seq: number): string {
 }
 
 /**
+ * Every rollo entering stock is put in custody of Depósito by default —
+ * that's where imports physically land. Looked up rather than cached: it's
+ * a cheap, rarely-changing singleton row, and this keeps ensureWarrantyRolls
+ * from needing a caller-supplied id.
+ */
+async function getDepositoId(tx: Tx): Promise<string | null> {
+  const deposito = await tx.location.findFirst({ where: { type: "DEPOSITO" } });
+  return deposito?.id ?? null;
+}
+
+/**
  * Creates a WarrantyLot with one WarrantyRoll per unit entering stock.
  * No-op if the product has no WarrantyConfig. Called from every stock-in
  * path (PO receive, manual adjustments, unit creation) so every unit of
@@ -40,6 +51,7 @@ export async function ensureWarrantyRolls(
 
   const seq = (await tx.warrantyLot.count()) + 1;
   const lotNumber = buildLotNumber(LOT_PREFIX[source.type], seq);
+  const depositoId = await getDepositoId(tx);
 
   await tx.warrantyLot.create({
     data: {
@@ -52,6 +64,7 @@ export async function ensureWarrantyRolls(
           productId,
           fullRollCode: `${lotNumber}-R${String(i + 1).padStart(3, "0")}`,
           unitId: source.unitIds?.[i] ?? null,
+          currentLocationId: depositoId,
         })),
       },
     },
@@ -65,7 +78,20 @@ const ROLL_TRACE_INCLUDE = {
       id: true,
       name: true,
       sku: true,
+      category: true,
       warrantyConfig: { select: { maxInstallations: true } },
+    },
+  },
+  // Custodia actual mientras el rollo sigue IN_STOCK (Depósito/Local/Punto de
+  // Reventa). Queda con el último valor conocido incluso después de vendido
+  // — ver linkRollToSaleItem — así que para saber "dónde está" hoy siempre
+  // hay que mirar el status primero: si tiene saleItem, está en Instalador.
+  currentLocation: {
+    select: {
+      id: true,
+      type: true,
+      name: true,
+      contactId: true,
     },
   },
   saleItem: {
@@ -131,22 +157,43 @@ export async function getRollsWhere(where: Prisma.WarrantyRollWhereInput) {
  * Links a WarrantyRoll to a SaleItem and creates one PENDING installation
  * slot on it. If the SaleItem already points at a specific traced unit
  * (productUnitId), it must use THAT unit's roll — not a random one — so the
- * warranty system stays consistent with what was actually sold. Otherwise
- * falls back to FIFO: the oldest IN_STOCK roll for the product.
- * No-op if no matching roll is available.
+ * warranty system stays consistent with what was actually sold. Otherwise:
+ * prefer a roll already consigned at the buyer's OWN Punto de Reventa (saves
+ * the buyer a physical shipment — they already have it on their shelf), and
+ * only fall back to general FIFO (oldest IN_STOCK roll for the product,
+ * anywhere) if they don't have one sitting there. No-op if no matching roll
+ * is available.
  */
 export async function linkRollToSaleItem(
   tx: Tx,
   saleItemId: string,
   productId: string,
-  productUnitId?: string | null
+  productUnitId?: string | null,
+  buyerContactId?: string | null
 ): Promise<void> {
-  const roll = productUnitId
+  let roll = productUnitId
     ? await tx.warrantyRoll.findFirst({ where: { unitId: productUnitId, status: "IN_STOCK", saleItemId: null } })
-    : await tx.warrantyRoll.findFirst({
-        where: { productId, status: "IN_STOCK", saleItemId: null },
-        orderBy: { createdAt: "asc" },
-      });
+    : null;
+
+  if (!roll && !productUnitId && buyerContactId) {
+    roll = await tx.warrantyRoll.findFirst({
+      where: {
+        productId,
+        status: "IN_STOCK",
+        saleItemId: null,
+        currentLocation: { type: "PUNTO_REVENTA", contactId: buyerContactId },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  if (!roll && !productUnitId) {
+    roll = await tx.warrantyRoll.findFirst({
+      where: { productId, status: "IN_STOCK", saleItemId: null },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
   if (!roll) return;
 
   await tx.warrantyRoll.update({
@@ -154,6 +201,11 @@ export async function linkRollToSaleItem(
     data: {
       saleItemId,
       status: "SOLD",
+      // currentLocationId is deliberately left as-is, not cleared: once SOLD
+      // the roll's "location" for display purposes is derived from the sale
+      // (see the /api/warranty-rolls list), but keeping the last physical
+      // location means releaseRollForSaleItem (sale deleted/reversed) puts
+      // it back exactly where it physically was, no extra bookkeeping.
       installations: {
         create: {
           installationNumber: 1,
@@ -188,6 +240,56 @@ export async function releaseRollForSaleItem(tx: Tx, saleItemId: string): Promis
   await tx.warrantyRoll.update({
     where: { id: roll.id },
     data: { saleItemId: null, status: "IN_STOCK" },
+  });
+}
+
+/**
+ * Moves an IN_STOCK roll between Depósito/Local/Punto de Reventa — a purely
+ * internal custody change, not a sale: no warranty status changes, no stock
+ * movement is recorded (total company stock doesn't change, only who's
+ * holding it). Logs a WarrantyRollLocationEvent for audit, same spirit as
+ * StockMovement elsewhere in the system.
+ */
+export async function transferRollLocation(
+  fullRollCode: string,
+  toLocationId: string,
+  userId: string,
+  reason?: string
+): Promise<
+  | { ok: true }
+  | { ok: false; error: string; status: number }
+> {
+  return prisma.$transaction(async (tx) => {
+    const roll = await tx.warrantyRoll.findUnique({
+      where: { fullRollCode },
+      select: { id: true, status: true, currentLocationId: true },
+    });
+    if (!roll) return { ok: false as const, error: "Rollo no encontrado", status: 404 };
+    if (roll.status !== "IN_STOCK") {
+      return { ok: false as const, error: "Solo se pueden mover rollos que siguen en stock (IN_STOCK)", status: 400 };
+    }
+
+    const toLocation = await tx.location.findUnique({ where: { id: toLocationId } });
+    if (!toLocation || !toLocation.active) {
+      return { ok: false as const, error: "Ubicación de destino no encontrada", status: 404 };
+    }
+
+    await tx.warrantyRoll.update({
+      where: { id: roll.id },
+      data: { currentLocationId: toLocationId },
+    });
+
+    await tx.warrantyRollLocationEvent.create({
+      data: {
+        rollId: roll.id,
+        fromLocationId: roll.currentLocationId,
+        toLocationId,
+        userId,
+        reason,
+      },
+    });
+
+    return { ok: true as const };
   });
 }
 
