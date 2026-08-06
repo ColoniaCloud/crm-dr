@@ -14,10 +14,12 @@ function normalizeNumber(raw: string): string {
   return d;
 }
 
+// Envío individual — cualquier usuario autenticado (el envío masivo por
+// lista/campaña sigue restringido, ver /api/whatsapp/contacts y campaign).
 export async function POST(request: Request) {
   const session = await auth();
-  if (session?.user?.role !== "SUPERADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   const baseUrl = process.env.WHATSAPP_SERVICE_URL;

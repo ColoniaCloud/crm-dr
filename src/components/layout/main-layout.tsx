@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { Mail } from "lucide-react";
+import { Mail, MessageCircle } from "lucide-react";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -85,6 +85,14 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
                 >
                   <Mail className="h-4 w-4" />
                   <span className="hidden sm:inline">Mail</span>
+                </Link>
+                <Link
+                  href="/whatsapp"
+                  aria-label="WhatsApp"
+                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-0 sm:px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">WhatsApp</span>
                 </Link>
                 <NotificationBell />
                 <Separator orientation="vertical" className="mx-2 h-4" />

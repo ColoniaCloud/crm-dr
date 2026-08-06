@@ -6,6 +6,7 @@ import { logOperatorAction } from "@/lib/notifications";
 import { isAdminRole } from "@/lib/utils";
 import { getClientProfile } from "@/lib/client-portal";
 import { releaseRollForSaleItem } from "@/lib/warranty";
+import { getConsignmentBalance } from "@/lib/credit";
 const log = createLogger("api/clients/[id]");
 
 export async function GET(
@@ -15,9 +16,10 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const [profile, contact] = await Promise.all([
+    const [profile, contact, consignmentBalance] = await Promise.all([
       getClientProfile(id),
-      prisma.contact.findFirst({ where: { id, type: "CLIENT" } }),
+      prisma.contact.findFirst({ where: { id, type: "CLIENT" }, include: { creditTier: true } }),
+      getConsignmentBalance(id),
     ]);
 
     if (!profile || !contact) {
@@ -58,6 +60,10 @@ export async function GET(
       purchases: profile.purchases,
       payments: profile.payments,
       balance: profile.balance,
+      creditTier: contact.creditTier
+        ? { id: contact.creditTier.id, code: contact.creditTier.code, name: contact.creditTier.name, limit: contact.creditTier.limit.toString() }
+        : null,
+      consignmentBalance,
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching client");
@@ -109,13 +115,14 @@ export async function PATCH(
       return NextResponse.json({ ok: true });
     }
 
-    // Legacy partial update (notes, suppliers, priceRange only)
-    const { notes, suppliers, priceRange } = body;
+    // Legacy partial update (notes, suppliers, priceRange, creditTierId)
+    const { notes, suppliers, priceRange, creditTierId } = body;
 
     const data: Record<string, unknown> = {};
     if (notes !== undefined) data.notes = notes;
     if (suppliers !== undefined) data.currentSupplier = JSON.stringify(suppliers);
     if (priceRange !== undefined) data.currentSupplierPrices = priceRange;
+    if (creditTierId !== undefined) data.creditTierId = creditTierId || null;
 
     const result = await prisma.contact.updateMany({
       where: { id, type: "CLIENT" },

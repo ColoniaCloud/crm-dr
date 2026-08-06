@@ -2,14 +2,17 @@
 
 import { useEffect, useState, useCallback, useRef, Suspense, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/mail/rich-text-editor";
+import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
+import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
 import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
@@ -50,6 +53,8 @@ function formatBytes(bytes: number): string {
 function MailPageInner() {
   const searchParams = useSearchParams();
   const contactId = searchParams.get("contactId");
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === "SUPERADMIN";
 
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,6 +117,11 @@ function MailPageInner() {
     setComposeForm({ to: "", subject: "", html: "", ...prefill });
     setComposeKey((k) => k + 1);
     setComposeOpen(true);
+  }
+
+  function applyTemplate(t: MessageTemplate) {
+    setComposeForm((f) => ({ ...f, subject: t.subject ?? f.subject, html: t.body.replace(/\n/g, "<br>") }));
+    setComposeKey((k) => k + 1);
   }
 
   function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -215,6 +225,16 @@ function MailPageInner() {
         </div>
       </div>
 
+      <Tabs defaultValue="bandeja">
+        {isSuperAdmin && (
+          <TabsList>
+            <TabsTrigger value="bandeja">Bandeja</TabsTrigger>
+            <TabsTrigger value="settings">Configuración</TabsTrigger>
+          </TabsList>
+        )}
+
+        <TabsContent value="bandeja" className="space-y-6 mt-4">
+
       <Tabs value={filter} onValueChange={(v) => { setFilter(v as Filter); setSelected(null); }}>
         <TabsList>
           <TabsTrigger value="all">Todos</TabsTrigger>
@@ -298,6 +318,15 @@ function MailPageInner() {
         </Card>
       </div>
 
+        </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="settings" className="mt-4">
+            <MessageTemplatesManager channel="MAIL" />
+          </TabsContent>
+        )}
+      </Tabs>
+
       <Sheet open={composeOpen} onOpenChange={(open) => { setComposeOpen(open); if (!open) setError(""); }}>
         <SheetContent side="right" className="w-full sm:w-[40%] sm:max-w-none p-0 flex flex-col gap-0">
           <SheetHeader className="p-4 border-b space-y-0">
@@ -316,7 +345,10 @@ function MailPageInner() {
                 <Input value={composeForm.subject} onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })} required />
               </div>
               <div className="space-y-1">
-                <Label>Mensaje *</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Mensaje *</Label>
+                  <TemplatePicker channel="MAIL" onSelect={applyTemplate} />
+                </div>
                 <RichTextEditor
                   resetKey={composeKey}
                   initialHtml={composeForm.html}

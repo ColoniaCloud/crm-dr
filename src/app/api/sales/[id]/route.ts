@@ -136,7 +136,8 @@ export async function PUT(
         if (status === "CONFIRMED") {
           await confirmSale(tx, id, session.user.id);
         } else if (status === "CANCELLED") {
-          await restoreSaleStock(tx, id, session.user.id, `Venta #${existing.number} cancelada`);
+          const restored = await restoreSaleStock(tx, id, session.user.id, `Venta #${existing.number} cancelada`);
+          if (!restored.ok) throw new Error(restored.error);
           await tx.sale.update({ where: { id }, data: { status: "CANCELLED", ...rest } });
         } else {
           // DELIVERED: no stock/warranty side effects, already handled at CONFIRMED.
@@ -291,8 +292,10 @@ export async function DELETE(
     await prisma.$transaction(async (tx) => {
       // No-op if the sale was still PENDING (nothing was ever decremented);
       // restores stock + releases the warranty roll if it had been CONFIRMED
-      // or DELIVERED — same logic CANCELLED uses via PUT.
-      await restoreSaleStock(tx, id, session.user.id, `Venta #${sale.number} eliminada`);
+      // or DELIVERED — same logic CANCELLED uses via PUT. Also blocks (and
+      // rolls back the whole delete) if there's a plan with payments applied.
+      const restored = await restoreSaleStock(tx, id, session.user.id, `Venta #${sale.number} eliminada`);
+      if (!restored.ok) throw new Error(restored.error);
       await tx.payment.deleteMany({ where: { saleId: id } });
       await tx.remito.deleteMany({ where: { saleId: id } });
       await tx.saleItem.deleteMany({ where: { saleId: id } });
@@ -303,7 +306,8 @@ export async function DELETE(
     await logOperatorAction({ userId: session.user.id, action: "DELETE_SALE", entityType: "SALE", entityId: id, description: `Eliminó venta de "${cName}"` });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Error al eliminar venta";
     log.error({ err: error }, "Error deleting sale");
-    return NextResponse.json({ error: "Error al eliminar venta" }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

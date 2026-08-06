@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { ApiKeyManager } from "@/components/settings/api-key-manager";
+import { CreditTiersManager } from "@/components/settings/credit-tiers-manager";
 
 interface UserData {
   id: string;
@@ -466,6 +467,7 @@ export default function SettingsPage() {
 
       {isSuperAdmin && (
         <>
+          <CreditTiersManager />
           <ApiKeyManager
             title="API Keys de Garantías"
             description="Claves para talleres y sitios externos que activan/consultan garantías"

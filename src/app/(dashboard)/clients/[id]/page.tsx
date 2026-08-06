@@ -33,6 +33,7 @@ import { isAdminRole } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "lucide-react";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
+import { CreditTierCard } from "@/components/clients/credit-tier-card";
 import { ClientAccountStatement } from "@/components/clients/client-account-statement";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
@@ -80,6 +81,8 @@ interface ClientDetail {
     saleNumber: string;
   }>;
   balance: number;
+  creditTier: { id: string; code: string; name: string; limit: string } | null;
+  consignmentBalance: number;
 }
 
 export default function ClientDetailPage() {
@@ -165,28 +168,30 @@ export default function ClientDetailPage() {
     }
   }
 
-  useEffect(() => {
-    async function fetchClient() {
-      try {
-        const res = await fetch(`/api/clients/${clientId}`);
-        if (!res.ok) {
-          const errorBody = await res.json().catch(() => null) as { error?: string } | null;
-          throw new Error(errorBody?.error || "Error al cargar cliente");
-        }
-        const json = await res.json();
-        setClient(json);
-        setEditNotes(json.notes || "");
-        setEditSuppliers(json.suppliers || []);
-        setEditPriceRange(json.priceRange || "");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Error desconocido");
-      } finally {
-        setLoading(false);
+  async function fetchClient() {
+    try {
+      const res = await fetch(`/api/clients/${clientId}`);
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(errorBody?.error || "Error al cargar cliente");
       }
+      const json = await res.json();
+      setClient(json);
+      setEditNotes(json.notes || "");
+      setEditSuppliers(json.suppliers || []);
+      setEditPriceRange(json.priceRange || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     fetchClient();
     fetch("/api/users").then((r) => { if (!r.ok) throw new Error(); return r.json(); }).then((d) => setUsers(Array.isArray(d) ? d : [])).catch(() => {});
     fetch(`/api/clients/${clientId}/warranty-rolls`).then((r) => r.ok ? r.json() : { rolls: [] }).then(({ rolls }) => setWarrantyRolls(Array.isArray(rolls) ? rolls : [])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   function addSupplier() {
@@ -513,6 +518,17 @@ export default function ClientDetailPage() {
         {/* Portal access (Cliente login for kristallfilm.com) */}
         {isAdminUser && (
           <ClientPortalAccess clientId={clientId} clientEmail={client?.email ?? null} />
+        )}
+
+        {/* Escalafón de crédito (ventas a consignación) */}
+        {client && (
+          <CreditTierCard
+            clientId={clientId}
+            creditTier={client.creditTier}
+            consignmentBalance={client.consignmentBalance}
+            canEdit={isAdminUser}
+            onChanged={fetchClient}
+          />
         )}
 
         {/* Summary */}

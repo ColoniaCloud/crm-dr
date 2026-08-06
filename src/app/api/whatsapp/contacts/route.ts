@@ -18,8 +18,8 @@ const log = createLogger("api/whatsapp/contacts");
 //   city           = string (omit = all)
 export async function GET(request: Request) {
   const session = await auth();
-  if (session?.user?.role !== "SUPERADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
@@ -27,6 +27,14 @@ export async function GET(request: Request) {
     const filter = searchParams.get("filter");
     const search = (searchParams.get("search") || "").trim();
     const contactId = searchParams.get("contactId");
+
+    // "search" y "single" son los modos que usa el envío individual (abierto
+    // a cualquier usuario). El listado masivo por filtros (sin `filter`, más
+    // abajo) es específicamente para la lista de campaña — eso sigue
+    // restringido a SUPERADMIN.
+    if (filter !== "search" && filter !== "single" && session.user.role !== "SUPERADMIN") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     if (filter === "search") {
       if (!search) return NextResponse.json([]);

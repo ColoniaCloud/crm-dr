@@ -66,18 +66,41 @@ export async function confirmSale(
  * No-op if the sale never made it past PENDING: nothing was ever
  * decremented, so restoring it anyway would inflate stock that was never
  * actually removed.
+ *
+ * If the sale has an ACTIVE PaymentPlan: blocks (returns ok:false) when any
+ * cuota already has a payment applied — that money needs to be sorted out
+ * by hand first (nota de crédito, devolución), not silently orphaned. If the
+ * plan is ACTIVE but nothing was ever paid on it, it gets cancelled along
+ * with the sale — there's nothing to reconcile.
  */
 export async function restoreSaleStock(
   tx: Tx,
   saleId: string,
   userId: string,
   reason: string
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const sale = await tx.sale.findUnique({
     where: { id: saleId },
     include: { items: true },
   });
-  if (!sale || sale.status === "PENDING") return;
+  if (!sale) return { ok: true };
+
+  const plan = await tx.paymentPlan.findUnique({
+    where: { saleId },
+    include: { installments: { include: { allocations: true } } },
+  });
+  if (plan?.status === "ACTIVE") {
+    const hasPayments = plan.installments.some((i) => i.allocations.length > 0);
+    if (hasPayments) {
+      return {
+        ok: false,
+        error: "Esta venta tiene un plan de cuotas con pagos ya aplicados — cancelá o resolvé el plan antes de cancelar la venta",
+      };
+    }
+    await tx.paymentPlan.update({ where: { id: plan.id }, data: { status: "CANCELLED" } });
+  }
+
+  if (sale.status === "PENDING") return { ok: true };
 
   for (const item of sale.items) {
     const product = await tx.product.findUnique({ where: { id: item.productId } });
@@ -103,4 +126,6 @@ export async function restoreSaleStock(
   for (const item of sale.items) {
     await releaseRollForSaleItem(tx, item.id);
   }
+
+  return { ok: true };
 }

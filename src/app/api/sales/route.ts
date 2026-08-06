@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
 import { notifyNewPurchase } from "@/lib/client-portal";
+import { checkConsignmentCredit } from "@/lib/credit";
 import { calcTax } from "@/lib/utils";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
@@ -112,6 +113,16 @@ export async function POST(request: Request) {
     );
     const tax = requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - discount + tax;
+
+    if (type === "CONSIGNMENT") {
+      const credit = await checkConsignmentCredit(contactId, total);
+      if (!credit.ok) {
+        return NextResponse.json(
+          { error: credit.error, code: credit.code, balance: credit.balance, limit: credit.limit },
+          { status: 400 }
+        );
+      }
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       // Validate any traced units (rollos) being sold: must exist, belong to

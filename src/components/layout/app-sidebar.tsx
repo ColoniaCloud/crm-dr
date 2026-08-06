@@ -27,7 +27,6 @@ import {
   BarChart3,
   ChevronRight,
   Bell,
-  MessageCircle,
   Wrench,
   Plus,
   MessageSquare,
@@ -96,7 +95,6 @@ export function AppSidebar() {
   const { data: session } = useSession();
   const userRole = (session?.user?.role as string) || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
-  const isSuperAdmin = userRole === "SUPERADMIN";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -312,21 +310,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {/* WhatsApp — SUPERADMIN only */}
-              {isSuperAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive("/whatsapp")}
-                    tooltip="WhatsApp"
-                  >
-                    <Link href="/whatsapp" onClick={handleNavClick}>
-                      <MessageCircle className="text-primary" />
-                      <span>WhatsApp</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
+              {/* WhatsApp se movió al botón del header, junto a Mail — ver main-layout.tsx */}
 
               {/* Bottom items */}
               {bottomItems.filter((item) => {

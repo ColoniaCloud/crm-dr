@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
+import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -156,23 +157,15 @@ function buildContactsQuery(filters: ListFilters): string {
 
 export default function WhatsAppPage() {
   const { data: session, status: sessionStatus } = useSession();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (sessionStatus === "loading") return;
-    if (session?.user?.role !== "SUPERADMIN") {
-      router.replace("/");
-    }
-  }, [session, sessionStatus, router]);
-
-  if (sessionStatus === "loading" || session?.user?.role !== "SUPERADMIN") {
+  if (sessionStatus === "loading" || !session?.user?.id) {
     return null;
   }
 
-  return <WhatsAppPageInner />;
+  return <WhatsAppPageInner isSuperAdmin={session.user.role === "SUPERADMIN"} />;
 }
 
-function WhatsAppPageInner() {
+function WhatsAppPageInner({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   return (
     <div className="space-y-6">
       <div>
@@ -181,26 +174,36 @@ function WhatsAppPageInner() {
           WhatsApp
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Gestión de la conexión y envío de mensajes masivos.
+          {isSuperAdmin ? "Conexión, envío de mensajes y configuración." : "Enviar un mensaje individual."}
         </p>
       </div>
 
-      <Tabs defaultValue="connection" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-flex">
-          <TabsTrigger value="connection">Conexión</TabsTrigger>
+      <Tabs defaultValue="send" className="w-full">
+        <TabsList className="grid w-full sm:w-auto sm:inline-flex" style={{ gridTemplateColumns: `repeat(${isSuperAdmin ? 4 : 1}, minmax(0, 1fr))` }}>
+          {isSuperAdmin && <TabsTrigger value="connection">Conexión</TabsTrigger>}
           <TabsTrigger value="send">Enviar mensaje</TabsTrigger>
-          <TabsTrigger value="history">Historial</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="history">Historial</TabsTrigger>}
+          {isSuperAdmin && <TabsTrigger value="settings">Configuración</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="connection" className="mt-4">
-          <ConnectionTab />
-        </TabsContent>
+        {isSuperAdmin && (
+          <TabsContent value="connection" className="mt-4">
+            <ConnectionTab />
+          </TabsContent>
+        )}
         <TabsContent value="send" className="mt-4">
-          <SendTab />
+          <SendTab isSuperAdmin={isSuperAdmin} />
         </TabsContent>
-        <TabsContent value="history" className="mt-4">
-          <HistoryTab />
-        </TabsContent>
+        {isSuperAdmin && (
+          <TabsContent value="history" className="mt-4">
+            <HistoryTab />
+          </TabsContent>
+        )}
+        {isSuperAdmin && (
+          <TabsContent value="settings" className="mt-4">
+            <MessageTemplatesManager channel="WHATSAPP" />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -388,12 +391,12 @@ function ConnectionTab() {
 }
 
 // ── Send Tab ──────────────────────────────────────────────────────────────────
-function SendTab() {
+function SendTab({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const [tags, setTags] = useState<TagDef[]>([]);
   const [states, setStates] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
 
-  const [sendMode, setSendMode] = useState<SendMode>("list");
+  const [sendMode, setSendMode] = useState<SendMode>("single");
   const [filters, setFilters] = useState<ListFilters>(DEFAULT_FILTERS);
 
   const [recipients, setRecipients] = useState<ContactBrief[]>([]);
@@ -692,6 +695,7 @@ function SendTab() {
           <CardDescription>Seleccioná a quién enviar el mensaje.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {isSuperAdmin && (
           <div className="space-y-2">
             <Label>Modo de envío</Label>
             <Select
@@ -707,10 +711,11 @@ function SendTab() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="single">Contacto individual</SelectItem>
-                <SelectItem value="list">Lista filtrada</SelectItem>
+                <SelectItem value="list">Lista filtrada (campaña)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          )}
 
           {sendMode === "single" && (
             <div className="space-y-2">
@@ -997,6 +1002,8 @@ function SendTab() {
                 <span className="mx-1 h-5 w-px bg-border" />
 
                 <EmojiPicker onPick={insertAtCursor} />
+
+                <TemplatePicker channel="WHATSAPP" onSelect={(t: MessageTemplate) => setMessage(t.body)} />
 
                 <Button
                   type="button"

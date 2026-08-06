@@ -160,6 +160,7 @@ model User {
   paymentPlans       PaymentPlan[]       @relation("PaymentPlanCreatedBy")
   accountAdjustments AccountAdjustment[] @relation("AccountAdjustmentCreatedBy")
   warrantyRollLocationEvents WarrantyRollLocationEvent[]
+  messageTemplates           MessageTemplate[]
 
   @@map("users")
 }
@@ -216,6 +217,11 @@ model Contact {
   cuit            String?
   website         String?
   notes           String?       @db.Text
+  // Límite de crédito para ventas a consignación (libres o en cuotas). Sin
+  // esto asignado, el CRM no deja crear una venta CONSIGNMENT para este
+  // contacto — ver checkConsignmentCredit() en src/lib/credit.ts.
+  creditTierId    String?
+  creditTier      CreditTier?   @relation(fields: [creditTierId], references: [id])
 
   // Installer-specific fields
   hasLocalStore       Boolean   @default(false)
@@ -259,6 +265,25 @@ model Contact {
 
   @@index([email])
   @@map("contacts")
+}
+
+/// Escalafón de crédito para ventas a consignación (libres o en cuotas). Los
+/// 4 iniciales (A/B/C/D) se siembran con prisma/seed-credit-tiers.ts, pero
+/// esta tabla es editable desde /settings (SUPERADMIN) — no un enum fijo en
+/// código, porque los límites en pesos son justamente lo que se va a querer
+/// ajustar con el tiempo sin tocar código.
+model CreditTier {
+  id        String    @id @default(cuid())
+  code      String    @unique // "A" | "B" | "C" | "D" | lo que se cargue
+  name      String
+  limit     Decimal   @db.Decimal(12, 2)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  contacts  Contact[]
+
+  @@map("credit_tiers")
 }
 
 model Visit {
@@ -736,6 +761,31 @@ model WhatsAppMessage {
 
   @@index([sentAt])
   @@map("whatsapp_messages")
+}
+
+enum MessageChannel {
+  MAIL
+  WHATSAPP
+}
+
+/// Mensaje predeterminado, gestionado por SUPERADMIN desde la pestaña
+/// "Configuración" de /mail y /whatsapp, usable por cualquier usuario al
+/// enviar (individual o campaña) en ese mismo canal. `subject` solo aplica a
+/// MAIL — WhatsApp no tiene asunto.
+model MessageTemplate {
+  id        String         @id @default(cuid())
+  channel   MessageChannel
+  name      String
+  subject   String?
+  body      String         @db.Text
+  active    Boolean        @default(true)
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([channel, active])
+  @@map("message_templates")
 }
 
 // ─── Correo por-operador (casilla real de Hostinger, IMAP + SMTP) ────────────

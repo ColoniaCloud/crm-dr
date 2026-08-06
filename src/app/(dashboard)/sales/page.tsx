@@ -11,10 +11,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate, calcTax } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
+
+interface CreditTier { id: string; code: string; name: string; limit: string; }
 
 interface Sale {
   id: string;
@@ -75,6 +78,13 @@ function SalesPage() {
   });
   const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Escalafón de crédito faltante al crear una venta a consignación
+  const [creditTierPrompt, setCreditTierPrompt] = useState(false);
+  const [creditTiers, setCreditTiers] = useState<CreditTier[]>([]);
+  const [selectedTierId, setSelectedTierId] = useState("");
+  const [tierSaving, setTierSaving] = useState(false);
+  const [tierError, setTierError] = useState("");
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -156,6 +166,15 @@ function SalesPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        if (data?.code === "NO_CREDIT_TIER") {
+          if (creditTiers.length === 0) {
+            const tr = await fetch("/api/credit-tiers");
+            if (tr.ok) setCreditTiers(await tr.json());
+          }
+          setTierError("");
+          setCreditTierPrompt(true);
+          return;
+        }
         throw new Error(data?.error || "Error al crear venta");
       }
       const created: CreatedSale = await res.json();
@@ -167,6 +186,32 @@ function SalesPage() {
     } catch (err) {
       console.error("[sales] create", err);
       setError(err instanceof Error ? err.message : "Error al crear venta");
+    }
+  }
+
+  // El cliente elegido para la venta a consignación no tenía escalafón —
+  // se asigna acá mismo y se reintenta crear la venta sin perder lo cargado.
+  async function assignTierAndRetry() {
+    if (!selectedTierId) return;
+    setTierSaving(true);
+    setTierError("");
+    try {
+      const res = await fetch(`/api/clients/${form.contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creditTierId: selectedTierId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "No se pudo asignar el escalafón");
+      }
+      setCreditTierPrompt(false);
+      setSelectedTierId("");
+      await handleCreate();
+    } catch (err) {
+      setTierError(err instanceof Error ? err.message : "No se pudo asignar el escalafón");
+    } finally {
+      setTierSaving(false);
     }
   }
 
@@ -440,6 +485,34 @@ function SalesPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={creditTierPrompt} onOpenChange={(o) => !o && setCreditTierPrompt(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" />Falta un escalafón de crédito</DialogTitle>
+            <DialogDescription>
+              Este cliente todavía no tiene un escalafón asignado — hace falta uno para vender a consignación. Elegilo acá y seguimos con la venta.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Select value={selectedTierId} onValueChange={setSelectedTierId}>
+              <SelectTrigger><SelectValue placeholder="Elegir escalafón" /></SelectTrigger>
+              <SelectContent>
+                {creditTiers.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.code} — {t.name} (hasta {formatCurrency(Number(t.limit))})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {tierError && <p className="text-sm text-destructive">{tierError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreditTierPrompt(false)}>Cancelar</Button>
+            <Button onClick={assignTierAndRetry} disabled={tierSaving || !selectedTierId}>
+              {tierSaving ? "Guardando..." : "Asignar y continuar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
