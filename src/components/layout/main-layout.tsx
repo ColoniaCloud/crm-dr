@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import logoColonia from "@/public/Logo.png";
-import { CurrencyProvider, useCurrency } from "@/contexts/currency-context";
+import { CurrencyProvider } from "@/contexts/currency-context";
 import {
   PWAInstallProvider,
   PWAInstallBanner,
@@ -22,22 +22,6 @@ const UserMenu = dynamic(
   () => import("@/components/layout/user-menu").then((m) => ({ default: m.UserMenu })),
   { ssr: false }
 );
-
-function CurrencyToggle() {
-  const { currency, rate, loading, toggle } = useCurrency();
-  return (
-    <button
-      onClick={toggle}
-      title={rate ? `1 USD = $${rate.toLocaleString("es-AR")} ARS` : "Cargando cotización..."}
-      className="flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs font-semibold transition-colors hover:bg-muted"
-    >
-      <span className={currency === "USD" ? "text-foreground" : "text-muted-foreground"}>USD</span>
-      <span className="text-muted-foreground/40">/</span>
-      <span className={currency === "ARS" ? "text-foreground" : "text-muted-foreground"}>ARS</span>
-      {loading && <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-    </button>
-  );
-}
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -58,7 +42,6 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mx-2 h-4" />
             <span className="flex-1 text-sm font-medium text-muted-foreground">{title}</span>
-            <CurrencyToggle />
             <button
               onClick={async () => {
                 if ("caches" in window) {
@@ -81,7 +64,7 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
                 <Link
                   href="/mail"
                   aria-label="Mail"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-green-600 px-0 sm:px-3 text-xs font-semibold text-white transition-colors hover:bg-green-700"
+                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-green-600 px-0 sm:px-5 text-xs font-semibold text-white transition-colors hover:bg-green-700"
                 >
                   <Mail className="h-4 w-4" />
                   <span className="hidden sm:inline">Mail</span>
@@ -89,7 +72,7 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
                 <Link
                   href="/whatsapp"
                   aria-label="WhatsApp"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-0 sm:px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-0 sm:px-5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
                 >
                   <MessageCircle className="h-4 w-4" />
                   <span className="hidden sm:inline">WhatsApp</span>

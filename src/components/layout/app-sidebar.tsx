@@ -52,6 +52,23 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useCurrency } from "@/contexts/currency-context";
+
+function CurrencyToggle() {
+  const { currency, rate, loading, toggle } = useCurrency();
+  return (
+    <button
+      onClick={toggle}
+      title={rate ? `1 USD = $${rate.toLocaleString("es-AR")} ARS` : "Cargando cotización..."}
+      className="flex w-full items-center justify-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs font-semibold transition-colors hover:bg-muted"
+    >
+      <span className={currency === "USD" ? "text-foreground" : "text-muted-foreground"}>USD</span>
+      <span className="text-muted-foreground/40">/</span>
+      <span className={currency === "ARS" ? "text-foreground" : "text-muted-foreground"}>ARS</span>
+      {loading && <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+    </button>
+  );
+}
 
 const simpleItems = [
   { label: "Clientes", href: "/clients", icon: Users },
@@ -352,6 +369,9 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <div className="px-2 pb-2 group-data-[collapsible=icon]:hidden">
+          <CurrencyToggle />
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
