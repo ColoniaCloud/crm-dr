@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,13 @@ import { formatDate, calcTax } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
+import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
+
+function defaultFirstDueDate(): string {
+  const hoy = new Date();
+  const enUnMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, hoy.getDate());
+  return enUnMes.toISOString().slice(0, 10);
+}
 
 interface CreditTier { id: string; code: string; name: string; limit: string; }
 
@@ -40,7 +47,7 @@ interface CreatedSaleItem {
     installations: { activationToken: string; status: string }[];
   } | null;
 }
-interface CreatedSale { number: number; items: CreatedSaleItem[]; }
+interface CreatedSale { id: string; number: number; items: CreatedSaleItem[]; }
 
 export default function SalesPageWrapper() {
   return (
@@ -75,9 +82,14 @@ function SalesPage() {
         : { productId: "", quantity: 1, unitPrice: 0 },
     ] as Array<{ productId: string; quantity: number; unitPrice: number; productUnitId?: string }>,
     discount: 0, notes: "", requiresFactura: false,
+    buildPlan: false,
+    installmentCount: "3",
+    frequency: "MONTHLY" as PlanFrequency,
+    firstDueDate: defaultFirstDueDate(),
   });
   const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [planWarning, setPlanWarning] = useState("");
 
   // Escalafón de crédito faltante al crear una venta a consignación
   const [creditTierPrompt, setCreditTierPrompt] = useState(false);
@@ -134,6 +146,18 @@ function SalesPage() {
     finally { setLoading(false); }
   }
 
+  const installmentPreview = useMemo(() => {
+    if (form.type !== "CONSIGNMENT" || !form.buildPlan || !form.firstDueDate) return [];
+    const n = parseInt(form.installmentCount, 10);
+    if (!n || n < 2 || n > 60) return [];
+    const sub = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const tax = form.requiresFactura ? calcTax(sub) : 0;
+    const total = sub - form.discount + tax;
+    const fecha = new Date(`${form.firstDueDate}T12:00:00`);
+    if (Number.isNaN(fecha.getTime()) || total <= 0) return [];
+    return buildInstallmentSchedule({ total, installmentCount: n, frequency: form.frequency, firstDueDate: fecha });
+  }, [form.type, form.buildPlan, form.installmentCount, form.frequency, form.firstDueDate, form.items, form.discount, form.requiresFactura]);
+
   function updateItem(idx: number, field: string, value: string | number) {
     const items = [...form.items];
     (items[idx] as Record<string, string | number>)[field] = value;
@@ -151,6 +175,7 @@ function SalesPage() {
     const subtotal = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const tax = form.requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - form.discount + tax;
+    setPlanWarning("");
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
@@ -178,10 +203,40 @@ function SalesPage() {
         throw new Error(data?.error || "Error al crear venta");
       }
       const created: CreatedSale = await res.json();
+
+      // Consignación + "Armar plan de cuotas" tildado: la venta ya existe,
+      // ahora se arma el plan en el mismo paso reusando el endpoint que ya
+      // usa la tarjeta de plan de cuotas del detalle de venta.
+      if (form.type === "CONSIGNMENT" && form.buildPlan) {
+        const n = parseInt(form.installmentCount, 10);
+        if (n >= 2 && n <= 60 && form.firstDueDate) {
+          const planRes = await fetch(`/api/sales/${created.id}/payment-plan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              installmentCount: n,
+              frequency: form.frequency,
+              firstDueDate: new Date(`${form.firstDueDate}T12:00:00`).toISOString(),
+            }),
+          });
+          if (!planRes.ok) {
+            const planData = await planRes.json().catch(() => ({}));
+            setPlanWarning(
+              `La venta #${created.number} se creó, pero no se pudo armar el plan de cuotas: ${planData.error || "error desconocido"}. Podés armarlo desde el detalle de la venta.`
+            );
+          }
+        }
+      }
+
       const hasWarrantyLink = created.items.some((i) => i.warrantyRoll?.installations.some((inst) => inst.status === "PENDING"));
       setCreatedSale(hasWarrantyLink ? created : null);
       setShowForm(false);
-      setForm({ contactId: "", type: "REGULAR", items: [{ productId: "", quantity: 1, unitPrice: 0 }], discount: 0, notes: "", requiresFactura: false });
+      setForm({
+        contactId: "", type: "REGULAR",
+        items: [{ productId: "", quantity: 1, unitPrice: 0 }],
+        discount: 0, notes: "", requiresFactura: false,
+        buildPlan: false, installmentCount: "3", frequency: "MONTHLY", firstDueDate: defaultFirstDueDate(),
+      });
       fetchAll();
     } catch (err) {
       console.error("[sales] create", err);
@@ -286,6 +341,12 @@ function SalesPage() {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {planWarning && (
+        <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {planWarning}
+        </div>
+      )}
 
       {createdSale && (
         <Card className="border-primary/30">
@@ -356,6 +417,68 @@ function SalesPage() {
                 </Select>
               </div>
             </div>
+
+            {form.type === "CONSIGNMENT" && (
+              <div className="rounded-md border p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="buildPlanSale"
+                    checked={form.buildPlan}
+                    onChange={(e) => setForm({ ...form, buildPlan: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="buildPlanSale">Armar plan de cuotas para esta venta</Label>
+                </div>
+                {form.buildPlan && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="saleCuotas">Cantidad de cuotas</Label>
+                        <Input
+                          id="saleCuotas"
+                          type="number"
+                          min={2}
+                          max={60}
+                          value={form.installmentCount}
+                          onChange={(e) => setForm({ ...form, installmentCount: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="saleFrecuencia">Frecuencia</Label>
+                        <Select
+                          value={form.frequency}
+                          onValueChange={(v) => setForm({ ...form, frequency: v as PlanFrequency })}
+                        >
+                          <SelectTrigger id="saleFrecuencia"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="MONTHLY">{PLAN_FREQUENCY_LABEL.MONTHLY}</SelectItem>
+                            <SelectItem value="BIWEEKLY">{PLAN_FREQUENCY_LABEL.BIWEEKLY}</SelectItem>
+                            <SelectItem value="WEEKLY">{PLAN_FREQUENCY_LABEL.WEEKLY}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="salePrimerVto">Primer vencimiento</Label>
+                      <Input
+                        id="salePrimerVto"
+                        type="date"
+                        value={form.firstDueDate}
+                        onChange={(e) => setForm({ ...form, firstDueDate: e.target.value })}
+                      />
+                    </div>
+                    {installmentPreview.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {installmentPreview.length} cuotas de {formatCurrency(installmentPreview[0].amount)} aprox. cada una
+                        {" "}(la última ajusta el redondeo), primera el {formatDate(installmentPreview[0].dueDate.toISOString())}.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             <div>
               <Label>Productos</Label>
               {form.items.map((item, idx) => (
