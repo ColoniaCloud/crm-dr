@@ -58,6 +58,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
 - Para pedidos como "quién me debe", "saldos pendientes" o "clientes con deuda", usá list_pending_balances.
+- Para pedidos como "cuánto cobramos", "cuánto entró" o "total de pagos" en un período, usá sum_payments. Convertí vos el período a fechas concretas (from/to en formato YYYY-MM-DD) usando la fecha actual: "el mes pasado" es del día 1 al último día del mes anterior, "esta semana" arranca el lunes, etc.
 - Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
 - Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
@@ -371,6 +372,20 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "sum_payments",
+    description: "Suma el total de pagos cobrados en un período de fechas. Usá esto cuando el usuario pregunte cuánto se cobró, cuánto entró o cuál fue el total de pagos en un rango (ej. \"cuánto es el total de los pagos del mes pasado\", \"cuánto cobramos en marzo\", \"cuánto entró esta semana\"). Es lo cobrado, distinto de lo vendido: para montos de ventas usá query_data. Solo ADMIN/SUPERADMIN.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Primer día del período, inclusive, en formato YYYY-MM-DD." },
+        to: { type: "string", description: "Último día del período, inclusive, en formato YYYY-MM-DD." },
+        period_label: { type: "string", description: "Cómo nombrar el período en la respuesta, tal como lo dijo el usuario. Ej: \"el mes pasado\", \"marzo\", \"esta semana\"." },
+        message: { type: "string", description: "Mensaje breve de confirmación al usuario." },
+      },
+      required: ["from", "to", "period_label", "message"],
+    },
+  },
+  {
     name: "search_quotes",
     description: "Busca presupuestos por número o por nombre/empresa del cliente, mostrando estado y total. Solo ADMIN/SUPERADMIN.",
     input_schema: {
@@ -426,6 +441,40 @@ const SECTION_LABELS: Record<string, string> = {
   "/whatsapp": "Ir a WhatsApp",
   "/warranty-claims": "Ir a Garantías",
 };
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: "Efectivo",
+  TRANSFER: "Transferencia",
+  CHECK: "Cheque",
+  CARD: "Tarjeta",
+  OTHER: "Otro",
+};
+
+/**
+ * Convierte un "YYYY-MM-DD" en el arranque o el cierre de ese día, en la zona
+ * horaria del servidor.
+ *
+ * No se usa `new Date(str)` a propósito: esa forma interpreta la fecha como UTC,
+ * así que en Argentina (UTC-3) el 1° de julio arranca el 30 de junio a las 21:00
+ * y el rango se come un día ajeno. Es el mismo corrimiento que ya se corrigió en
+ * los vencimientos de cuotas. Construir la fecha por componentes la deja en hora
+ * local, igual que el resto de los rangos de executeDataQuery().
+ *
+ * Devuelve `null` si el texto no es una fecha real (incluye el caso "2026-02-31",
+ * que JS aceptaría corriéndolo a marzo).
+ */
+function parseDayBoundary(value: string, edge: "start" | "end"): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value || "").trim());
+  if (!match) return null;
+
+  const [, y, m, d] = match.map(Number);
+  const date = edge === "start"
+    ? new Date(y, m - 1, d, 0, 0, 0, 0)
+    : new Date(y, m - 1, d, 23, 59, 59, 999);
+
+  const rolledOver = date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d;
+  return rolledOver ? null : date;
+}
 
 async function executeDataQuery(queryType: string): Promise<string> {
   const now = new Date();
@@ -1338,6 +1387,120 @@ export async function runAssistant(params: {
       };
 
       return { data: { message: msg, action }, status: 200 };
+    }
+
+    // ── sum_payments ──────────────────────────────────────────────────────────
+    if (toolBlock.name === "sum_payments") {
+      if (!isAdminOrAbove(actor.role)) {
+        return { data: { message: "Solo ADMIN/SUPERADMIN pueden consultar pagos." }, status: 200 };
+      }
+      const msg = input.message as string;
+      const periodLabel = (input.period_label as string) || "el período";
+
+      const from = parseDayBoundary(input.from as string, "start");
+      const to = parseDayBoundary(input.to as string, "end");
+
+      if (!from || !to) {
+        return { data: { message: `${msg}\n\nNo pude interpretar las fechas del período. Probá diciéndolo como "del 1 al 31 de julio" o "en junio".` }, status: 200 };
+      }
+      if (from > to) {
+        return { data: { message: `${msg}\n\nEse período está al revés: la fecha de inicio es posterior a la de fin.` }, status: 200 };
+      }
+
+      // Se cuentan todos los pagos registrados en el rango: la pregunta es cuánta
+      // plata entró, así que no se filtra por el estado de la venta asociada.
+      const payments = await prisma.payment.findMany({
+        where: { paidAt: { gte: from, lte: to } },
+        orderBy: { paidAt: "desc" },
+        include: {
+          contact: { select: { firstName: true, lastName: true, company: true } },
+          sale: { select: { number: true, status: true } },
+        },
+      });
+
+      const money = (n: number) => `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`;
+      // "el mes pasado" -> "del mes pasado"; "marzo" -> "de marzo".
+      const deLabel = periodLabel.startsWith("el ") ? `del ${periodLabel.slice(3)}` : `de ${periodLabel}`;
+
+      // Quién quedó sin cobrar en el período. El saldo se calcula con el mismo
+      // criterio que list_pending_balances (total menos pagos, sin contar
+      // anuladas) pero agrupado por cliente, no por venta: al usuario le importa
+      // a quién reclamarle, y un cliente puede tener varias ventas abiertas.
+      const cobraronEnElPeriodo = new Set(payments.map((p) => p.contactId));
+      const ventasVigentes = await prisma.sale.findMany({
+        where: { status: { not: "CANCELLED" } },
+        include: {
+          contact: { select: { id: true, firstName: true, lastName: true, company: true } },
+          payments: { select: { amount: true } },
+        },
+      });
+
+      const saldoPorCliente = new Map<string, { nombre: string; saldo: number }>();
+      for (const s of ventasVigentes) {
+        const pagado = s.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        const saldo = Number(s.total) - pagado;
+        if (saldo <= 0.01) continue;
+        const acumulado = saldoPorCliente.get(s.contact.id);
+        saldoPorCliente.set(s.contact.id, {
+          nombre: s.contact.company || `${s.contact.firstName} ${s.contact.lastName}`.trim(),
+          saldo: (acumulado?.saldo ?? 0) + saldo,
+        });
+      }
+
+      const sinPagar = [...saldoPorCliente.entries()]
+        .filter(([contactId]) => !cobraronEnElPeriodo.has(contactId))
+        .map(([, cliente]) => cliente)
+        .sort((a, b) => b.saldo - a.saldo);
+
+      const avisoSinPagar = sinPagar.length === 0
+        ? ""
+        : `\n\n⚠️ **${sinPagar.length === 1 ? "1 cliente con saldo pendiente no registró" : `${sinPagar.length} clientes con saldo pendiente no registraron`} ningún pago en ${periodLabel}:**\n` +
+          sinPagar.slice(0, 10).map((c) => `- ${c.nombre} — debe ${money(c.saldo)}`).join("\n") +
+          (sinPagar.length > 10 ? `\n- …y ${sinPagar.length - 10} más. Pedime "quiénes me deben" para verlos a todos.` : "");
+
+      if (payments.length === 0) {
+        return { data: { message: `${msg}\n\nNo hay pagos registrados en ${periodLabel}.${avisoSinPagar}` }, status: 200 };
+      }
+
+      const total = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+      // Los pagos sobre ventas anuladas NO se descuentan del total: esa plata
+      // entró igual. Se muestran aparte para que el número no se lea como
+      // facturación válida, y la venta queda marcada en la tabla.
+      const anulados = payments.filter((p) => p.sale.status === "CANCELLED");
+      const totalAnulado = anulados.reduce((sum, p) => sum + Number(p.amount), 0);
+
+      const avisoAnuladas = anulados.length === 0
+        ? ""
+        : `\n\n⚠️ Incluye ${money(totalAnulado)} en ${anulados.length} ${anulados.length === 1 ? "pago" : "pagos"} sobre ventas anuladas ` +
+          `(${[...new Set(anulados.map((p) => `#${p.sale.number}`))].join(", ")}). ` +
+          `**Neto sin anuladas: ${money(total - totalAnulado)}.**`;
+
+      const shown = payments.slice(0, 30);
+      const overflow = payments.length - shown.length;
+
+      const summary =
+        `${msg}\n\n**Total cobrado en ${periodLabel}: ${money(total)}** ` +
+        `(${payments.length} ${payments.length === 1 ? "pago" : "pagos"}).` +
+        avisoAnuladas +
+        (overflow > 0 ? `\n\nEl total incluye todos los pagos; la tabla lista los ${shown.length} más recientes.` : "") +
+        avisoSinPagar;
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Pagos ${deLabel} (${payments.length})`,
+        columns: ["Fecha", "Venta", "Empresa / Cliente", "Método", "Monto"],
+        rows: shown.map((p) => ({
+          Fecha: p.paidAt.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+          Venta: p.sale.status === "CANCELLED" ? `#${p.sale.number} (anulada)` : `#${p.sale.number}`,
+          "Empresa / Cliente": p.contact.company || `${p.contact.firstName} ${p.contact.lastName}`.trim(),
+          Método: PAYMENT_METHOD_LABELS[p.method ?? ""] ?? p.method ?? "-",
+          Monto: money(Number(p.amount)),
+        })),
+        rowLinks: shown.map((p) => `/sales/${p.saleId}`),
+      };
+
+      return { data: { message: summary, action }, status: 200 };
     }
 
     // ── search_quotes ─────────────────────────────────────────────────────────
