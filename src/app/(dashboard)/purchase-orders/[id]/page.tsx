@@ -300,10 +300,10 @@ export default function PurchaseOrderDetailPage() {
                 Agregá productos a la orden
               </p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4 sm:space-y-3">
                 {newItems.map((item, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-5 space-y-1">
+                  <div key={i} className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:items-end pb-4 sm:pb-0 border-b sm:border-0">
+                    <div className="sm:col-span-5 space-y-1">
                       <Label className="text-xs">Producto</Label>
                       <Select value={item.productId} onValueChange={(v) => {
                         const updated = [...newItems];
@@ -318,7 +318,7 @@ export default function PurchaseOrderDetailPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-2 space-y-1">
+                    <div className="sm:col-span-2 space-y-1">
                       <Label className="text-xs">Cantidad</Label>
                       <Input type="number" min="1" value={item.quantity} onChange={(e) => {
                         const updated = [...newItems];
@@ -326,7 +326,7 @@ export default function PurchaseOrderDetailPage() {
                         setNewItems(updated);
                       }} />
                     </div>
-                    <div className="col-span-3 space-y-1">
+                    <div className="sm:col-span-3 space-y-1">
                       <Label className="text-xs">Costo FOB ({newOrderForm.currency})</Label>
                       <Input type="number" step="0.01" value={item.costFOB} onChange={(e) => {
                         const updated = [...newItems];
@@ -334,7 +334,7 @@ export default function PurchaseOrderDetailPage() {
                         setNewItems(updated);
                       }} placeholder="0.00" />
                     </div>
-                    <div className="col-span-2 flex justify-end">
+                    <div className="sm:col-span-2 flex justify-end">
                       <Button size="icon" variant="ghost" aria-label="Eliminar item" onClick={() => removeNewItem(i)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -346,7 +346,7 @@ export default function PurchaseOrderDetailPage() {
           </CardContent>
         </Card>
 
-        <div className="flex gap-2 justify-end">
+        <div className="flex flex-wrap gap-2 justify-end">
           <Button variant="outline" onClick={() => router.push("/purchase-orders")}>Cancelar</Button>
           <Button onClick={handleCreate} disabled={saving || !newOrderForm.supplierId || newItems.length === 0}>
             {saving ? "Creando..." : "Crear orden"}
@@ -367,8 +367,8 @@ export default function PurchaseOrderDetailPage() {
   const totalLanded = totalFOBinARS + totalImportCostsARS;
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-4xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" aria-label="Volver a órdenes de compra" onClick={() => router.push("/purchase-orders")}>
             <ArrowLeft className="h-4 w-4" />
@@ -378,7 +378,7 @@ export default function PurchaseOrderDetailPage() {
             <p className="text-muted-foreground text-sm">{order.supplier.name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant={order.status === "RECEIVED" ? "default" : "secondary"}>
             {statusLabel[order.status]}
           </Badge>
@@ -406,9 +406,9 @@ export default function PurchaseOrderDetailPage() {
         ));
         if (unconfigured.length === 0) return null;
         return (
-          <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Los siguientes productos no tienen garantía configurada: {unconfigured.join(", ")} — sus códigos serán solo de trazabilidad.
+          <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>Los siguientes productos no tienen garantía configurada: {unconfigured.join(", ")} — sus códigos serán solo de trazabilidad.</span>
           </div>
         );
       })()}
@@ -419,14 +419,14 @@ export default function PurchaseOrderDetailPage() {
         ));
         if (missingFactoryCode.length === 0) return null;
         return (
-          <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Los siguientes productos no tienen código de fábrica cargado: {missingFactoryCode.join(", ")} — en el PDF se usará el código interno.
+          <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>Los siguientes productos no tienen código de fábrica cargado: {missingFactoryCode.join(", ")} — en el PDF se usará el código interno.</span>
           </div>
         );
       })()}
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Total FOB ({order.currency})</p>
@@ -451,7 +451,7 @@ export default function PurchaseOrderDetailPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader><CardTitle className="text-base">Estado y fechas</CardTitle></CardHeader>
           <CardContent className="space-y-3">

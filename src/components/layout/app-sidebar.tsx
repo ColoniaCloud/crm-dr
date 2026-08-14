@@ -90,6 +90,7 @@ const bottomItems = [
 const productosSubItems = [
   { label: "Productos / Stock", href: "/products", icon: Package },
   { label: "Proveedores", href: "/suppliers", icon: Truck },
+  { label: "Órdenes de Compra", href: "/purchase-orders", icon: ClipboardList },
   { label: "Movimientos Stock", href: "/stock-movements", icon: BarChart3 },
 ];
 
@@ -98,7 +99,6 @@ const ventasSubItems = [
   { label: "Presupuestos", href: "/quotes", icon: FileText },
   { label: "Remitos", href: "/remitos", icon: FileCheck },
   { label: "Pagos", href: "/payments", icon: CreditCard },
-  { label: "Órdenes de Compra", href: "/purchase-orders", icon: ClipboardList },
 ];
 
 interface ConversationSummary {
