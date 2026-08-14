@@ -59,6 +59,7 @@ const EMPTY_FORM = {
   category: "AUTOMOTIVE",
   subcategory: "",
   brand: "",
+  factoryCode: "",
   shade: "",
   stock: "0",
   minStock: "0",
@@ -168,6 +169,7 @@ export default function NewProductPage() {
           category: form.category,
           subcategory: form.subcategory || null,
           brand: form.brand || null,
+          factoryCode: form.factoryCode || null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
           minStock: parseInt(form.minStock) || 0,
@@ -279,6 +281,11 @@ export default function NewProductPage() {
                 <Label>Marca</Label>
                 <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="Ej: 3M, Llumar..." />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Código de fábrica</Label>
+              <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
             </div>
 
             {/* Stock + Min Stock */}

@@ -12,13 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Plus, Trash2, PackageCheck, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, PackageCheck, AlertTriangle, Download } from "lucide-react";
 import { useCurrency } from "@/contexts/currency-context";
+import { downloadPurchaseOrderPDF } from "@/components/purchase-order-pdf";
 
 interface Product {
   id: string;
   name: string;
   sku: string | null;
+  factoryCode: string | null;
   category: string;
   stock: number;
   warrantyConfig: { id: string } | null;
@@ -46,6 +48,9 @@ interface Supplier {
   name: string;
   currency: string;
   country: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
 }
 
 interface PurchaseOrder {
@@ -181,6 +186,29 @@ export default function PurchaseOrderDetailPage() {
       setStatus(data.status);
     }
     setReceiving(false);
+  };
+
+  const handleDownload = async () => {
+    if (!order) return;
+    await downloadPurchaseOrderPDF({
+      number: order.number,
+      orderDate: order.orderDate,
+      expectedDate: order.expectedDate,
+      currency: order.currency,
+      notes: order.notes,
+      supplier: {
+        name: order.supplier.name,
+        country: order.supplier.country,
+        contactName: order.supplier.contactName,
+        contactEmail: order.supplier.contactEmail,
+        contactPhone: order.supplier.contactPhone,
+      },
+      items: order.items.map((i) => ({
+        product: { name: i.product.name, sku: i.product.sku, factoryCode: i.product.factoryCode },
+        quantity: i.quantity,
+        costFOB: i.costFOB,
+      })),
+    });
   };
 
   const addImportCost = () => {
@@ -354,6 +382,10 @@ export default function PurchaseOrderDetailPage() {
           <Badge variant={order.status === "RECEIVED" ? "default" : "secondary"}>
             {statusLabel[order.status]}
           </Badge>
+          <Button onClick={handleDownload} variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Descargar PDF
+          </Button>
           {order.status !== "RECEIVED" && (
             <>
               <Button onClick={handleSave} disabled={saving} variant="outline">
@@ -377,6 +409,19 @@ export default function PurchaseOrderDetailPage() {
           <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             Los siguientes productos no tienen garantía configurada: {unconfigured.join(", ")} — sus códigos serán solo de trazabilidad.
+          </div>
+        );
+      })()}
+
+      {(() => {
+        const missingFactoryCode = Array.from(new Set(
+          order.items.filter((i) => !i.product.factoryCode).map((i) => i.product.name)
+        ));
+        if (missingFactoryCode.length === 0) return null;
+        return (
+          <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Los siguientes productos no tienen código de fábrica cargado: {missingFactoryCode.join(", ")} — en el PDF se usará el código interno.
           </div>
         );
       })()}
@@ -525,6 +570,7 @@ export default function PurchaseOrderDetailPage() {
               <TableRow>
                 <TableHead>Producto</TableHead>
                 <TableHead>SKU</TableHead>
+                <TableHead>Cód. Fábrica</TableHead>
                 <TableHead>Cantidad</TableHead>
                 <TableHead>Costo FOB ({order.currency})</TableHead>
                 <TableHead>Total FOB</TableHead>
@@ -536,6 +582,7 @@ export default function PurchaseOrderDetailPage() {
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.product.name}</TableCell>
                   <TableCell className="font-mono text-xs">{item.product.sku ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{item.product.factoryCode ?? "—"}</TableCell>
                   <TableCell>{item.quantity}</TableCell>
                   <TableCell className="font-mono">
                     {Number(item.costFOB).toLocaleString("es-AR", { minimumFractionDigits: 2 })}

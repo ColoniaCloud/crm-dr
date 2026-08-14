@@ -409,6 +409,7 @@ model Product {
   stock       Int             @default(0)
   minStock    Int             @default(0)
   sku         String?         @unique
+  factoryCode String?         @db.VarChar(191) // código del proveedor/fábrica, distinto del sku interno
   imageUrl    String?         @db.LongText // base64 or URL
   active      Boolean         @default(true)
   createdAt   DateTime        @default(now())

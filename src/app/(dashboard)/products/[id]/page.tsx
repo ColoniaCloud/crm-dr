@@ -123,6 +123,7 @@ interface ProductDetail {
   category: string;
   subcategory: string | null;
   brand: string | null;
+  factoryCode: string | null;
   shade: string | null;
   stock: number;
   minStock: number;
@@ -153,7 +154,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({
-    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "",
+    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "", factoryCode: "",
     shade: "", stock: "0", minStock: "0", price: "", cost: "", description: "", imageUrl: "",
     warrantyEnabled: false, rollWarrantyMonths: "24", installWarrantyMonths: "12", maxInstallations: "15",
   });
@@ -192,6 +193,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       category: data.category,
       subcategory: data.subcategory ?? "",
       brand: data.brand ?? "",
+      factoryCode: data.factoryCode ?? "",
       shade: data.shade ?? "",
       stock: String(data.stock),
       minStock: String(data.minStock),
@@ -230,6 +232,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           category: form.category,
           subcategory: form.subcategory || null,
           brand: form.brand || null,
+          factoryCode: form.factoryCode || null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
           minStock: parseInt(form.minStock) || 0,
@@ -432,6 +435,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 )}
                 {product?.brand && (
                   <Badge variant="outline" className="text-xs text-white/80 border-white/30">{product.brand}</Badge>
+                )}
+                {product?.factoryCode && (
+                  <Badge variant="outline" className="text-xs text-white/80 border-white/30">Cód. fábrica: {product.factoryCode}</Badge>
                 )}
                 {product?.shade && (
                   <Badge variant="outline" className="text-xs text-white/80 border-white/30">Tonalidad: {product.shade}%</Badge>
@@ -860,6 +866,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <Label>Marca</Label>
                 <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Código de fábrica</Label>
+              <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

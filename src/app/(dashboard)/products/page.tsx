@@ -70,6 +70,7 @@ interface Product {
   id: string;
   name: string;
   sku: string | null;
+  factoryCode: string | null;
   category: string;
   subcategory: string | null;
   brand: string | null;
@@ -525,6 +526,7 @@ export default function ProductsPage() {
                     <TableHead>Imagen</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>SKU</TableHead>
+                    <TableHead>Cód. Fábrica</TableHead>
                     <TableHead>Stock</TableHead>
                     <TableHead>Precio</TableHead>
                     <TableHead>Categoría</TableHead>
@@ -560,6 +562,9 @@ export default function ProductsPage() {
                       <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell className="text-xs font-mono text-muted-foreground">
                         {product.sku ?? <span className="text-muted-foreground/50">—</span>}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono text-muted-foreground">
+                        {product.factoryCode ?? <span className="text-muted-foreground/50">—</span>}
                       </TableCell>
                       <TableCell>
                         <span className={product.stock <= product.minStock ? "font-bold text-red-500" : "font-medium"}>
