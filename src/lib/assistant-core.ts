@@ -59,6 +59,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
 - Para pedidos como "quién me debe", "saldos pendientes" o "clientes con deuda", usá list_pending_balances.
 - Para pedidos como "cuánto cobramos", "cuánto entró" o "total de pagos" en un período, usá sum_payments. Convertí vos el período a fechas concretas (from/to en formato YYYY-MM-DD) usando la fecha actual: "el mes pasado" es del día 1 al último día del mes anterior, "esta semana" arranca el lunes, etc.
+- Para pedidos donde te pasan varios códigos/nombres de producto y piden el total de unidades combinado (ej. "sumame el stock de estos 5 códigos"), usá sum_stock con la lista completa de códigos.
 - Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
 - Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
@@ -214,6 +215,22 @@ const TOOLS: Anthropic.Tool[] = [
         message: { type: "string", description: "Mensaje al usuario." },
       },
       required: ["message"],
+    },
+  },
+  {
+    name: "sum_stock",
+    description: "Suma el stock (unidades) de varios productos a partir de sus códigos (SKU) o nombres. Usá esto cuando el usuario pide el total combinado entre varios productos, ej: \"sumame el stock de estos códigos\" o \"cuántas unidades quedan entre estos 5 productos\".",
+    input_schema: {
+      type: "object",
+      properties: {
+        codes: {
+          type: "array",
+          description: "Lista de SKUs o nombres de producto a buscar y sumar.",
+          items: { type: "string" },
+        },
+        message: { type: "string", description: "Mensaje al usuario." },
+      },
+      required: ["codes", "message"],
     },
   },
   {
@@ -868,6 +885,65 @@ export async function runAssistant(params: {
       };
 
       return { data: { message: msg, action }, status: 200 };
+    }
+
+    // ── sum_stock ─────────────────────────────────────────────────────────────
+    if (toolBlock.name === "sum_stock") {
+      const codes = ((input.codes as string[]) || []).map((c) => (c || "").trim()).filter(Boolean);
+      const msg = input.message as string;
+
+      if (codes.length === 0) {
+        return { data: { message: "No recibí ningún código o nombre de producto para sumar." }, status: 200 };
+      }
+
+      const found: { code: string; name: string; sku: string | null; stock: number }[] = [];
+      const notFound: string[] = [];
+
+      for (const code of codes) {
+        const product = await prisma.product.findFirst({
+          where: {
+            active: true,
+            OR: [{ sku: { contains: code } }, { name: { contains: code } }],
+          },
+          select: { name: true, sku: true, stock: true },
+        });
+
+        if (product) {
+          found.push({ code, name: product.name, sku: product.sku, stock: product.stock ?? 0 });
+        } else {
+          notFound.push(code);
+        }
+      }
+
+      if (found.length === 0) {
+        return { data: { message: `${msg}\n\nNo encontré ningún producto que coincida con esos códigos: ${notFound.join(", ")}.` }, status: 200 };
+      }
+
+      const total = found.reduce((sum, f) => sum + f.stock, 0);
+
+      const action: AssistantTableAction = {
+        type: "table",
+        title: `Stock sumado (${found.length} de ${codes.length} códigos)`,
+        columns: ["Código buscado", "Producto", "SKU", "Stock"],
+        rows: found.map((f) => ({
+          "Código buscado": f.code,
+          Producto: f.name,
+          SKU: f.sku || "-",
+          Stock: String(f.stock),
+        })),
+      };
+
+      const notFoundNote = notFound.length > 0
+        ? `\n\n⚠️ No encontré producto para: ${notFound.join(", ")}.`
+        : "";
+
+      return {
+        data: {
+          message: `${msg}\n\n**Total: ${total} unidades** sumando ${found.length} producto${found.length === 1 ? "" : "s"}.${notFoundNote}`,
+          action,
+        },
+        status: 200,
+      };
     }
 
     // ── create_product ────────────────────────────────────────────────────────
