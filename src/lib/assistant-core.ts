@@ -59,7 +59,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
 - Para pedidos como "quién me debe", "saldos pendientes" o "clientes con deuda", usá list_pending_balances.
 - Para pedidos como "cuánto cobramos", "cuánto entró" o "total de pagos" en un período, usá sum_payments. Convertí vos el período a fechas concretas (from/to en formato YYYY-MM-DD) usando la fecha actual: "el mes pasado" es del día 1 al último día del mes anterior, "esta semana" arranca el lunes, etc.
-- Para pedidos donde te pasan varios códigos/nombres de producto y piden el total de unidades combinado (ej. "sumame el stock de estos 5 códigos"), usá sum_stock con la lista completa de códigos.
+- Para pedidos de total de unidades de stock usá sum_stock: con scope "list" y la lista completa de códigos/nombres cuando te pasan productos puntuales (ej. "sumame el stock de estos 5 códigos"), o con scope "all" (sin necesidad de codes) cuando piden el total de todo el catálogo (ej. "sumá el stock de todos los productos", "total de unidades"). No hace falta buscar los productos primero con search_products: sum_stock ya hace la búsqueda y la suma en un solo paso.
 - Para gestionar reclamos de garantía, identificá el reclamo por el código de instalación o el nombre de quien reclamó.
 - Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
@@ -219,18 +219,23 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "sum_stock",
-    description: "Suma el stock (unidades) de varios productos a partir de sus códigos (SKU) o nombres. Usá esto cuando el usuario pide el total combinado entre varios productos, ej: \"sumame el stock de estos códigos\" o \"cuántas unidades quedan entre estos 5 productos\".",
+    description: "Suma el stock (unidades) de productos. Usá esto para cualquier pedido de total combinado de stock, ej: \"sumame el stock de estos códigos\", \"cuántas unidades quedan entre estos 5 productos\", \"sumá el stock de todos los productos\" o \"total de unidades en el catálogo\".",
     input_schema: {
       type: "object",
       properties: {
+        scope: {
+          type: "string",
+          enum: ["list", "all"],
+          description: "\"list\" para sumar una lista puntual de códigos/nombres (usar codes). \"all\" para sumar el stock de TODO el catálogo activo, sin necesidad de codes.",
+        },
         codes: {
           type: "array",
-          description: "Lista de SKUs o nombres de producto a buscar y sumar.",
+          description: "Lista de SKUs o nombres de producto a buscar y sumar. Requerido solo cuando scope es \"list\".",
           items: { type: "string" },
         },
         message: { type: "string", description: "Mensaje al usuario." },
       },
-      required: ["codes", "message"],
+      required: ["scope", "message"],
     },
   },
   {
@@ -894,8 +899,30 @@ export async function runAssistant(params: {
 
     // ── sum_stock ─────────────────────────────────────────────────────────────
     if (toolBlock.name === "sum_stock") {
-      const codes = ((input.codes as string[]) || []).map((c) => (c || "").trim()).filter(Boolean);
+      const scope = (input.scope as string) || "list";
       const msg = input.message as string;
+
+      if (scope === "all") {
+        const allProducts = await prisma.product.findMany({
+          where: { active: true },
+          select: { stock: true },
+        });
+
+        if (allProducts.length === 0) {
+          return { data: { message: `${msg}\n\nNo hay productos activos en el catálogo.` }, status: 200 };
+        }
+
+        const total = allProducts.reduce((sum, p) => sum + (p.stock ?? 0), 0);
+
+        return {
+          data: {
+            message: `${msg}\n\n**Total: ${total} unidades** sumando el stock de los ${allProducts.length} productos activos del catálogo.`,
+          },
+          status: 200,
+        };
+      }
+
+      const codes = ((input.codes as string[]) || []).map((c) => (c || "").trim()).filter(Boolean);
 
       if (codes.length === 0) {
         return { data: { message: "No recibí ningún código o nombre de producto para sumar." }, status: 200 };
