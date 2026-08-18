@@ -849,12 +849,17 @@ export async function runAssistant(params: {
 
       const where: Record<string, unknown> = { active: true };
       if (search) {
+        // `category` es un enum de Prisma (AUTOMOTIVE | ARCHITECTURAL | PPF):
+        // no admite `contains`, solo `equals`/`in`. Se resuelve el match en JS.
+        const CATEGORY_VALUES = ["AUTOMOTIVE", "ARCHITECTURAL", "PPF"] as const;
+        const matchingCategories = CATEGORY_VALUES.filter((c) => c.includes(search.toUpperCase()));
+
         where.OR = [
           { name: { contains: search } },
           { brand: { contains: search } },
           { sku: { contains: search } },
           { subcategory: { contains: search } },
-          { category: { contains: search } },
+          ...(matchingCategories.length > 0 ? [{ category: { in: matchingCategories } }] : []),
         ];
       }
 
