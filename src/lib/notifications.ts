@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { transporter, FROM } from "@/lib/mailer";
+import { BRAND } from "@/lib/brand";
 
 export function escapeHtml(str: string): string {
   return str
@@ -204,14 +205,14 @@ export async function sendNotification(payload: NotifyPayload) {
       html: `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:24px;background:#f9fafb;">
           <div style="background:#fff;border-radius:10px;padding:28px;border:1px solid #e5e7eb;">
-            <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;letter-spacing:.08em;color:#6b7280;text-transform:uppercase;">DR Polarizados</p>
+            <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;letter-spacing:.08em;color:#6b7280;text-transform:uppercase;">${BRAND.name}</p>
             <h2 style="color:#111;margin:0 0 20px 0;font-size:20px;">${escapeHtml(title)}</h2>
             <p style="color:#444;margin:0 0 20px 0;">Hola <strong>${escapeHtml(userName)}</strong>,</p>
             <div>${message}</div>
             ${calendarBtn ? `<div style="margin-top:20px;">${calendarBtn}</div>` : ""}
           </div>
           <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">
-            Mensaje automático de DR Polarizados · No respondas este correo.
+            Mensaje automático de ${BRAND.name} · No respondas este correo.
           </p>
         </div>
       `,

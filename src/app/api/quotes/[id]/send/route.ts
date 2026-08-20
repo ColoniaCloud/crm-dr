@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
 import { escapeHtml, logOperatorAction } from "@/lib/notifications";
-import { transporter } from "@/lib/mailer";
+import { transporter, FROM } from "@/lib/mailer";
+import { BRAND } from "@/lib/brand";
 import nodemailer from "nodemailer";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/quotes/[id]/send");
@@ -57,12 +58,12 @@ export async function POST(
     const whatsappLink = whatsappPhone
       ? `https://api.whatsapp.com/send/?phone=${whatsappPhone}&text=Hola%2C+me+gustar%C3%ADa+recibir+asesoramiento+sobre+mi+presupuesto.&type=phone_number&app_absent=0`
       : null;
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "https://crm.drpolarizados.com";
+    const baseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "https://kri.kristallfilm.com";
 
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#ffffff;">
   <div style="text-align:center;margin-bottom:20px;">
-    <img src="${baseUrl}/logomail.png" alt="Dr Polarizados" style="max-width:180px;height:auto;" />
+    <img src="${baseUrl}${BRAND.emailLogo}" alt="${BRAND.name}" style="max-width:180px;height:auto;" />
   </div>
   <p style="color:#333;font-size:15px;line-height:1.6;">
     Hola, <strong>${escapeHtml(displayName)}</strong>.<br/>
@@ -70,9 +71,9 @@ export async function POST(
   </p>
   <hr style="margin:24px 0;border:none;border-top:1px solid #e5e5e5;" />
   <p style="color:#666;font-size:13px;line-height:1.5;">
-    <strong>Dr Polarizados</strong> - Distribuidor oficial<br/>
-    <a href="https://www.drpolarizados.com" style="color:#2563eb;">www.drpolarizados.com</a><br/>
-    <a href="mailto:ventas@drpolarizados.com" style="color:#2563eb;">ventas@drpolarizados.com</a>
+    <strong>${BRAND.name}</strong> - ${BRAND.tagline}<br/>
+    <a href="${BRAND.website}" style="color:#2563eb;">${BRAND.websiteLabel}</a><br/>
+    <a href="mailto:${BRAND.salesEmail}" style="color:#2563eb;">${BRAND.salesEmail}</a>
   </p>
   ${whatsappLink ? `<div style="margin-top:16px;">
     <a href="${whatsappLink}" style="display:inline-block;padding:10px 20px;background:#25D366;color:#fff;border-radius:6px;text-decoration:none;font-size:14px;font-weight:bold;">
@@ -81,12 +82,10 @@ export async function POST(
   </div>` : ""}
 </div>`;
 
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-
     const mailOptions: nodemailer.SendMailOptions = {
-      from: `Dr Polarizados <${fromEmail}>`,  // nombre específico para mails al cliente
+      from: FROM(),
       to: email,
-      subject: `Presupuesto #${quote.number} - Dr Polarizados`,
+      subject: `Presupuesto #${quote.number} - ${BRAND.name}`,
       html,
     };
 

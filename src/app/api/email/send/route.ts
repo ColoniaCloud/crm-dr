@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isSmtpConfigured, transporter } from "@/lib/mailer";
+import { isSmtpConfigured, transporter, FROM } from "@/lib/mailer";
 import { requireRole } from "@/lib/api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { logOperatorAction } from "@/lib/notifications";
@@ -31,11 +31,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "SMTP no configurado" }, { status: 500 });
     }
 
-    const displayName = fromName || "DR Polarizados";
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-
     const info = await transporter.sendMail({
-      from: `${displayName} <${fromEmail}>`,
+      from: FROM(fromName || undefined),
       to,
       subject,
       html: body.replace(/\n/g, "<br/>"),

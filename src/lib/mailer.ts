@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";
+import { BRAND } from "@/lib/brand";
 
 function getSmtpConfig() {
   const host = process.env.SMTP_HOST;
@@ -48,5 +49,10 @@ export const transporter = {
 export const isSmtpConfigured = () =>
   Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
-export const FROM = () =>
-  `DR Polarizados <${process.env.SMTP_FROM || process.env.SMTP_USER}>`;
+/**
+ * Remitente completo para `sendMail`. El nombre visible se puede sobreescribir
+ * (los mails al cliente lo hacían por su cuenta antes de que esto lo aceptara),
+ * pero la dirección siempre sale de la configuración del servidor.
+ */
+export const FROM = (displayName: string = BRAND.name) =>
+  `${displayName} <${process.env.SMTP_FROM || process.env.SMTP_USER}>`;

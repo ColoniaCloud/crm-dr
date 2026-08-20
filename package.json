@@ -1,8 +1,8 @@
 {
   "name": "crm-polarizados",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "CRM interno de Dr Polarizados / Kristall Film",
+  "private": true,
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",

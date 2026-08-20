@@ -2,6 +2,7 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { BRAND } from "@/lib/brand";
 
 export interface PurchaseOrderPDFData {
   number: number;
@@ -52,12 +53,12 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderPDFData): Pro
 
   // Load logo
   try {
-    const logoBase64 = await loadImageAsBase64("/logomail.png");
+    const logoBase64 = await loadImageAsBase64(BRAND.emailLogo);
     doc.addImage(logoBase64, "PNG", margin, 10, 40, 15);
   } catch {
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text("Dr Polarizados", margin, 20);
+    doc.text(BRAND.name, margin, 20);
   }
 
   // Date top-right
@@ -153,9 +154,9 @@ export async function generatePurchaseOrderPDF(order: PurchaseOrderPDFData): Pro
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(80, 80, 80);
-  doc.text("Dr Polarizados - Distribuidor oficial", margin, pageH - 24);
-  doc.text("www.drpolarizados.com", margin, pageH - 19);
-  doc.text("ventas@drpolarizados.com", margin, pageH - 14);
+  doc.text(`${BRAND.name} - ${BRAND.tagline}`, margin, pageH - 24);
+  doc.text(BRAND.websiteLabel, margin, pageH - 19);
+  doc.text(BRAND.salesEmail, margin, pageH - 14);
 
   return doc;
 }

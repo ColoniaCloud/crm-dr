@@ -11,10 +11,15 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/mail/send");
 
-// Business rule: todo email saliente del CRM lleva copia (CC, visible para el
-// destinatario) a la casilla de Gmail de Carlos. Fijo a propósito — no es
-// configurable ni visible desde la UI de redacción.
-const ALWAYS_CC_ADDRESS = "drpolarizados.contacto@gmail.com";
+// Business rule: todo email saliente del CRM lleva copia a la casilla de
+// auditoría. No es configurable ni visible desde la UI de redacción.
+//
+// Sale de la misma variable que el BCC de `user-mailer.ts`: antes era una
+// constante acá y la casilla estaba escrita en dos archivos, así que cambiarla
+// por entorno dejaba este CC apuntando a la dirección vieja sin que se notara.
+// La diferencia entre las dos copias es la visibilidad — el CC lo ve el
+// destinatario, el BCC no.
+const auditAddress = () => process.env.MAIL_BACKUP_ADDRESS || null;
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -90,7 +95,7 @@ export async function POST(request: Request) {
       subject,
       html,
       text: bodyText,
-      cc: ALWAYS_CC_ADDRESS,
+      cc: auditAddress() ?? undefined,
       inReplyTo,
       attachments,
     });
@@ -113,7 +118,7 @@ export async function POST(request: Request) {
       bodyText,
       fromAddress: mailAddress,
       toAddress: to,
-      ccAddress: ALWAYS_CC_ADDRESS,
+      ccAddress: auditAddress(),
       messageId,
       inReplyTo: inReplyTo || null,
       errorMessage,

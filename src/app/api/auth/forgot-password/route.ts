@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { transporter, FROM } from "@/lib/mailer";
+import { BRAND } from "@/lib/brand";
 import { rateLimit } from "@/lib/rate-limit";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/auth/forgot-password");
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: FROM(),
       to: user.email,
-      subject: "Tu nueva contraseña - DR Polarizados",
+      subject: `Tu nueva contraseña - ${BRAND.name}`,
       html: `
         <div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:24px;background:#f9f9f9;border-radius:8px;">
           <h2 style="color:#111;margin-bottom:8px;">Recuperación de contraseña</h2>

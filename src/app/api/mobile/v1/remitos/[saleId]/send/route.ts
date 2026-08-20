@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { validateBody } from "@/lib/api-validation";
-import { transporter } from "@/lib/mailer";
+import { transporter, FROM } from "@/lib/mailer";
+import { BRAND } from "@/lib/brand";
 import { buildRemitoPdfBuffer } from "@/lib/remito-pdf-server";
 import { escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { rateLimit } from "@/lib/rate-limit";
@@ -80,8 +81,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
 
     const contactName = `${sale.contact.firstName ?? ""} ${sale.contact.lastName ?? ""}`.trim();
     const displayName = contactName || sale.contact.company || "estimado cliente";
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-
     const docLabel = sale.requiresFactura ? "el remito y los datos de tu factura" : "tu remito";
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#ffffff;">
@@ -91,16 +90,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
   </p>
   <hr style="margin:24px 0;border:none;border-top:1px solid #e5e5e5;" />
   <p style="color:#666;font-size:13px;line-height:1.5;">
-    <strong>Dr Polarizados</strong> - Distribuidor oficial<br/>
-    <a href="https://www.drpolarizados.com" style="color:#2563eb;">www.drpolarizados.com</a><br/>
-    <a href="mailto:ventas@drpolarizados.com" style="color:#2563eb;">ventas@drpolarizados.com</a>
+    <strong>${BRAND.name}</strong> - ${BRAND.tagline}<br/>
+    <a href="${BRAND.website}" style="color:#2563eb;">${BRAND.websiteLabel}</a><br/>
+    <a href="mailto:${BRAND.salesEmail}" style="color:#2563eb;">${BRAND.salesEmail}</a>
   </p>
 </div>`;
 
     const mailOptions: nodemailer.SendMailOptions = {
-      from: `Dr Polarizados <${fromEmail}>`,
+      from: FROM(),
       to: email,
-      subject: `Remito #${sale.remito.number} - Venta #${sale.number} - Dr Polarizados`,
+      subject: `Remito #${sale.remito.number} - Venta #${sale.number} - ${BRAND.name}`,
       html,
       attachments: [{ filename: `remito-${sale.remito.number}.pdf`, content: pdfBuffer }],
     };

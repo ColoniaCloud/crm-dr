@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { BRAND } from "@/lib/brand";
 
 interface RemitoData {
   number: number;
@@ -44,7 +45,7 @@ export function buildRemitoPdfBuffer(remito: RemitoData): Buffer {
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text("DR Polarizados", margin, 13);
+  doc.text(BRAND.name, margin, 13);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.text("Sistema de Gestión", margin, 20);
@@ -128,7 +129,7 @@ export function buildRemitoPdfBuffer(remito: RemitoData): Buffer {
   doc.line(margin, pageH - 18, W - margin, pageH - 18);
   doc.setFontSize(8);
   doc.setTextColor(128, 128, 128);
-  doc.text("Documento generado por DR Polarizados", W / 2, pageH - 12, { align: "center" });
+  doc.text(`Documento generado por ${BRAND.name}`, W / 2, pageH - 12, { align: "center" });
 
   return Buffer.from(doc.output("arraybuffer"));
 }
