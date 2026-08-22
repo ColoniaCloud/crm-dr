@@ -4,6 +4,11 @@ import type { MailAccount } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/mail-crypto";
 import { logOperatorAction, notifyAdmins } from "@/lib/notifications";
+import {
+  selectAttachmentsWithinLimits,
+  storeAttachment,
+  storeRawMessage,
+} from "@/lib/mail-attachments";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("mail-poller");
@@ -177,6 +182,11 @@ async function persistInboundEmail(account: MailAccount, uid: number, source: Bu
     },
   });
 
+  // Los adjuntos y el .eml se guardan después de crear la fila porque el
+  // storageKey se arma con el id del email. Si esto falla, el mail ya quedó
+  // persistido: se pierde el adjunto, nunca el mensaje.
+  await persistAttachments(email.id, parsed, source);
+
   if (contact) {
     await prisma.leadActivity.create({
       data: {
@@ -195,6 +205,71 @@ async function persistInboundEmail(account: MailAccount, uid: number, source: Bu
       description: `Recibió email de ${fromAddress}: "${parsed.subject || "(sin asunto)"}"`,
       link: `/leads/${contact.id}`,
     });
+  }
+}
+
+/**
+ * Guarda en disco los adjuntos del mail y el mensaje MIME original, y crea las
+ * filas de `EmailAttachment`.
+ *
+ * Nunca lanza: un fallo de disco no puede tumbar el ciclo del poller, porque
+ * eso dejaría el `imapLastUid` sin avanzar y el mail se re-procesaría para
+ * siempre. Los errores se loguean y el mail queda sin adjuntos.
+ */
+async function persistAttachments(
+  emailId: string,
+  parsed: Awaited<ReturnType<typeof simpleParser>>,
+  source: Buffer
+) {
+  try {
+    const rawStorageKey = await storeRawMessage(emailId, source);
+
+    const candidates = (parsed.attachments ?? []).map((a) => ({
+      filename: a.filename || "adjunto",
+      size: a.size ?? a.content?.byteLength ?? 0,
+      contentType: a.contentType || "application/octet-stream",
+      // mailparser devuelve el cid con los <> ya sacados en `cid`.
+      contentId: a.cid || null,
+      isInline: a.contentDisposition === "inline" || Boolean(a.cid),
+      content: a.content,
+    }));
+
+    const { accepted, rejected } = selectAttachmentsWithinLimits(candidates);
+    for (const { item, reason } of rejected) {
+      log.warn({ emailId, filename: item.filename, size: item.size }, `Adjunto descartado: ${reason}`);
+    }
+
+    for (const item of accepted) {
+      if (!item.content) continue;
+      const row = await prisma.emailAttachment.create({
+        data: {
+          emailId,
+          filename: item.filename,
+          contentType: item.contentType,
+          sizeBytes: item.size,
+          contentId: item.contentId,
+          isInline: item.isInline,
+          // Se completa abajo: el nombre en disco es el id de esta fila.
+          storageKey: null,
+        },
+      });
+      const stored = await storeAttachment(emailId, row.id, item.content);
+      await prisma.emailAttachment.update({
+        where: { id: row.id },
+        data: {
+          storageKey: stored.storageKey,
+          checksum: stored.checksum,
+          sizeBytes: stored.sizeBytes,
+        },
+      });
+    }
+
+    await prisma.email.update({
+      where: { id: emailId },
+      data: { rawStorageKey, hasAttachments: accepted.some((a) => !a.isInline) },
+    });
+  } catch (err) {
+    log.error({ err, emailId }, "No se pudieron guardar los adjuntos del email");
   }
 }
 

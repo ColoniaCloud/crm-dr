@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isUserMailConfigured, sendUserMail } from "@/lib/user-mailer";
 import { logOperatorAction } from "@/lib/notifications";
 import { stripHtml } from "@/lib/mail-poller";
+import { storeAttachment } from "@/lib/mail-attachments";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/mail/send");
@@ -123,9 +124,19 @@ export async function POST(request: Request) {
       inReplyTo: inReplyTo || null,
       errorMessage,
       read: true,
+      hasAttachments: Boolean(attachments?.length),
       sentAt: new Date(),
     },
   });
+
+  // Los adjuntos salientes se guardan igual que los entrantes: antes se
+  // mandaban por SMTP y se perdían, así que el hilo en el CRM mostraba "te
+  // mandé el presupuesto" sin el presupuesto. Va después de crear la fila
+  // porque el storageKey se arma con el id del email, y nunca tira: si falla
+  // el disco, el mail ya salió y eso es lo que importa.
+  if (attachments?.length) {
+    await persistOutgoingAttachments(email.id, attachments);
+  }
 
   if (status === "FAILED") {
     return NextResponse.json({ error: errorMessage, email }, { status: 502 });
@@ -153,4 +164,37 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json(email, { status: 201 });
+}
+
+/**
+ * Guarda en disco los adjuntos que el operador acaba de enviar y crea sus filas.
+ * No lanza: el mail ya se despachó por SMTP, y perder el registro local de un
+ * archivo no justifica devolverle un error a alguien cuyo mail sí salió.
+ */
+async function persistOutgoingAttachments(
+  emailId: string,
+  attachments: Array<{ filename: string; contentType: string; data: string }>
+) {
+  for (const a of attachments) {
+    try {
+      const buffer = Buffer.from(a.data, "base64");
+      const row = await prisma.emailAttachment.create({
+        data: {
+          emailId,
+          filename: a.filename,
+          contentType: a.contentType,
+          sizeBytes: buffer.byteLength,
+          isInline: false,
+          storageKey: null,
+        },
+      });
+      const stored = await storeAttachment(emailId, row.id, buffer);
+      await prisma.emailAttachment.update({
+        where: { id: row.id },
+        data: { storageKey: stored.storageKey, checksum: stored.checksum },
+      });
+    } catch (err) {
+      log.error({ err, emailId, filename: a.filename }, "No se pudo guardar un adjunto saliente");
+    }
+  }
 }

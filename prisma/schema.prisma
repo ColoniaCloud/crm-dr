@@ -913,11 +913,43 @@ model Email {
   receivedAt   DateTime?
   createdAt    DateTime       @default(now())
 
+  // Denormalizado para pintar el clip en el listado sin hacer join: la bandeja
+  // trae 50 mails y solo necesita saber si tienen adjuntos, no cuáles.
+  hasAttachments Boolean @default(false)
+  /// Ruta del .eml original en disco (ver lib/mail-attachments.ts). Permite
+  /// "ver original" y reprocesar un mail sin volver al servidor IMAP.
+  rawStorageKey  String? @db.Text
+
+  attachments  EmailAttachment[]
+
   @@unique([userId, messageId])
   @@index([contactId])
   @@index([userId, direction])
   @@index([userId, read])
   @@map("emails")
+}
+
+model EmailAttachment {
+  id          String   @id @default(cuid())
+  emailId     String
+  email       Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  filename    String   @db.Text
+  contentType String
+  sizeBytes   Int
+  /// Content-ID de una imagen incrustada (`cid:`), sin los <>. Null si es un
+  /// adjunto normal.
+  contentId   String?
+  isInline    Boolean  @default(false)
+  /// Ruta relativa dentro de MAIL_ATTACHMENT_DIR. Queda en null cuando el
+  /// archivo se purga por antigüedad: la fila sobrevive para que el mail siga
+  /// mostrando que tenía un adjunto en vez de romperse.
+  storageKey  String?  @db.Text
+  checksum    String?
+  purgedAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([emailId])
+  @@map("email_attachments")
 }
 
 // ─── Auditoría de operadores ──────────────────────────────────────────────────

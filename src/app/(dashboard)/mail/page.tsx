@@ -11,21 +11,24 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RichTextEditor } from "@/components/mail/rich-text-editor";
+import { EmailBodyView } from "@/components/mail/email-body-view";
 import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
 import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
 import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
+// Espeja el `select` de GET /api/mail: solo metadata. El cuerpo se pide
+// aparte con GET /api/mail/:id cuando el operador abre el mensaje.
 interface EmailItem {
   id: string;
   direction: "IN" | "OUT";
   status: "SENT" | "FAILED" | "RECEIVED";
   subject: string | null;
-  bodyText: string | null;
   fromAddress: string;
   toAddress: string;
   ccAddress: string | null;
   read: boolean;
+  hasAttachments: boolean;
   createdAt: string;
   contact: { id: string; firstName: string; lastName: string; company: string | null } | null;
 }
@@ -266,8 +269,9 @@ function MailPageInner() {
                       {email.direction === "IN" ? "Recibido" : "Enviado"}
                     </Badge>
                   </div>
-                  <p className={`text-sm truncate ${!email.read ? "font-semibold" : "text-muted-foreground"}`}>
-                    {email.subject || "(sin asunto)"}
+                  <p className={`flex items-center gap-1.5 text-sm truncate ${!email.read ? "font-semibold" : "text-muted-foreground"}`}>
+                    {email.hasAttachments && <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                    <span className="truncate">{email.subject || "(sin asunto)"}</span>
                   </p>
                   <div className="flex items-center justify-between gap-2 mt-1">
                     {contactLabel(email.contact) && (
@@ -297,9 +301,7 @@ function MailPageInner() {
                   {selected.ccAddress && <p><strong>CC:</strong> {selected.ccAddress}</p>}
                   <p>{formatDateTime(selected.createdAt)}</p>
                 </div>
-                <div className="border-t pt-3 text-sm whitespace-pre-wrap">
-                  {selected.bodyText}
-                </div>
+                <EmailBodyView key={selected.id} emailId={selected.id} />
                 <Button
                   variant="outline"
                   size="sm"

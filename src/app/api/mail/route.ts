@@ -24,7 +24,21 @@ export async function GET(request: Request) {
         ...(direction === "IN" || direction === "OUT" ? { direction } : {}),
         ...(unread === "true" ? { read: false } : {}),
       },
-      include: {
+      // Solo metadata: el cuerpo se pide con GET /api/mail/:id al abrir el mail.
+      // Antes esto devolvía el objeto Email entero, `bodyHtml` incluido — con 50
+      // mails en la bandeja eran varios MB al navegador en cada carga, para
+      // renderizar una lista que solo muestra remitente, asunto y fecha.
+      select: {
+        id: true,
+        direction: true,
+        status: true,
+        subject: true,
+        fromAddress: true,
+        toAddress: true,
+        ccAddress: true,
+        read: true,
+        hasAttachments: true,
+        createdAt: true,
         contact: { select: { id: true, firstName: true, lastName: true, company: true } },
       },
       orderBy: { createdAt: "desc" },
