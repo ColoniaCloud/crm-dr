@@ -9,6 +9,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { ReleaseNotice } from "@/components/layout/release-notice";
 import logoColonia from "@/public/Logo.png";
 import { CurrencyProvider } from "@/contexts/currency-context";
 import {
@@ -88,6 +89,7 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
           </div>
 
           <PWAInstallModal />
+          <ReleaseNotice />
 
           {/* Footer */}
           <footer className="flex items-center justify-end gap-2 border-t px-3 sm:px-6 py-2 text-xs text-muted-foreground">

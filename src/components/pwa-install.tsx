@@ -1,10 +1,9 @@
 "use client";
 
 import {
-  useState, useEffect, useCallback,
+  useState, useEffect, useCallback, useSyncExternalStore,
   createContext, useContext,
 } from "react";
-import { Button } from "@/components/ui/button";
 import { X, Download, Share, ArrowDown } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
@@ -34,35 +33,55 @@ function usePWA() {
   return ctx;
 }
 
+// ── Detección de entorno ──────────────────────────────────────────────────────
+//
+// Va por useSyncExternalStore y no por un efecto que llame a setState. Esto no
+// es estado que produzca la app: son datos que el navegador ya tiene al montar.
+// Leerlos con un efecto obligaba a un render extra y disparaba
+// react-hooks/set-state-in-effect.
+//
+// El snapshot de servidor devuelve false en los tres casos, así que el HTML del
+// SSR coincide con el primer render del cliente y no hay mismatch de hidratación
+// (era para lo que existía el flag `mounted`, ahora innecesario).
+
+/** El user agent no cambia durante la sesión: no hay a qué suscribirse. */
+const neverChanges = () => () => {};
+const serverFalse = () => false;
+
+function subscribeDisplayMode(onChange: () => void) {
+  const mq = window.matchMedia("(display-mode: standalone)");
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+const readIsMobile = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const readIsIOS = () =>
+  /iPhone|iPad|iPod/i.test(navigator.userAgent) && !("MSStream" in window);
+const readIsStandalone = () =>
+  window.matchMedia("(display-mode: standalone)").matches ||
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (navigator as any).standalone === true;
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function PWAInstallProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  // Aceptar el prompt no hace que `display-mode: standalone` pase a true en la
+  // pestaña actual, así que se recuerda aparte para no volver a ofrecer la
+  // instalación en la misma sesión.
+  const [installedInSession, setInstalledInSession] = useState(false);
+
+  const isMobile = useSyncExternalStore(neverChanges, readIsMobile, serverFalse);
+  const isIOS = useSyncExternalStore(neverChanges, readIsIOS, serverFalse);
+  const isStandalone = useSyncExternalStore(subscribeDisplayMode, readIsStandalone, serverFalse);
+  const isInstalled = isStandalone || installedInSession;
 
   useEffect(() => {
-    setMounted(true);
-
-    const ua = navigator.userAgent;
-    const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-    const ios = /iPhone|iPad|iPod/i.test(ua) && !("MSStream" in window);
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (navigator as any).standalone === true;
-
-    setIsMobile(mobile);
-    setIsIOS(ios);
-    setIsInstalled(standalone);
-
-    if (mobile && !standalone && !localStorage.getItem("pwa-modal-dismissed")) {
-      const t = setTimeout(() => setShowModal(true), 5000);
-      return () => clearTimeout(t);
-    }
-  }, []);
+    if (!isMobile || isInstalled) return;
+    if (localStorage.getItem("pwa-modal-dismissed")) return;
+    const t = setTimeout(() => setShowModal(true), 5000);
+    return () => clearTimeout(t);
+  }, [isMobile, isInstalled]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -78,7 +97,7 @@ export function PWAInstallProvider({ children }: { children: React.ReactNode }) 
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === "accepted") {
-      setIsInstalled(true);
+      setInstalledInSession(true);
       setDeferredPrompt(null);
       setShowModal(false);
     }
@@ -91,7 +110,7 @@ export function PWAInstallProvider({ children }: { children: React.ReactNode }) 
     setShowModal(false);
   }, []);
 
-  const canInstall = mounted && !isInstalled && isMobile && (!!deferredPrompt || isIOS);
+  const canInstall = !isInstalled && isMobile && (!!deferredPrompt || isIOS);
 
   return (
     <PWAContext.Provider value={{
@@ -105,77 +124,6 @@ export function PWAInstallProvider({ children }: { children: React.ReactNode }) 
     }}>
       {children}
     </PWAContext.Provider>
-  );
-}
-
-// ── Shared install instructions ───────────────────────────────────────────────
-function InstallInstructions({
-  isIOS,
-  hasNativePrompt,
-  onInstall,
-}: {
-  isIOS: boolean;
-  hasNativePrompt: boolean;
-  onInstall: () => void;
-}) {
-  if (isIOS) {
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Para agregar {BRAND.name} a tu pantalla de inicio en iPhone / iPad:
-        </p>
-        <ol className="space-y-3 text-sm">
-          {[
-            <>Tocá el botón <strong className="inline-flex items-center gap-1">Compartir <Share className="h-3.5 w-3.5 inline" /></strong> en la barra inferior de Safari</>,
-            <>Deslizá hacia abajo y tocá <strong>"Agregar a pantalla de inicio"</strong></>,
-            <>Tocá <strong>"Agregar"</strong> para confirmar</>,
-          ].map((step, i) => (
-            <li key={i} className="flex items-start gap-3">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                {i + 1}
-              </span>
-              <span className="leading-snug">{step}</span>
-            </li>
-          ))}
-        </ol>
-        <div className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
-          La app se abrirá en pantalla completa, sin barra del navegador
-        </div>
-      </div>
-    );
-  }
-
-  if (hasNativePrompt) {
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Instalá {BRAND.name} en tu dispositivo para acceder más rápido, sin
-          abrir el navegador.
-        </p>
-        <ul className="space-y-2 text-sm text-muted-foreground">
-          {[
-            "Acceso directo desde tu pantalla de inicio",
-            "Funciona en pantalla completa",
-            "Carga más rápida",
-          ].map((f) => (
-            <li key={f} className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-              {f}
-            </li>
-          ))}
-        </ul>
-        <Button className="w-full gap-2" onClick={onInstall}>
-          <Download className="h-4 w-4" />
-          Instalar ahora
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <p className="text-sm text-muted-foreground">
-      Abrí esta página desde Chrome o Safari en tu celular para poder instalarla.
-    </p>
   );
 }
 
