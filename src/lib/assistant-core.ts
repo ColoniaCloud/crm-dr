@@ -19,7 +19,7 @@ export function isAdminOrAbove(role: string): boolean {
   return role === "ADMIN" || role === "SUPERADMIN";
 }
 
-const SYSTEM_PROMPT = `Eres un asistente de CRM para Dr. Polarizados, empresa de láminas de polarizado (automotriz, arquitectónico y PPF). Ayudás a los usuarios a navegar el sistema y a consultar/gestionar datos en tiempo real.
+const SYSTEM_PROMPT = `Eres un asistente de CRM para Kristall Film, empresa de láminas de polarizado (automotriz, arquitectónico y PPF). Ayudás a los usuarios a navegar el sistema y a consultar/gestionar datos en tiempo real.
 
 SECCIONES DEL CRM:
 - /leads → Prospectos/leads (se pueden filtrar)

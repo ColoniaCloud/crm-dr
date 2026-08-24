@@ -319,7 +319,7 @@ export default function ScrapperPage() {
     const timer = setTimeout(() => {
       const q = `${city.trim()}, ${province}, Argentina`;
       fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`, {
-        headers: { "User-Agent": "CRM-Polarizados/1.0" },
+        headers: { "User-Agent": "KristallCRM/1.0" },
       })
         .then((r) => r.json())
         .then((data) => {
@@ -339,7 +339,7 @@ export default function ScrapperPage() {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
-        { headers: { "User-Agent": "CRM-Polarizados/1.0" } }
+        { headers: { "User-Agent": "KristallCRM/1.0" } }
       );
       const data = await res.json();
       const addr = data?.address;
@@ -435,7 +435,7 @@ export default function ScrapperPage() {
         state: biz.province || province || null,
         website: biz.website || null,
         sector,
-        notes: `Importado desde DR Scrapp.`,
+        notes: `Importado desde Kristall Scrapp.`,
       };
       console.log("[Scrapper] Enviando lead:", payload);
       const res = await fetch("/api/scrapper/add-lead", {
@@ -527,7 +527,7 @@ export default function ScrapperPage() {
             state: biz.province || province || null,
             website: biz.website || null,
             sector,
-            notes: `Importado desde DR Scrapp.`,
+            notes: `Importado desde Kristall Scrapp.`,
           }),
         });
         if (res.ok) {
@@ -576,7 +576,7 @@ export default function ScrapperPage() {
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
           <MapPin className="h-7 w-7 text-orange-500" />
-          DR Scrapp
+          Kristall Scrapp
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Encontrá negocios potenciales en Argentina por zona y agregalos como leads

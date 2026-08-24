@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { X, Download, Share, ArrowDown } from "lucide-react";
+import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 // ── BeforeInstallPromptEvent type ─────────────────────────────────────────────
@@ -121,7 +122,7 @@ function InstallInstructions({
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Para agregar DR Polarizados a tu pantalla de inicio en iPhone / iPad:
+          Para agregar {BRAND.name} a tu pantalla de inicio en iPhone / iPad:
         </p>
         <ol className="space-y-3 text-sm">
           {[
@@ -148,7 +149,7 @@ function InstallInstructions({
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Instalá DR Polarizados en tu dispositivo para acceder más rápido, sin
+          Instalá {BRAND.name} en tu dispositivo para acceder más rápido, sin
           abrir el navegador.
         </p>
         <ul className="space-y-2 text-sm text-muted-foreground">
@@ -270,7 +271,7 @@ export function PWAInstallModal() {
 
           <div>
             <h3 className="text-lg font-bold text-white">
-              Instalá DR Polarizados
+              Instalá {BRAND.name}
             </h3>
             <p className="text-sm text-orange-100 mt-1">
               Agregá un acceso directo en tu pantalla para entrar más rápido, sin abrir el navegador

@@ -12,6 +12,8 @@
  */
 export const BRAND = {
   name: "Kristall Film",
+  /** Versión corta, para donde no entra el nombre completo: PWA, título de pestaña en iOS. */
+  shortName: "Kristall",
   tagline: "Distribuidor oficial",
   website: "https://www.kristallfilm.com",
   websiteLabel: "www.kristallfilm.com",

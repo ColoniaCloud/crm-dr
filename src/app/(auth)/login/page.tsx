@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import Image from "next/image";
 import { Eye, EyeOff } from "lucide-react";
 import logoColonia from "@/public/Logo.png";
-import logoBlanco from "@/public/logo-blanco.webp";
 import { GridPattern } from "@/components/ui/grid-pattern";
 import { cn } from "@/lib/utils";
 
@@ -92,10 +91,10 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-8">
           <Image
-            src={logoBlanco}
-            alt="DR Polarizados"
-            width={180}
-            height={60}
+            src="/logo-blanco.png"
+            alt="Kristall"
+            width={210}
+            height={35}
             className="object-contain drop-shadow-lg"
             priority
           />

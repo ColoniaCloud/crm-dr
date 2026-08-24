@@ -1,9 +1,10 @@
 import type { MetadataRoute } from "next";
+import { BRAND } from "@/lib/brand";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "DR Polarizados",
-    short_name: "DR Polar",
+    name: BRAND.name,
+    short_name: BRAND.shortName,
     description: "Sistema de gestión para importación de láminas polarizadas",
     start_url: "/",
     display: "standalone",

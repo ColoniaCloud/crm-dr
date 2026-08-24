@@ -67,5 +67,17 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Los archivos estáticos de `public/` quedan fuera del proxy.
+  //
+  // Antes solo se excluían `_next/*` y `favicon.ico`, así que todo lo demás en
+  // `public/` caía en el redirect a /login de más abajo. Eso rompía el logo del
+  // propio login (el optimizador de imágenes pide /logo-blanco.png, recibía un
+  // 307 a HTML y respondía 400 "isn't a valid image"), y de paso dejaba
+  // robots.txt, el manifest y los iconos de la PWA inaccesibles sin sesión.
+  //
+  // Excluir por extensión es seguro: ninguna ruta de la app termina en una de
+  // estas, así que no se destapa nada que estuviera protegido.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpe?g|gif|webp|svg|ico|txt|xml|webmanifest)$).*)",
+  ],
 };

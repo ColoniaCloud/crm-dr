@@ -116,7 +116,7 @@ export default function GoogleLocationMap({ address, className }: GoogleLocation
           } else {
             // Fallback to Nominatim
             fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`, {
-              headers: { "User-Agent": "CRM-Polarizados/1.0" },
+              headers: { "User-Agent": "KristallCRM/1.0" },
             })
               .then((r) => r.json())
               .then((data) => {

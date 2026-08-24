@@ -141,7 +141,7 @@ async function geocodeNominatim(city: string, province: string): Promise<{ lat: 
     url.searchParams.set("limit", "1");
     url.searchParams.set("accept-language", "es");
     const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "CRM-Polarizados/1.0" },
+      headers: { "User-Agent": "KristallCRM/1.0" },
     });
     const data = await res.json();
     if (data.length > 0) {

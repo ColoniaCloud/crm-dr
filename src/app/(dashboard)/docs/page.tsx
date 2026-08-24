@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { BRAND } from "@/lib/brand";
 import {
   BookOpen, Monitor, Users, ShoppingCart, Package, FileText, Brain,
   MapPin, Phone, CalendarDays, Settings, ChevronRight, Search,
@@ -60,7 +61,7 @@ function IntroSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Bienvenido a DR Polarizados CRM</h2>
+        <h2 className="text-2xl font-bold">Bienvenido al CRM de {BRAND.name}</h2>
         <p className="mt-2 text-muted-foreground">
           Sistema integral de gestión comercial diseñado para administrar leads, clientes,
           productos, ventas, presupuestos y más. Esta documentación te guiará en el uso
@@ -335,7 +336,7 @@ function ToolsSection() {
         <FeatureCard icon={CalendarDays} title="Visitas" description="Programá y registrá visitas comerciales a clientes y leads. Se muestran en el dashboard del día." />
         <FeatureCard icon={Phone} title="Llamadas" description="Registrá llamadas telefónicas con notas y resultado del contacto." />
         <FeatureCard icon={Target} title="Competencia" description="Seguimiento de competidores con datos de productos, precios y estrategias." />
-        <FeatureCard icon={MapPin} title="DR Scrapp" description="Buscador integrado con Google Maps para encontrar potenciales clientes por zona y rubro." />
+        <FeatureCard icon={MapPin} title="Kristall Scrapp" description="Buscador integrado con Google Maps para encontrar potenciales clientes por zona y rubro." />
         <FeatureCard icon={Brain} title="AI Insights" description="Análisis automáticos con IA sobre tendencias de ventas, comportamiento de clientes y oportunidades." />
         <FeatureCard icon={Sparkles} title="RRSS Creator" description="Generador de contenido para redes sociales con asistencia de IA." />
         <FeatureCard icon={ClipboardList} title="Actividad Operadores" description="Log de actividades de los operadores del CRM para auditoría, con exportación a CSV filtrada por operador y rango de fechas." />
@@ -344,8 +345,8 @@ function ToolsSection() {
 
       <h3 className="text-lg font-semibold mt-6">Caso de uso: Buscar clientes potenciales con Scrapper</h3>
       <div className="space-y-4">
-        <Step n={1} title="Accedé a DR Scrapp">
-          Desde la barra lateral, seleccioná <strong>&quot;DR Scrapp&quot;</strong>.
+        <Step n={1} title="Accedé a Kristall Scrapp">
+          Desde la barra lateral, seleccioná <strong>&quot;Kristall Scrapp&quot;</strong>.
         </Step>
         <Step n={2} title="Buscá por zona">
           Ingresá una ubicación y tipo de negocio (ej: &quot;vidriería en Montevideo&quot;). El buscador usa Google Maps para encontrar resultados.

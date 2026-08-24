@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   LayoutDashboard,
   UserPlus,
   Users,
-  Shield,
   Package,
   Bot,
   FileText,
@@ -81,7 +81,7 @@ const bottomItems = [
   { label: "Competencia", href: "/competitors", icon: Target },
   { label: "AI Insights", href: "/ai-insights", icon: Brain },
   { label: "RRSS Creator", href: "/social-creator", icon: Sparkles },
-  { label: "DR Scrapp", href: "/scrapper", icon: MapPin },
+  { label: "Kristall Scrapp", href: "/scrapper", icon: MapPin },
   { label: "Visitas", href: "/calendar/visits", icon: CalendarDays },
   { label: "Llamadas", href: "/calendar/calls", icon: Phone },
   { label: "Notificaciones", href: "/notifications", icon: Bell },
@@ -158,14 +158,34 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href="/">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Shield className="size-4" />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">DR Polarizados</span>
-                  <span className="text-xs text-muted-foreground">Sistema de gestión</span>
-                </div>
+              <Link href="/" aria-label="Kristall — Sistema de gestión">
+                {/* Colapsado: solo el isotipo. */}
+                <span className="hidden aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary font-anybody text-lg font-bold leading-none text-primary-foreground group-data-[collapsible=icon]:flex">
+                  K
+                </span>
+
+                {/* Expandido: el logotipo completo. Son dos archivos y no uno
+                    porque el sidebar es casi blanco en tema claro y casi negro
+                    en oscuro — un único PNG desaparece contra uno de los dos. */}
+                <span className="flex min-w-0 items-center group-data-[collapsible=icon]:hidden">
+                  <Image
+                    src="/LogoPlano.png"
+                    alt="Kristall"
+                    width={180}
+                    height={30}
+                    className="h-6 w-auto object-contain dark:hidden"
+                    priority
+                  />
+                  <Image
+                    src="/logo-blanco.png"
+                    alt=""
+                    aria-hidden
+                    width={180}
+                    height={30}
+                    className="hidden h-6 w-auto object-contain dark:block"
+                    priority
+                  />
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
