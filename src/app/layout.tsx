@@ -15,8 +15,14 @@ export const metadata: Metadata = {
   description: "Sistema de gestión para importación de láminas polarizadas",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/favicon.png",
-    apple: "/icons/icon-192.png",
+    // El SVG primero: escala nítido en cualquier densidad y sigue el modo
+    // oscuro del navegador. El PNG queda de fallback para los que no soportan
+    // favicon SVG (Safari viejo).
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192" }],
   },
   appleWebApp: {
     capable: true,
@@ -36,8 +42,11 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
-        <link rel="icon" type="image/png" href="/favicon.png" />
-        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+        {/*
+          Los <link rel="icon"> y el apple-touch-icon los emite
+          `metadata.icons` de arriba. Estaban además escritos a mano acá, así
+          que el HTML salía con cada icono duplicado. Se dejan solo en metadata.
+        */}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>
       <body className={`${geist.variable} ${geistMono.variable} ${anybody.variable} font-sans antialiased`}>

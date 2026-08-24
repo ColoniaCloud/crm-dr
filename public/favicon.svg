@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Kristall">
+  <!--
+    Isotipo Kristall. Mismo lenguaje que la K del sidebar colapsado: cuadrado
+    con radio 16/64 = 25%, que equivale a `rounded-lg` (radio 0.5rem) sobre una
+    caja de 32px.
+
+    La K NO usa font-family: los favicon SVG se renderizan en un contexto
+    aislado donde las webfonts no cargan, así que declarar la familia Anybody
+    habría caído a una sans genérica en cualquier máquina que no la tenga
+    instalada. El path de abajo es el glifo "K" de Anybody Bold (700)
+    convertido a contorno, escalado desde 2000 upem y centrado. Para
+    regenerarlo hace falta el .woff2 de la fuente y un parser (fontkit); no se
+    edita a mano.
+
+    El fill del cuadrado va como atributo y el modo oscuro lo pisa por CSS: si
+    el renderer ignora el bloque style, igual queda el naranja base.
+
+    Ojo al editar: esto es XML estricto. Un doble guion dentro de un comentario
+    lo vuelve inválido y el archivo deja de decodificar como imagen.
+  -->
+  <style>
+    @media (prefers-color-scheme: dark) { .bg { fill: #ff6d00 } }
+  </style>
+  <rect class="bg" width="64" height="64" rx="16" ry="16" fill="#df4300"/>
+  <path fill="#fafafa" d="M16.53 50L25.57 50L25.57 34.43L37.31 50L47.47 50L33.76 32.03L47.41 14L37.25 14L25.57 29.6L25.57 14L16.53 14Z"/>
+</svg>
