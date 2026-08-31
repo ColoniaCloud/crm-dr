@@ -15,6 +15,37 @@ function tooMany(retryAfter: number) {
   );
 }
 
+/**
+ * Ningún documento de la app puede quedar guardado en una caché compartida.
+ *
+ * Next marca las páginas prerenderizadas con `Cache-Control: s-maxage=31536000`
+ * —un año— porque da por sentado que adelante hay una CDN que se purga sola en
+ * cada deploy. Eso es cierto en Vercel; acá no. Corremos bajo Passenger desde
+ * `hbuilds/`, que se reconstruye entero en cada deploy sin purgar nada, así que
+ * el HTML viejo sobrevive en la caché de adelante y sigue pidiendo chunks con
+ * hash que ya no existen: 404 en el CSS y el login se ve sin estilos.
+ *
+ * `private` deja afuera a las cachés compartidas, que son las que provocan el
+ * problema. `max-age=0, must-revalidate` deja que el navegador igual guarde el
+ * documento, pero lo obliga a revalidarlo antes de usarlo; como Next manda
+ * ETag, eso se resuelve con un 304 en vez de reenviar el HTML entero.
+ *
+ * OJO: acá `no-cache` NO es equivalente aunque lo parezca. Con `no-cache` Next
+ * deja de responder 304 a los `If-None-Match` y reenvía el documento completo
+ * cada vez (medido: 200 con `no-cache`, 304 con `max-age=0`). Mismo efecto
+ * sobre las cachés compartidas, pero se pierde la revalidación barata.
+ *
+ * Solo aplica a documentos (HTML y payloads RSC). Los assets de
+ * `/_next/static/*` quedan fuera del matcher de abajo y conservan su
+ * `immutable`, que es correcto porque sus nombres llevan hash de contenido.
+ */
+const DOCUMENT_CACHE_CONTROL = "private, max-age=0, must-revalidate";
+
+function noSharedCache<T extends NextResponse>(res: T): T {
+  res.headers.set("Cache-Control", DOCUMENT_CACHE_CONTROL);
+  return res;
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const method = req.method;
@@ -54,16 +85,16 @@ export default auth((req) => {
   // Invalidated sessions (JWT revalidation cleared token) → redirect to login
   if (req.auth && !req.auth.user?.id) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
-    return NextResponse.redirect(loginUrl);
+    return noSharedCache(NextResponse.redirect(loginUrl));
   }
 
   // Redirect unauthenticated users to login for page routes
   if (!req.auth && pathname !== "/login") {
     const loginUrl = new URL("/login", req.nextUrl.origin);
-    return NextResponse.redirect(loginUrl);
+    return noSharedCache(NextResponse.redirect(loginUrl));
   }
 
-  return NextResponse.next();
+  return noSharedCache(NextResponse.next());
 });
 
 export const config = {
