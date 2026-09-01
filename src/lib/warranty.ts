@@ -414,63 +414,159 @@ export async function createAdditionalInstallation(
  * Activates a warranty installation slot with client and asset data.
  * Expiry is calculated from warrantyConfig.warrantyMonths (defaults to 12).
  */
+export interface ActivateWarrantyData {
+  assetType: "VEHICLE" | "WINDOW" | "BUILDING" | "OTHER";
+  assetDescription?: string | null;
+  clientName: string;
+  /**
+   * Opcional a propósito. El flujo público siempre lo tiene —lo escribe el
+   * usuario final en el formulario—, pero el del taller no: un cliente de
+   * mostrador puede no haber dejado mail. Preferimos generarle la garantía
+   * igual, porque el trabajo se hizo, y avisar que no se le pudo mandar; no
+   * darle cobertura por no tener su email sería castigar al que menos culpa
+   * tiene.
+   */
+  clientEmail?: string | null;
+  clientPhone?: string | null;
+  clientDni?: string | null;
+  installedAt?: Date | null;
+  installerName?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * Activa una instalación **dentro de una transacción que abre el que llama.**
+ *
+ * Existe separada de `activateInstallationWarranty` porque aquella abre su
+ * propia `$transaction`, y anidar transacciones de Prisma toma una segunda
+ * conexión del pool con la primera todavía abierta — receta de deadlock. La
+ * Fase 4 necesita activar la garantía en la MISMA transacción que cierra la
+ * orden de trabajo, así que la lógica vive acá y las dos entradas la comparten.
+ */
+export async function activateInstallationWarrantyTx(
+  tx: Tx,
+  installationId: string,
+  data: ActivateWarrantyData
+): Promise<{ expiresAt: Date }> {
+  const installation = await tx.warrantyInstallation.findUnique({
+    where: { id: installationId },
+    include: {
+      roll: {
+        include: { product: { include: { warrantyConfig: true } } },
+      },
+    },
+  });
+  if (!installation) throw new Error(`Installation ${installationId} not found`);
+  if (installation.status !== "PENDING") {
+    throw new Error(`Installation ${installationId} is not in PENDING status`);
+  }
+
+  const months = installation.roll.product.warrantyConfig?.installWarrantyMonths ?? 12;
+  const activatedAt = new Date();
+  const expiresAt = addMonths(activatedAt, months);
+
+  await tx.warrantyInstallation.update({
+    where: { id: installationId },
+    data: {
+      assetType: data.assetType,
+      assetDescription: data.assetDescription ?? null,
+      clientName: data.clientName,
+      clientEmail: data.clientEmail ?? null,
+      clientPhone: data.clientPhone ?? null,
+      clientDni: data.clientDni ?? null,
+      installedAt: data.installedAt ?? null,
+      installerName: data.installerName ?? null,
+      notes: data.notes ?? null,
+      activatedAt,
+      expiresAt,
+      status: "ACTIVE",
+    },
+  });
+
+  await tx.warrantyRoll.update({
+    where: { id: installation.rollId },
+    data: { status: "IN_USE" },
+  });
+
+  return { expiresAt };
+}
+
+/** Entrada pública: activa abriendo su propia transacción. */
 export async function activateInstallationWarranty(
   installationId: string,
-  data: {
-    assetType: "VEHICLE" | "WINDOW" | "BUILDING" | "OTHER";
-    assetDescription?: string;
-    clientName: string;
-    clientEmail: string;
-    clientPhone?: string;
-    clientDni?: string;
-    installedAt?: Date;
-    installerName?: string;
-    notes?: string;
-  }
+  data: ActivateWarrantyData
 ): Promise<{ expiresAt: Date }> {
-  return prisma.$transaction(async (tx) => {
-    const installation = await tx.warrantyInstallation.findUnique({
-      where: { id: installationId },
-      include: {
-        roll: {
-          include: { product: { include: { warrantyConfig: true } } },
+  return prisma.$transaction((tx) => activateInstallationWarrantyTx(tx, installationId, data));
+}
+
+/**
+ * Reserva un slot de instalación en un rollo, dentro de una transacción ajena.
+ *
+ * Reusa el `-I1` que `linkRollToSaleItem` deja en PENDING al vender el rollo;
+ * recién cuando no queda ninguno libre crea el siguiente sub-código. Es la
+ * misma cuenta que hace `createAdditionalInstallation` (sección 4.8 del
+ * contrato), sin abrir transacción propia.
+ *
+ * Devuelve null cuando el rollo ya no admite más instalaciones o está anulado.
+ * El que llama decide si eso es un error o algo que se reporta y sigue.
+ */
+export async function allocateInstallationTx(
+  tx: Tx,
+  rollId: string
+): Promise<{ id: string; installationCode: string; activationToken: string } | null> {
+  const roll = await tx.warrantyRoll.findUnique({
+    where: { id: rollId },
+    select: {
+      id: true,
+      fullRollCode: true,
+      status: true,
+      installations: {
+        orderBy: { installationNumber: "asc" },
+        select: {
+          id: true,
+          installationNumber: true,
+          installationCode: true,
+          activationToken: true,
+          status: true,
         },
       },
-    });
-    if (!installation) throw new Error(`Installation ${installationId} not found`);
-    if (installation.status !== "PENDING") {
-      throw new Error(`Installation ${installationId} is not in PENDING status`);
-    }
-
-    const months = installation.roll.product.warrantyConfig?.installWarrantyMonths ?? 12;
-    const activatedAt = new Date();
-    const expiresAt = addMonths(activatedAt, months);
-
-    await tx.warrantyInstallation.update({
-      where: { id: installationId },
-      data: {
-        assetType: data.assetType,
-        assetDescription: data.assetDescription ?? null,
-        clientName: data.clientName,
-        clientEmail: data.clientEmail,
-        clientPhone: data.clientPhone ?? null,
-        clientDni: data.clientDni ?? null,
-        installedAt: data.installedAt ?? null,
-        installerName: data.installerName ?? null,
-        notes: data.notes ?? null,
-        activatedAt,
-        expiresAt,
-        status: "ACTIVE",
-      },
-    });
-
-    await tx.warrantyRoll.update({
-      where: { id: installation.rollId },
-      data: { status: "IN_USE" },
-    });
-
-    return { expiresAt };
+      product: { select: { warrantyConfig: { select: { maxInstallations: true } } } },
+    },
   });
+  if (!roll || roll.status === "VOIDED") return null;
+
+  const libre = roll.installations.find((i) => i.status === "PENDING");
+  if (libre) {
+    return {
+      id: libre.id,
+      installationCode: libre.installationCode,
+      activationToken: libre.activationToken,
+    };
+  }
+
+  const maxInstallations = roll.product.warrantyConfig?.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
+  const nextNumber = roll.installations.length + 1;
+  if (nextNumber > maxInstallations) {
+    await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
+    return null;
+  }
+
+  const creada = await tx.warrantyInstallation.create({
+    data: {
+      rollId: roll.id,
+      installationNumber: nextNumber,
+      installationCode: `${roll.fullRollCode}-I${nextNumber}`,
+      activationToken: newActivationToken(),
+      status: "PENDING",
+    },
+    select: { id: true, installationCode: true, activationToken: true },
+  });
+
+  if (nextNumber >= maxInstallations) {
+    await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
+  }
+
+  return creada;
 }
 
 /**

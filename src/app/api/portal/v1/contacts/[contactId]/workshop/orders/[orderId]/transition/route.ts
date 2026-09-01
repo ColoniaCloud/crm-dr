@@ -22,10 +22,9 @@ const schema = z.object({
  * una operación con nombre propio y transaccional, no un `status: "TERMINADA"`
  * suelto en un body.
  *
- * **Fase 2: la máquina de estados y los timestamps están; los efectos de
- * TERMINADA son la Fase 4.** Hoy la transición valida y sella la fecha, pero
- * todavía no toca el material ni la garantía — el punto exacto donde va está
- * marcado en `transitionWorkOrder` (src/lib/workshop.ts).
+ * Al pasar a `TERMINADA` la respuesta trae además `efectos`, con las garantías
+ * que se activaron, los rollos que no pudieron generar una, y si se le mandó el
+ * mail al cliente final. El resto de las transiciones no lo traen.
  */
 export async function POST(request: Request, { params }: Params) {
   const { contactId, orderId } = await params;
@@ -43,7 +42,13 @@ export async function POST(request: Request, { params }: Params) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
-    return NextResponse.json(result.order);
+    // `efectos` va al lado de la orden, no adentro: la orden es el recurso y
+    // los efectos son lo que pasó en ESTA llamada. Meterlos dentro haría que
+    // parezcan parte del estado de la orden y que el consumidor los espere en
+    // cada GET.
+    return NextResponse.json(
+      result.efectos ? { ...result.order, efectos: result.efectos } : result.order
+    );
   } catch (error) {
     log.error({ err: error }, "Error transitioning work order");
     return NextResponse.json({ error: "Error al cambiar el estado" }, { status: 500 });

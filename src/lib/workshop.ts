@@ -1,5 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma, WorkOrderStatus } from "@prisma/client";
+import { createLogger } from "@/lib/logger";
+import {
+  generarGarantiasDeOrden,
+  enviarMailDeGarantia,
+  avisarGarantiasGeneradas,
+  datosParaMail,
+  type ResultadoGarantia,
+} from "@/lib/workshop-warranty";
+
+const log = createLogger("lib/workshop");
 
 /**
  * Mi Taller — la lógica del módulo de taller del instalador.
@@ -540,12 +550,29 @@ export function canTransition(from: WorkOrderStatus, to: WorkOrderStatus): boole
   return TRANSICIONES[from].includes(to);
 }
 
+/** Lo que la transición reporta además de la orden actualizada. */
+export interface EfectosDeTerminar {
+  /** Códigos de las garantías que se activaron, la principal primera. */
+  garantias: { installationCode: string; fullRollCode: string; expiresAt: string }[];
+  /** Rollos que no pudieron generar garantía, con el motivo en castellano. */
+  problemas: { fullRollCode: string; motivo: string }[];
+  /** Si se le mandó el mail al cliente final, y si no, por qué. */
+  mail: { enviado: boolean; motivo?: string };
+}
+
 export async function transitionWorkOrder(
   contactId: string,
   orderId: string,
   to: WorkOrderStatus,
   extra: { priceFinal?: number | null } = {}
-): Promise<{ ok: true; order: NonNullable<Awaited<ReturnType<typeof getWorkOrder>>> } | Fail> {
+): Promise<
+  | {
+      ok: true;
+      order: NonNullable<Awaited<ReturnType<typeof getWorkOrder>>>;
+      efectos?: EfectosDeTerminar;
+    }
+  | Fail
+> {
   const order = await prisma.workOrder.findFirst({
     where: { id: orderId, contactId },
     select: {
@@ -596,16 +623,75 @@ export async function transitionWorkOrder(
     sello.priceFinal = extra.priceFinal;
   }
 
-  // FASE 4 — acá va, dentro de una transacción con este update: descontar los
-  // m² del rollo, crear la WarrantyInstallation con los datos que ya tiene la
-  // OT (clientName, clientEmail, assetType, assetDescription) y colgarla de
-  // warrantyInstallationId. El mail al cliente final va DESPUÉS del commit: si
-  // falla el envío se reintenta, no revierte la OT.
-  await prisma.workOrder.update({ where: { id: order.id }, data: sello });
+  // Terminar es la única transición con efectos. El cambio de estado y la
+  // generación de las garantías van juntos en una transacción: que quede una
+  // orden terminada sin su garantía —o al revés— sería peor que fallar entera.
+  //
+  // El mail NO va acá adentro. Va después del commit, porque mandar un mail
+  // dentro de una transacción de base la mantiene abierta contra un servidor
+  // SMTP que puede tardar segundos, y porque su fallo no tiene que revertir
+  // nada: el trabajo ya se hizo.
+  let garantias: ResultadoGarantia = { generadas: [], problemas: [] };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.workOrder.update({ where: { id: order.id }, data: sello });
+    if (to === "TERMINADA") {
+      garantias = await generarGarantiasDeOrden(tx, order.id);
+    }
+  });
 
   const updated = await getWorkOrder(contactId, order.id);
   if (!updated) return { ok: false, error: "Error al cambiar el estado", status: 500 };
-  return { ok: true, order: updated };
+  if (to !== "TERMINADA") return { ok: true, order: updated };
+
+  // ── Todo lo que sigue es después del commit y no puede tumbar la respuesta ──
+  let mail: { enviado: boolean; motivo?: string } = {
+    enviado: false,
+    motivo: "No se generó ninguna garantía",
+  };
+
+  if (garantias.generadas.length > 0) {
+    const principal = garantias.generadas[0];
+    // El mail sale una sola vez aunque el trabajo haya usado dos rollos: al
+    // cliente final le importa su auto, no de cuántos rollos salió la lámina.
+    // Los códigos de los demás quedan en la orden y en el listado del taller.
+    if (await autoEnviaMail(contactId)) {
+      const datos = await datosParaMail(order.id, principal.installationId);
+      mail = datos
+        ? await enviarMailDeGarantia(datos)
+        : { enviado: false, motivo: "No pudimos armar el mail" };
+    } else {
+      mail = { enviado: false, motivo: "El envío automático está desactivado en tu configuración" };
+    }
+  }
+
+  // Avisar a los admins no puede romper la respuesta: si falla, se loguea.
+  await avisarGarantiasGeneradas(garantias, updated.orderNumber).catch((err) =>
+    log.error({ err, orderId: order.id }, "Failed to notify admins about workshop warranties")
+  );
+
+  return {
+    ok: true,
+    order: updated,
+    efectos: {
+      garantias: garantias.generadas.map((g) => ({
+        installationCode: g.installationCode,
+        fullRollCode: g.fullRollCode,
+        expiresAt: g.expiresAt.toISOString(),
+      })),
+      problemas: garantias.problemas,
+      mail,
+    },
+  };
+}
+
+/** ¿Este taller quiere que el mail de garantía salga solo? Default: sí. */
+async function autoEnviaMail(contactId: string): Promise<boolean> {
+  const settings = await prisma.workshopSettings.findUnique({
+    where: { contactId },
+    select: { autoSendWarrantyEmail: true },
+  });
+  return settings?.autoSendWarrantyEmail ?? true;
 }
 
 // ─── Cobros ──────────────────────────────────────────────────────────────────
@@ -692,10 +778,28 @@ export async function getAgenda(contactId: string, from: Date, to: Date) {
  * discrepar. Si algún día se pone lento, ahí se denormaliza — con la evidencia
  * a la vista.
  *
- * `totalM2` y `remainingM2` son `null` cuando el producto no tiene `width` y
- * `length` cargados. Es `null` y no `0` a propósito: "no sé cuánto queda" y "no
- * queda nada" son cosas distintas, y mostrar 0 haría que el instalador crea que
- * el rollo está vacío.
+ * ─── Consumido y reservado son dos números distintos ───────────────────────
+ *
+ * Desde la Fase 4, "terminar una orden" es lo que consume material de verdad.
+ * Pero una orden agendada con las líneas ya cargadas también tiene ese material
+ * comprometido, y contarlo como disponible haría que el instalador venda dos
+ * veces el mismo pedazo de rollo.
+ *
+ * Por eso hay dos cuentas y no una:
+ *
+ *   `usedM2`      — lo que ya se cortó (órdenes TERMINADA o ENTREGADA).
+ *   `reservedM2`  — lo comprometido y todavía sin cortar (PRESUPUESTADA,
+ *                   AGENDADA, EN_PROCESO). Las canceladas no cuentan en ninguna.
+ *   `remainingM2` — lo que físicamente queda en el rollo: total − usado.
+ *   `availableM2` — con lo que puede contar para un trabajo nuevo:
+ *                   total − usado − reservado.
+ *
+ * El plan decía "TERMINADA descuenta m²" y eso ahora es literalmente cierto;
+ * lo que faltaba era decir qué pasa con lo prometido pero no cortado.
+ *
+ * Los cuatro son `null` cuando el producto no tiene `width` y `length`
+ * cargados. Es `null` y no `0` a propósito: "no sé cuánto queda" y "no queda
+ * nada" son cosas distintas, y mostrar 0 haría creer que el rollo está vacío.
  *
  * NO devuelve `currentLocation` — misma razón que en PORTAL_ROLL_SELECT
  * (ver F0-24): puede ser el Punto de Reventa de otro instalador.
@@ -730,29 +834,44 @@ export async function getWorkshopStock(contactId: string) {
 
   if (rolls.length === 0) return [];
 
-  const consumo = await prisma.workOrderItem.groupBy({
-    by: ["rollId"],
-    where: {
-      rollId: { in: rolls.map((r) => r.id) },
-      // Solo cuenta lo consumido por OT que no se cancelaron: una OT cancelada
-      // no gastó material.
-      workOrder: { status: { not: "CANCELADA" } },
-    },
-    _sum: { squareMetersUsed: true },
-  });
-  const usadoPorRollo = new Map(
-    consumo.map((c) => [c.rollId, Number(c._sum.squareMetersUsed ?? 0)])
-  );
+  const ids = rolls.map((r) => r.id);
+  const [consumido, reservado] = await Promise.all([
+    prisma.workOrderItem.groupBy({
+      by: ["rollId"],
+      where: {
+        rollId: { in: ids },
+        workOrder: { status: { in: ["TERMINADA", "ENTREGADA"] } },
+      },
+      _sum: { squareMetersUsed: true },
+    }),
+    prisma.workOrderItem.groupBy({
+      by: ["rollId"],
+      where: {
+        rollId: { in: ids },
+        workOrder: { status: { in: ["PRESUPUESTADA", "AGENDADA", "EN_PROCESO"] } },
+      },
+      _sum: { squareMetersUsed: true },
+    }),
+  ]);
+
+  const suma = (filas: typeof consumido) =>
+    new Map(filas.map((c) => [c.rollId, Number(c._sum.squareMetersUsed ?? 0)]));
+  const usadoPorRollo = suma(consumido);
+  const reservadoPorRollo = suma(reservado);
+  const redondear = (n: number) => Math.round(n * 100) / 100;
 
   return rolls.map((roll) => {
     const { width, length } = roll.product;
     const totalM2 = width != null && length != null ? Number(width) * Number(length) : null;
-    const usedM2 = usadoPorRollo.get(roll.id) ?? 0;
+    const usedM2 = redondear(usadoPorRollo.get(roll.id) ?? 0);
+    const reservedM2 = redondear(reservadoPorRollo.get(roll.id) ?? 0);
     return {
       ...roll,
       totalM2,
       usedM2,
-      remainingM2: totalM2 == null ? null : Math.round((totalM2 - usedM2) * 100) / 100,
+      reservedM2,
+      remainingM2: totalM2 == null ? null : redondear(totalM2 - usedM2),
+      availableM2: totalM2 == null ? null : redondear(totalM2 - usedM2 - reservedM2),
     };
   });
 }
