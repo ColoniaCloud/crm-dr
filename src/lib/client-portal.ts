@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { getClientBalance } from "@/lib/account";
+import { isWarrantyClaimable } from "@/lib/warranty";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
 export async function findClientContact(contactId: string) {
@@ -180,11 +181,22 @@ export async function getClientInstallations(contactId: string) {
   });
 }
 
-/** Warranty claims filed on installations that belong to this CLIENT contact. */
+/**
+ * Warranty claims filed on installations that belong to this CLIENT contact.
+ * Explicit select (CLIENT_PORTAL_API.md 4.4), mismo criterio que 4.2 y 4.3: un
+ * `include` pelado devuelve la fila entera — `reporterEmail`, `reporterPhone`,
+ * `channel`, `assignedToId`, `resolutionNotes` — y aunque ahí no haya secretos,
+ * `resolutionNotes` es una nota interna del operador y `assignedToId` es el
+ * usuario del CRM que lo atiende. Nada de eso es del Cliente.
+ */
 export async function getClientClaims(contactId: string) {
   return prisma.warrantyClaim.findMany({
     where: { installation: { roll: { saleItem: { sale: { contactId } } } } },
-    include: {
+    select: {
+      id: true,
+      status: true,
+      description: true,
+      createdAt: true,
       installation: {
         select: { installationCode: true, status: true },
       },
@@ -214,12 +226,22 @@ export async function createClientClaim(
       id: data.installationId,
       roll: { saleItem: { sale: { contactId } } },
     },
+    select: { id: true, installationCode: true, status: true, expiresAt: true },
   });
   if (!installation) {
     return { ok: false, error: "Instalación no encontrada", status: 404 };
   }
-  if (installation.status !== "ACTIVE") {
-    return { ok: false, error: "Esta garantía no está activa", status: 400 };
+  // No alcanza con `status === "ACTIVE"`: EXPIRED se calcula y nunca se escribe
+  // en la columna, así que una garantía vencida sigue figurando como ACTIVE.
+  if (!isWarrantyClaimable(installation)) {
+    return {
+      ok: false,
+      error:
+        installation.status === "ACTIVE"
+          ? "Esta garantía ya venció"
+          : "Esta garantía no está activa",
+      status: 400,
+    };
   }
 
   const claim = await prisma.warrantyClaim.create({
@@ -291,6 +313,19 @@ export async function getClientNotifications(contactId: string) {
     where: {
       contactId,
       OR: [{ read: false }, { createdAt: { gte: since24h } }],
+    },
+    // Select explícito: sin él se devuelve también el `contactId`, que el
+    // consumidor ya conoce y no necesita ver repetido en cada fila.
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      message: true,
+      // Deep link dentro del panel (p. ej. /cliente/cuenta#cuota-<id> para
+      // INSTALLMENT_OVERDUE). Estaba en la base y se descartaba al serializar.
+      link: true,
+      read: true,
+      createdAt: true,
     },
     orderBy: { createdAt: "desc" },
     take: 100,

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { addMonths } from "date-fns";
@@ -17,6 +18,47 @@ type WarrantyRollSourceType = keyof typeof LOT_PREFIX;
 function buildLotNumber(prefix: string, seq: number): string {
   const d = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   return `${prefix}-${d}-${String(seq).padStart(4, "0")}`;
+}
+
+/**
+ * Token de activación de una instalación. Es la capacidad completa sobre la
+ * garantía: quien lo tiene puede activarla, ponerle contraseña y abrir un
+ * reclamo. Por eso NO puede ser el `cuid()` que traía el schema por defecto —
+ * cuid v1 mezcla timestamp, un contador secuencial y un fingerprint de máquina,
+ * y los rollos se dan de alta en lote, así que los tokens de un mismo lote
+ * quedan con contadores contiguos y son adivinables a partir de uno conocido.
+ *
+ * 32 bytes de `randomBytes`, el mismo criterio que ya se había tomado para los
+ * tokens del portal (lib/portal-tokens.ts). Los tokens cuid que ya existen en
+ * la base siguen funcionando: esto solo cambia los nuevos.
+ */
+export function newActivationToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/**
+ * `EXPIRED` se CALCULA, nunca se persiste: no hay job que escriba la columna,
+ * así que una instalación vencida sigue diciendo `ACTIVE` en la base para
+ * siempre. Cualquier chequeo de "¿esta garantía sigue vigente?" tiene que pasar
+ * por acá y no por `installation.status` a secas.
+ */
+export function isWarrantyExpired(installation: {
+  status: string;
+  expiresAt: Date | null;
+}, now: Date = new Date()): boolean {
+  return (
+    installation.status === "ACTIVE" &&
+    installation.expiresAt != null &&
+    installation.expiresAt < now
+  );
+}
+
+/** Vigente = ACTIVE en la columna y además no vencida por fecha. */
+export function isWarrantyClaimable(installation: {
+  status: string;
+  expiresAt: Date | null;
+}, now: Date = new Date()): boolean {
+  return installation.status === "ACTIVE" && !isWarrantyExpired(installation, now);
 }
 
 /**
@@ -210,6 +252,7 @@ export async function linkRollToSaleItem(
         create: {
           installationNumber: 1,
           installationCode: `${roll.fullRollCode}-I1`,
+          activationToken: newActivationToken(),
           status: "PENDING",
         },
       },
@@ -341,6 +384,7 @@ export async function createAdditionalInstallation(
         rollId: roll.id,
         installationNumber: nextNumber,
         installationCode: `${fullRollCode}-I${nextNumber}`,
+        activationToken: newActivationToken(),
         status: "PENDING",
       },
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
@@ -448,10 +492,7 @@ export async function verifyWarranty(activationToken: string) {
   if (!installation) return null;
 
   const now = new Date();
-  const isExpired =
-    installation.status === "ACTIVE" &&
-    installation.expiresAt != null &&
-    installation.expiresAt < now;
+  const isExpired = isWarrantyExpired(installation, now);
 
   return {
     installationCode: installation.installationCode,

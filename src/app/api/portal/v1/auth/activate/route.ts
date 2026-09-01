@@ -6,6 +6,7 @@ import { requirePortalApiKey } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
+import { credentialVersion } from "@/lib/portal-credentials";
 import { notifyAdmins } from "@/lib/notifications";
 import { verifyPortalToken } from "@/lib/portal-tokens";
 
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
           activatedAt: now,
           ...(whatsapp ? { whatsapp, whatsappUpdatedAt: now } : {}),
         },
-        select: { id: true, accessLevel: true },
+        select: { id: true, accessLevel: true, passwordHash: true },
       });
 
       await tx.portalAccessToken.update({
@@ -165,6 +166,7 @@ export async function POST(request: Request) {
       name: `${contact.firstName} ${contact.lastName}`.trim(),
       company: contact.company,
       accessLevel: account.accessLevel,
+      credentialVersion: credentialVersion(account.passwordHash),
     });
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {

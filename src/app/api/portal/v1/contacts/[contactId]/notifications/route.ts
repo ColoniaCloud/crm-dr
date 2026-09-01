@@ -25,7 +25,7 @@ export async function GET(
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    const active = await requireEnabledPortalAccount(contactId);
+    const active = await requireEnabledPortalAccount(contactId, request);
     if (!active.success) return active.response;
 
     const notifications = await getClientNotifications(contactId);

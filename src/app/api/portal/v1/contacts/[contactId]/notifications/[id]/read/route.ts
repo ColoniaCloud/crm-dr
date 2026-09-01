@@ -21,7 +21,7 @@ export async function PATCH(
   try {
     const { contactId, id } = await params;
 
-    const active = await requireEnabledPortalAccount(contactId);
+    const active = await requireEnabledPortalAccount(contactId, request);
     if (!active.success) return active.response;
 
     const result = await prisma.portalNotification.updateMany({

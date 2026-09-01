@@ -26,7 +26,7 @@ export async function POST(
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    const level = await requireInstallerLevel(contactId);
+    const level = await requireInstallerLevel(contactId, request);
     if (!level.success) return level.response;
 
     const result = await createAdditionalInstallation(contactId, fullRollCode);

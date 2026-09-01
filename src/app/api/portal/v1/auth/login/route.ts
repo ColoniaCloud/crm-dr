@@ -6,6 +6,7 @@ import { requirePortalApiKey } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
+import { credentialVersion } from "@/lib/portal-credentials";
 
 const log = createLogger("api/portal/v1/auth/login");
 
@@ -66,6 +67,11 @@ export async function POST(request: Request) {
       // stock, garantías y reclamos. Guardalo en tu sesión para armar el menú.
       // El CRM igual lo verifica de su lado en cada endpoint de instalador.
       accessLevel: account.accessLevel,
+      // Versión de la credencial con la que se emite esta sesión. Guardala y
+      // mandala en `x-portal-credential-version` en cada llamada: cuando el
+      // Cliente cambie la contraseña, el CRM responde 401 y la sesión se corta
+      // sin esperar a que venza. Ver lib/portal-credentials.ts.
+      credentialVersion: credentialVersion(account.passwordHash),
     });
   } catch (error) {
     log.error({ err: error }, "Error during portal login");

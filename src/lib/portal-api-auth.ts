@@ -3,6 +3,16 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import type { PortalApiClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  getCachedClientId,
+  cacheVerifiedKey,
+  shouldTouchLastUsed,
+} from "@/lib/api-key-cache";
+import { rateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/request-ip";
+import {
+  credentialVersionMatches,
+} from "@/lib/portal-credentials";
 
 const KEY_PREFIX = "capi_";
 
@@ -17,14 +27,41 @@ export function hashPortalApiKey(key: string): Promise<string> {
 /**
  * Verifies the `x-api-key` header against active PortalApiClient records.
  * Returns the matching client (and bumps lastUsedAt) or null if invalid/missing.
+ *
+ * El camino caro (un `bcrypt.compare` por cliente activo) queda detrás de la
+ * caché de aciertos y del límite sobre los fallos — ver lib/api-key-cache.ts.
  */
 export async function verifyPortalApiKey(request: Request) {
   const key = request.headers.get("x-api-key");
   if (!key) return null;
 
+  const cachedId = getCachedClientId(key);
+  if (cachedId) {
+    const client = await prisma.portalApiClient.findFirst({
+      where: { id: cachedId, active: true },
+    });
+    // Si mientras tanto lo desactivaron, se cae al camino largo (que tampoco lo
+    // va a encontrar): la caché acelera, no autoriza.
+    if (client) {
+      if (shouldTouchLastUsed(key)) {
+        await prisma.portalApiClient.update({
+          where: { id: client.id },
+          data: { lastUsedAt: new Date() },
+        });
+      }
+      return client;
+    }
+  }
+
+  // Solo las keys que no están en caché llegan hasta acá, y un atacante manda
+  // siempre keys distintas: el contador es efectivamente "intentos fallidos".
+  const ip = clientIp(request);
+  if (!rateLimit(`apikey-verify:${ip}`, 30, 60_000).allowed) return null;
+
   const clients = await prisma.portalApiClient.findMany({ where: { active: true } });
   for (const client of clients) {
     if (await bcrypt.compare(key, client.apiKeyHash)) {
+      cacheVerifiedKey(key, client.id);
       await prisma.portalApiClient.update({
         where: { id: client.id },
         data: { lastUsedAt: new Date() },
@@ -72,11 +109,12 @@ export async function requirePortalApiKey(
  * Falla cerrado: sin cuenta de portal, tampoco hay acceso.
  */
 export async function requireEnabledPortalAccount(
-  contactId: string
+  contactId: string,
+  request: Request
 ): Promise<{ success: true } | { success: false; response: NextResponse }> {
   const account = await prisma.clientPortalAccount.findUnique({
     where: { contactId },
-    select: { enabled: true },
+    select: { enabled: true, passwordHash: true },
   });
 
   if (!account || !account.enabled) {
@@ -88,7 +126,27 @@ export async function requireEnabledPortalAccount(
       ),
     };
   }
-  return { success: true };
+  return checkCredentialVersion(request, account.passwordHash);
+}
+
+/**
+ * 401 (no 403) si la sesión se emitió con una contraseña que ya no es la
+ * vigente. Son cosas distintas y el consumidor las trata distinto: 403 es "no
+ * tenés permiso", 401 es "esta sesión no vale más, volvé a entrar".
+ * Ver lib/portal-credentials.ts.
+ */
+function checkCredentialVersion(
+  request: Request,
+  passwordHash: string
+): { success: true } | { success: false; response: NextResponse } {
+  if (credentialVersionMatches(request, passwordHash)) return { success: true };
+  return {
+    success: false,
+    response: NextResponse.json(
+      { error: "La sesión venció porque se cambió la contraseña" },
+      { status: 401 }
+    ),
+  };
 }
 
 /**
@@ -104,11 +162,12 @@ export async function requireEnabledPortalAccount(
  * o es BASIC, se rechaza.
  */
 export async function requireInstallerLevel(
-  contactId: string
+  contactId: string,
+  request: Request
 ): Promise<{ success: true } | { success: false; response: NextResponse }> {
   const account = await prisma.clientPortalAccount.findUnique({
     where: { contactId },
-    select: { enabled: true, accessLevel: true },
+    select: { enabled: true, accessLevel: true, passwordHash: true },
   });
 
   if (!account || !account.enabled || account.accessLevel !== "INSTALLER") {
@@ -120,5 +179,5 @@ export async function requireInstallerLevel(
       ),
     };
   }
-  return { success: true };
+  return checkCredentialVersion(request, account.passwordHash);
 }

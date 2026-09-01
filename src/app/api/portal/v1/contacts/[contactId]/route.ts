@@ -23,7 +23,7 @@ export async function GET(
 
     // Antes de armar el perfil: si la cuenta está deshabilitada no hay nada
     // que devolver, y el perfil es la consulta más cara de la API.
-    const active = await requireEnabledPortalAccount(contactId);
+    const active = await requireEnabledPortalAccount(contactId, request);
     if (!active.success) return active.response;
 
     const profile = await getClientProfile(contactId);

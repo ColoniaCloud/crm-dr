@@ -25,7 +25,7 @@ export async function GET(
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    const level = await requireInstallerLevel(contactId);
+    const level = await requireInstallerLevel(contactId, request);
     if (!level.success) return level.response;
 
     const installations = await getClientInstallations(contactId);

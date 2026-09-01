@@ -1105,7 +1105,11 @@ model WarrantyInstallation {
   roll               WarrantyRoll               @relation(fields: [rollId], references: [id], onDelete: Cascade)
   installationNumber Int
   installationCode   String                     @unique
-  activationToken    String                     @unique @default(cuid())
+  // Sin @default(cuid()): el token ES la capacidad completa sobre la garantía y
+  // cuid es secuencial-ish (timestamp + contador), así que se genera en código
+  // con randomBytes(32) — ver newActivationToken() en src/lib/warranty.ts.
+  // Los tokens cuid ya emitidos siguen siendo válidos.
+  activationToken    String                     @unique
   status             WarrantyInstallationStatus @default(PENDING)
   assetType          AssetType?
   assetDescription   String?                    @db.Text
