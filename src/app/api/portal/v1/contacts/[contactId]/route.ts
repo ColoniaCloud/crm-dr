@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireEnabledPortalAccount } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { getClientProfile } from "@/lib/client-portal";
 import { createLogger } from "@/lib/logger";
@@ -20,6 +20,12 @@ export async function GET(
 
   try {
     const { contactId } = await params;
+
+    // Antes de armar el perfil: si la cuenta está deshabilitada no hay nada
+    // que devolver, y el perfil es la consulta más cara de la API.
+    const active = await requireEnabledPortalAccount(contactId);
+    if (!active.success) return active.response;
+
     const profile = await getClientProfile(contactId);
     if (!profile) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });

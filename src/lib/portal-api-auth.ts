@@ -57,6 +57,41 @@ export async function requirePortalApiKey(
 }
 
 /**
+ * Exige que el Cliente tenga una cuenta de portal **habilitada**.
+ *
+ * `enabled: false` es el kill switch del admin: corta todo el portal, no solo
+ * el nivel de instalador. Antes solo lo miraba `requireInstallerLevel`, así que
+ * bajar el switch no cortaba nada de lo básico — perfil, cuenta corriente y
+ * notificaciones seguían respondiendo hasta que venciera la sesión de
+ * kristall-web, que dura 12 horas. Para un kill switch, esperar medio día no
+ * sirve.
+ *
+ * Va en los endpoints de nivel BASIC. Los de instalador NO la necesitan:
+ * `requireInstallerLevel` ya verifica `enabled` en la misma consulta.
+ *
+ * Falla cerrado: sin cuenta de portal, tampoco hay acceso.
+ */
+export async function requireEnabledPortalAccount(
+  contactId: string
+): Promise<{ success: true } | { success: false; response: NextResponse }> {
+  const account = await prisma.clientPortalAccount.findUnique({
+    where: { contactId },
+    select: { enabled: true },
+  });
+
+  if (!account || !account.enabled) {
+    return {
+      success: false,
+      response: NextResponse.json(
+        { error: "Este cliente no tiene acceso al portal" },
+        { status: 403 }
+      ),
+    };
+  }
+  return { success: true };
+}
+
+/**
  * Exige que el Cliente tenga nivel `INSTALLER` (stock, garantías, reclamos).
  *
  * Defensa en profundidad. La API confía en que kristall-web manda el

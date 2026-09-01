@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
+import { getClientBalance } from "@/lib/account";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
 export async function findClientContact(contactId: string) {
@@ -42,11 +43,17 @@ export async function getClientProfile(contactId: string) {
   });
   if (!contact) return null;
 
-  let balance = 0;
+  // El saldo NO se acumula acá. Sumar total−pagado sobre `contact.sales` daba
+  // un número distinto al de la cuenta corriente (sección 4.9): contaba las
+  // ventas CANCELLED, cuya deuda está revertida, y no aplicaba los
+  // AccountAdjustment (notas de crédito). El Cliente veía un saldo en el
+  // Dashboard y otro en Cuenta corriente. getClientBalance() es el cálculo
+  // canónico — un solo lugar, para las dos pantallas y para el CRM interno.
+  const balance = await getClientBalance(contactId);
+
   const purchases = contact.sales.map((sale) => {
     const paidAmount = sale.payments.reduce((s, p) => s + Number(p.amount), 0);
     const saleTotal = Number(sale.total);
-    balance += saleTotal - paidAmount;
 
     let paymentStatus = "PENDING";
     if (paidAmount >= saleTotal) paymentStatus = "PAID";

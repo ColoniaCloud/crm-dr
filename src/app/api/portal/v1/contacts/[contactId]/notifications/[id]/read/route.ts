@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireEnabledPortalAccount } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { createLogger } from "@/lib/logger";
 
@@ -20,6 +20,10 @@ export async function PATCH(
 
   try {
     const { contactId, id } = await params;
+
+    const active = await requireEnabledPortalAccount(contactId);
+    if (!active.success) return active.response;
+
     const result = await prisma.portalNotification.updateMany({
       where: { id, contactId },
       data: { read: true },

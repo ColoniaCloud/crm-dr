@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePortalApiKey } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireEnabledPortalAccount } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { findClientContact } from "@/lib/client-portal";
 import { getClientAccount } from "@/lib/account";
@@ -35,6 +35,9 @@ export async function GET(
     if (!contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
+
+    const active = await requireEnabledPortalAccount(contactId);
+    if (!active.success) return active.response;
 
     return NextResponse.json(await getClientAccount(contactId));
   } catch (error) {
