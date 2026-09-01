@@ -129,8 +129,14 @@ export async function getWorkshopClient(contactId: string, clientId: string) {
     where: { id: clientId, contactId },
     select: {
       ...CLIENT_SELECT,
-      assets: { orderBy: { createdAt: "desc" }, select: ASSET_SELECT },
-      _count: { select: { workOrders: true } },
+      assets: {
+        orderBy: { createdAt: "desc" },
+        // Con el conteo de OT por vehículo: la ficha del cliente es donde el
+        // instalador mira "¿a este auto ya le hicimos algo?". Sin el _count la
+        // pantalla mostraba 0 en todos, que es peor que no mostrar nada.
+        select: { ...ASSET_SELECT, _count: { select: { workOrders: true } } },
+      },
+      _count: { select: { assets: true, workOrders: true } },
     },
   });
 }
@@ -782,8 +788,23 @@ export async function getWorkshopSummary(contactId: string, desde: Date, hasta: 
       _count: { _all: true },
       _sum: { priceFinal: true },
     }),
+    // Los cobros **de las órdenes que se cuentan en `facturado`**, no todos los
+    // cobros con fecha en el período. Es una diferencia que se ve enseguida en
+    // pantalla: una seña sobre un trabajo que todavía no terminó entraba en
+    // `cobrado` sin que su orden entrara en `facturado`, y `porCobrar` daba
+    // NEGATIVO. Un "por cobrar" negativo no significa nada para nadie.
+    //
+    // Para que la resta tenga sentido, los dos números tienen que ser sobre el
+    // mismo conjunto de órdenes. Lo que se pierde es "cuánta plata entró este
+    // mes", que es otra métrica y merece su propio campo el día que se pida.
     prisma.workOrderPayment.aggregate({
-      where: { workOrder: { contactId }, paidAt: { gte: desde, lte: hasta } },
+      where: {
+        workOrder: {
+          contactId,
+          status: { in: ["TERMINADA", "ENTREGADA"] },
+          finishedAt: { gte: desde, lte: hasta },
+        },
+      },
       _sum: { amount: true },
     }),
     prisma.workOrderItem.aggregate({
@@ -817,10 +838,11 @@ export async function getWorkshopSummary(contactId: string, desde: Date, hasta: 
       hasta: hasta.toISOString(),
       terminadas: delPeriodo._count._all,
       facturado,
+      // Cobrado CONTRA los trabajos terminados en el período — incluidas las
+      // señas que se hayan tomado antes de terminarlos.
       cobrado: recaudado,
-      // Lo facturado en el período menos lo cobrado en el período. No es "la
-      // deuda histórica del taller": para eso habría que sumar todo desde el
-      // principio, y este número es el del mes que se está mirando.
+      // De lo que hiciste este mes, cuánto falta cobrar. No es la deuda
+      // histórica del taller: para eso habría que sumar desde el principio.
       porCobrar: Math.round((facturado - recaudado) * 100) / 100,
       metrosCuadrados: Number(consumo._sum.squareMetersUsed ?? 0),
     },
