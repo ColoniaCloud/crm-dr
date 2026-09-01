@@ -298,6 +298,11 @@ model Contact {
   // Puntos de Reventa (stock consignado) que viven en el taller de este
   // Contact cuando es un instalador. Solo aplica a Location.type = PUNTO_REVENTA.
   locations           Location[]
+  // Mi Taller (ver el bloque al final del archivo). Solo se llenan para un
+  // Contact con cuenta de portal en nivel INSTALLER.
+  workshopClients     WorkshopClient[]
+  workOrders          WorkOrder[]
+  workshopSettings    WorkshopSettings?
 
   source         LeadSource            @default(MANUAL)
   placeId        String?               @unique
@@ -425,6 +430,7 @@ model Product {
   warrantyConfig     WarrantyConfig?
   warrantyLots       WarrantyLot[]
   warrantyRolls      WarrantyRoll[]
+  workOrderItems     WorkOrderItem[]
 
   @@map("products")
 }
@@ -920,7 +926,7 @@ model Email {
   /// "ver original" y reprocesar un mail sin volver al servidor IMAP.
   rawStorageKey  String? @db.Text
 
-  attachments  EmailAttachment[]
+  attachments EmailAttachment[]
 
   @@unique([userId, messageId])
   @@index([contactId])
@@ -930,23 +936,23 @@ model Email {
 }
 
 model EmailAttachment {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   emailId     String
-  email       Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  filename    String   @db.Text
+  email       Email     @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  filename    String    @db.Text
   contentType String
   sizeBytes   Int
   /// Content-ID de una imagen incrustada (`cid:`), sin los <>. Null si es un
   /// adjunto normal.
   contentId   String?
-  isInline    Boolean  @default(false)
+  isInline    Boolean   @default(false)
   /// Ruta relativa dentro de MAIL_ATTACHMENT_DIR. Queda en null cuando el
   /// archivo se purga por antigüedad: la fila sobrevive para que el mail siga
   /// mostrando que tenía un adjunto en vez de romperse.
-  storageKey  String?  @db.Text
+  storageKey  String?   @db.Text
   checksum    String?
   purgedAt    DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([emailId])
   @@map("email_attachments")
@@ -1086,8 +1092,18 @@ model WarrantyRoll {
   fullRollCode      String             @unique
   status            WarrantyRollStatus @default(IN_STOCK)
   // Custodia física mientras el rollo es IN_STOCK (Depósito/Local/Punto de
-  // Reventa). Se limpia a null en cuanto el rollo se vende — a partir de ahí
-  // "dónde está" se responde vía saleItem.sale.contactId, no acá.
+  // Reventa).
+  //
+  // OJO: **no** se limpia al vender, aunque este comentario decía lo contrario
+  // hasta septiembre 2026. linkRollToSaleItem() la deja como está a propósito,
+  // para que releaseRollForSaleItem() (venta borrada o revertida) pueda
+  // devolver el rollo exactamente a donde estaba físicamente. Una vez vendido,
+  // "de quién es" se responde por saleItem.sale.contactId; este campo sigue
+  // diciendo dónde estaba, que es otra cosa.
+  //
+  // Consecuencia práctica: en un rollo SOLD este campo puede apuntar al Punto
+  // de Reventa de OTRO instalador. Por eso NO sale en la API del portal —
+  // ver PORTAL_ROLL_SELECT en src/lib/client-portal.ts.
   currentLocationId String?
   currentLocation   Location?          @relation(fields: [currentLocationId], references: [id])
   createdAt         DateTime           @default(now())
@@ -1095,6 +1111,9 @@ model WarrantyRoll {
 
   installations  WarrantyInstallation[]
   locationEvents WarrantyRollLocationEvent[]
+  // Consumo declarado desde el taller de un instalador. Sumar
+  // squareMetersUsed por acá es lo que da los m² que quedan en el rollo.
+  workOrderItems WorkOrderItem[]
 
   @@map("warranty_rolls")
 }
@@ -1126,7 +1145,11 @@ model WarrantyInstallation {
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
 
-  claims WarrantyClaim[]
+  claims    WarrantyClaim[]
+  // La OT del taller que generó esta instalación, si vino por ahí. Opcional en
+  // los dos sentidos: la cadena de garantías es de Kristall y existía antes que
+  // el módulo de taller.
+  workOrder WorkOrder?
 
   @@unique([rollId, installationNumber])
   @@map("warranty_installations")
@@ -1359,4 +1382,276 @@ model AccountAdjustment {
 
   @@index([contactId, effectiveAt])
   @@map("account_adjustments")
+}
+
+// ─── Mi Taller — gestión del taller del instalador ───────────────────────────
+//
+// Módulo del Panel de Cliente, nivel INSTALLER (plan completo en
+// TALLER-INSTALADOR.md, en la raíz del workspace). Fase 1: solo el modelo.
+//
+// **Todo lo que hay acá es de UN instalador y de nadie más.** Cada fila cuelga
+// de un `contactId`, directo (WorkshopClient, WorkOrder, WorkshopSettings) o
+// por relación (WorkshopAsset vía su cliente; WorkOrderItem y
+// WorkOrderPayment vía su OT). La regla que hay que sostener en cada endpoint:
+// un id que viene de la URL **no autoriza nada** — siempre se filtra además por
+// el `contactId` de la sesión firmada, incluso en los GET. El patrón es el
+// mismo que ya usa src/lib/client-portal.ts para el stock:
+// `where: { id, workshopClient: { contactId } }`.
+//
+// Por eso WorkshopAsset NO repite `contactId`: un campo denormalizado se puede
+// desincronizar del dueño real, y filtrar por la relación no se puede olvidar
+// sin que el query directamente no compile.
+//
+// Es aditivo: no cambia ni una columna existente. La cadena de garantías de
+// Kristall (WarrantyRoll → WarrantyInstallation → WarrantyClaim) sigue
+// funcionando igual sin este módulo — la OT apunta a la instalación y no al
+// revés, justamente para que siga siendo así.
+
+/// Ciclo de vida de una OT. Los nombres van en español porque son los que se
+/// publican en el contrato de la API y los que usa la UI; hay precedente en
+/// LocationType (DEPOSITO / LOCAL / PUNTO_REVENTA).
+///
+/// PRESUPUESTADA → AGENDADA → EN_PROCESO → TERMINADA → ENTREGADA
+/// (cualquiera de los cuatro primeros puede ir a CANCELADA)
+///
+/// El estado NO se cambia con un PATCH suelto: hay un endpoint de transición
+/// porque entrar en TERMINADA dispara efectos (descontar m², generar la
+/// WarrantyInstallation, mandar el mail) que tienen que ser transaccionales.
+enum WorkOrderStatus {
+  PRESUPUESTADA
+  AGENDADA
+  EN_PROCESO
+  TERMINADA
+  ENTREGADA
+  CANCELADA
+}
+
+/// El cliente final del instalador. **No es un Contact del CRM**: el equipo de
+/// Kristall no vende ni le hace seguimiento a esta persona, y mezclarlo con
+/// Contact llenaría el CRM de miles de filas que no son leads ni clientes de
+/// Kristall.
+///
+/// `name` es un solo campo, no firstName/lastName, para que entre tal cual en
+/// WarrantyInstallation.clientName cuando la OT pase a TERMINADA. Partirlo acá
+/// obligaría a concatenar allá y a decidir qué hacer con "Transporte del Sur SRL".
+model WorkshopClient {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  name      String
+  /// Hace falta para mandarle el mail de garantía al pasar a TERMINADA. Es
+  /// opcional porque a un cliente de mostrador no siempre se le pide.
+  email     String?
+  phone     String?
+  dni       String?
+  address   String?
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assets     WorkshopAsset[]
+  workOrders WorkOrder[]
+
+  @@index([contactId, name])
+  @@map("workshop_clients")
+}
+
+/// El vehículo o la superficie sobre la que se trabaja. Colgar de
+/// WorkshopClient (y no de la OT) es lo que habilita el historial: "a este auto
+/// ya le pusimos KRYPTON 05 en 2025".
+///
+/// Reusa el enum AssetType de la cadena de garantías, así que al pasar a
+/// TERMINADA el valor va tal cual a WarrantyInstallation.assetType.
+model WorkshopAsset {
+  id               String         @id @default(cuid())
+  workshopClientId String
+  workshopClient   WorkshopClient @relation(fields: [workshopClientId], references: [id], onDelete: Cascade)
+  type             AssetType      @default(VEHICLE)
+  /// Patente, número de unidad, o cómo lo llama el instalador ("vidriera del
+  /// frente"). No es único: dos clientes distintos pueden traer la misma chapa
+  /// mal tipeada, y bloquear eso rompería el alta rápida sin ganar nada.
+  identifier       String?
+  brand            String?
+  model            String?
+  year             Int?
+  color            String?
+  notes            String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  workOrders WorkOrder[]
+
+  @@index([workshopClientId])
+  @@map("workshop_assets")
+}
+
+/// La Orden de Trabajo: la entidad central del módulo. Ata cliente final +
+/// vehículo + qué lámina se puso + cuándo + cuánto material salió + cuánto se
+/// cobró + qué garantía generó.
+model WorkOrder {
+  id          String  @id @default(cuid())
+  contactId   String
+  contact     Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /// Secuencial **por instalador**: el tipo quiere decir "la OT 47", no "la
+  /// 12844". Lo entrega WorkshopSettings.nextOrderNumber con un incremento
+  /// atómico dentro de la transacción del alta; el @@unique de abajo es la red
+  /// que atrapa cualquier carrera que se escape.
+  orderNumber Int
+
+  workshopClientId String
+  workshopClient   WorkshopClient @relation(fields: [workshopClientId], references: [id], onDelete: Cascade)
+  /// Opcional: un presupuesto por teléfono se carga sin patente. Pasar a
+  /// TERMINADA sí lo exige, porque la garantía necesita assetType y
+  /// assetDescription — eso se valida en el servidor, no acá.
+  ///
+  /// SetNull y no Restrict a propósito: si fuera Restrict, borrar un Contact
+  /// (que cascadea a sus clientes finales y a los vehículos de estos) chocaría
+  /// contra las OT y fallaría. Que la API impida borrar un vehículo con OT es
+  /// una regla de aplicación, no de la base.
+  assetId          String?
+  asset            WorkshopAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  status WorkOrderStatus @default(PRESUPUESTADA)
+
+  /// Cuándo se le dio turno. Es lo que dibuja la agenda.
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  /// Lo cotizado y lo que terminó saliendo. Los dos, porque la diferencia entre
+  /// ambos es justamente lo que el instalador quiere mirar a fin de mes.
+  priceQuoted Decimal? @db.Decimal(10, 2)
+  priceFinal  Decimal? @db.Decimal(10, 2)
+  currency    Currency @default(ARS)
+
+  notes String? @db.Text
+
+  /// La instalación de garantía que generó esta OT al pasar a TERMINADA.
+  /// La flecha va en este sentido y no al revés: una WarrantyInstallation puede
+  /// existir sin OT (todas las que ya hay), y una OT puede terminar sin
+  /// garantía (un pulido, sacar una lámina vieja).
+  warrantyInstallationId String?               @unique
+  warrantyInstallation   WarrantyInstallation? @relation(fields: [warrantyInstallationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items    WorkOrderItem[]
+  payments WorkOrderPayment[]
+
+  @@unique([contactId, orderNumber])
+  @@index([contactId, status])
+  @@index([contactId, scheduledAt])
+  @@index([workshopClientId])
+  @@map("work_orders")
+}
+
+/// Una línea de trabajo dentro de la OT: parabrisas, laterales, luneta.
+/// Acá se declara el consumo de material.
+model WorkOrderItem {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  /// Lo que se hizo, en las palabras del instalador. Es lo que se ve en la
+  /// ficha de trabajo al lado del auto.
+  description String
+
+  /// Qué producto se usó. Opcional porque en un presupuesto todavía puede no
+  /// estar decidido, y porque hay trabajos que no llevan lámina.
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  /// De qué rollo salió. Opcional por lo mismo: recién se sabe cuando se corta.
+  /// **Tiene que ser un rollo del propio instalador** — se valida en el
+  /// servidor contra el contactId de la sesión, la base no lo puede expresar.
+  /// Si hay rollId y productId, tienen que coincidir con roll.productId (misma
+  /// validación de servidor).
+  rollId String?
+  roll   WarrantyRoll? @relation(fields: [rollId], references: [id], onDelete: SetNull)
+
+  /// Metros CUADRADOS consumidos del rollo. El plan lo llamaba `metersUsed`,
+  /// pero lo que se resta son m², y un nombre que miente sobre la unidad se
+  /// paga caro cuando alguien calcula el sobrante.
+  ///
+  /// No se guarda un "restante" en el rollo: lo que queda es
+  /// (Product.width × Product.length) − Σ(squareMetersUsed) para ese rollId.
+  /// Por eso el índice de abajo. Si algún día eso se pone lento, ahí se
+  /// denormaliza — con la evidencia a la vista, no antes.
+  squareMetersUsed Decimal? @db.Decimal(10, 2)
+
+  /// Lo que el instalador le cobra a SU cliente por esta línea.
+  price Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workOrderId])
+  @@index([rollId])
+  @@map("work_order_items")
+}
+
+/// Lo que el cliente final le pagó AL INSTALADOR.
+///
+/// **Nada de esto toca la cuenta corriente del CRM.** El saldo que Kristall le
+/// lleva al instalador se calcula en src/lib/account.ts desde Sale, Payment y
+/// AccountAdjustment, y esta tabla no entra ahí ni tiene que entrar: es plata
+/// entre el instalador y su cliente, en la que Kristall no es parte. Son dos
+/// libros distintos que da la casualidad que viven en la misma base.
+model WorkOrderPayment {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  amount      Decimal   @db.Decimal(10, 2)
+  currency    Currency  @default(ARS)
+  /// Texto libre, igual que en Payment.method del CRM: efectivo, transferencia,
+  /// MercadoPago, lo que use cada taller.
+  method      String?
+  reference   String?
+  notes       String?   @db.Text
+  paidAt      DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  @@index([workOrderId])
+  @@map("work_order_payments")
+}
+
+/// Configuración del taller, una fila por instalador.
+///
+/// Además de la config, es donde vive el contador de OT: se pide con un
+/// `increment` atómico dentro de la transacción del alta, que es seguro contra
+/// carreras — un `max(orderNumber) + 1` no lo es.
+model WorkshopSettings {
+  id        String  @id @default(cuid())
+  contactId String  @unique
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  /// Próximo número de OT a entregar. Ver el comentario de WorkOrder.orderNumber.
+  nextOrderNumber Int @default(1)
+
+  /// Cómo se llama el taller en el mail que recibe el cliente final. Si es
+  /// null se usa la razón social del Contact, y si tampoco hay, su nombre.
+  workshopName String?
+
+  /// Si al pasar a TERMINADA se manda solo el mail de garantía al cliente
+  /// final. Con false, la OT genera igual la instalación y el instalador
+  /// comparte el link cuando quiere.
+  autoSendWarrantyEmail Boolean @default(true)
+
+  /// Horarios de atención, para que la agenda sepa qué franjas dibujar.
+  /// "HH:MM" en la hora local del taller, no DateTime: es una hora del día que
+  /// se repite, no un instante, y meterla en un DateTime obliga a inventar una
+  /// fecha y a pelear con la zona horaria en cada lectura.
+  openingTime String? @default("09:00")
+  closingTime String? @default("18:00")
+  /// Días laborables como números ISO separados por coma (1 = lunes).
+  workingDays String? @default("1,2,3,4,5")
+
+  defaultCurrency Currency @default(ARS)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("workshop_settings")
 }
