@@ -478,6 +478,33 @@ export async function verifyWarranty(activationToken: string) {
 }
 
 /**
+ * Full status of a warranty as resolved by verifyWarranty() — includes the
+ * activationToken and the end customer's PII, so it must never leave the CRM
+ * unprojected. Use pickPublicStatus() at the edge.
+ */
+export type WarrantyStatus = NonNullable<Awaited<ReturnType<typeof verifyWarranty>>>;
+
+/**
+ * The public subset of a warranty status: exactly what
+ * GET /api/public/warranty/:token and POST /api/public/warranty/login return
+ * (WARRANTY_API.md 5.1 y 5.5). Deliberately omits the activationToken — which
+ * IS the full capability over the warranty — and every personal field
+ * (clientName/Email/Phone/Dni), plus the internal lotNumber/fullRollCode.
+ * Both public routes go through here so they cannot drift apart again.
+ */
+export function pickPublicStatus(warranty: WarrantyStatus) {
+  return {
+    installationCode: warranty.installationCode,
+    status: warranty.status,
+    product: warranty.product,
+    isActive: warranty.isActive,
+    daysRemaining: warranty.daysRemaining,
+    expiresAt: warranty.expiresAt,
+    assetType: warranty.assetType,
+  };
+}
+
+/**
  * Lets the Usuario (end car owner) set a simple password on their own
  * installation, so they can check on it later with just their short
  * installationCode instead of the long activationToken. Knowing the token
@@ -502,8 +529,12 @@ export async function setInstallationPortalPassword(
 
 /**
  * Verifies a Usuario's simple installationCode + password login. Returns the
- * same shape as verifyWarranty() (no extra data exposed), or null if the
- * installation/password don't match or no password was ever set.
+ * PUBLIC subset (pickPublicStatus) — the same shape as
+ * GET /api/public/warranty/:token — or null if the installation/password don't
+ * match or no password was ever set. It must NOT return the full
+ * verifyWarranty() row: that carries the activationToken and the titular's PII,
+ * and this response is forwarded to the browser (and signed into the session
+ * cookie) by kristall-web.
  */
 export async function verifyInstallationLogin(installationCode: string, password: string) {
   const installation = await prisma.warrantyInstallation.findUnique({
@@ -515,5 +546,8 @@ export async function verifyInstallationLogin(installationCode: string, password
   const matches = await bcrypt.compare(password, installation.portalPasswordHash);
   if (!matches) return null;
 
-  return verifyWarranty(installation.activationToken);
+  const warranty = await verifyWarranty(installation.activationToken);
+  if (!warranty) return null;
+
+  return pickPublicStatus(warranty);
 }

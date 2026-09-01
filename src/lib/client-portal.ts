@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getRollsWhere } from "@/lib/warranty";
+import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
@@ -91,16 +91,74 @@ export async function getClientProfile(contactId: string) {
   };
 }
 
+/**
+ * Projection for the rolls the portal returns (CLIENT_PORTAL_API.md 4.2).
+ * Deliberately NOT ROLL_TRACE_INCLUDE: that one is internal CRM traceability
+ * (whole lot row, the CRM operator who made the sale, and installations with
+ * activationToken + the end customer's PII). Everything listed here is meant
+ * to leave the CRM — nothing else does. Keep it in sync with the doc and with
+ * the StockRoll type in kristall-web (lib/client-portal/api.ts).
+ */
+const PORTAL_ROLL_SELECT = {
+  id: true,
+  fullRollCode: true,
+  status: true,
+  lot: { select: { lotNumber: true } },
+  product: {
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      category: true,
+      warrantyConfig: { select: { maxInstallations: true } },
+    },
+  },
+  currentLocation: {
+    select: { id: true, type: true, name: true, contactId: true },
+  },
+  // Sin activationToken ni PII del usuario final: son datos del dueño del auto,
+  // no del Cliente que compró el rollo.
+  installations: {
+    orderBy: { installationNumber: "asc" as const },
+    select: {
+      id: true,
+      installationCode: true,
+      status: true,
+      activatedAt: true,
+      expiresAt: true,
+    },
+  },
+  _count: {
+    select: { installations: { where: { status: "ACTIVE" as const } } },
+  },
+} satisfies Prisma.WarrantyRollSelect;
+
 /** Warranty rolls owned by a CLIENT contact (sold to them via a completed Sale). */
 export async function getClientStock(contactId: string) {
-  return getRollsWhere({ saleItem: { sale: { contactId } } });
+  return prisma.warrantyRoll.findMany({
+    where: { saleItem: { sale: { contactId } } },
+    select: PORTAL_ROLL_SELECT,
+    orderBy: { createdAt: "asc" },
+  });
 }
 
-/** Warranty installations that live on rolls owned by this CLIENT contact. */
+/**
+ * Warranty installations that live on rolls owned by this CLIENT contact.
+ * Explicit select (CLIENT_PORTAL_API.md 4.3): a bare `include` would ship the
+ * whole row — portalPasswordHash, activationToken, clientDni/Email/Phone,
+ * installerName, notes — straight into the portal's HTML.
+ */
 export async function getClientInstallations(contactId: string) {
   return prisma.warrantyInstallation.findMany({
     where: { roll: { saleItem: { sale: { contactId } } } },
-    include: {
+    select: {
+      id: true,
+      installationCode: true,
+      status: true,
+      assetType: true,
+      assetDescription: true,
+      activatedAt: true,
+      expiresAt: true,
       roll: {
         select: {
           fullRollCode: true,

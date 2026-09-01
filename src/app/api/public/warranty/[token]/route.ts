@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createLogger } from "@/lib/logger";
-import { verifyWarranty } from "@/lib/warranty";
+import { verifyWarranty, pickPublicStatus } from "@/lib/warranty";
 import { withCors, corsPreflight } from "@/lib/cors";
 
 const log = createLogger("api/public/warranty/[token]");
@@ -23,17 +23,9 @@ export async function GET(
       return withCors(NextResponse.json({ error: "Garantía no encontrada" }, { status: 404 }));
     }
 
-    return withCors(
-      NextResponse.json({
-        installationCode: warranty.installationCode,
-        status: warranty.status,
-        product: warranty.product,
-        isActive: warranty.isActive,
-        daysRemaining: warranty.daysRemaining,
-        expiresAt: warranty.expiresAt,
-        assetType: warranty.assetType,
-      })
-    );
+    // Proyección compartida con POST /api/public/warranty/login — ver
+    // pickPublicStatus() en lib/warranty.ts. No inlinear campos acá.
+    return withCors(NextResponse.json(pickPublicStatus(warranty)));
   } catch (error) {
     log.error({ err: error }, "Error verifying warranty");
     return withCors(NextResponse.json({ error: "Error al consultar la garantía" }, { status: 500 }));
