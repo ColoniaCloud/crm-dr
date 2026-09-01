@@ -120,9 +120,12 @@ const PORTAL_ROLL_SELECT = {
       warrantyConfig: { select: { maxInstallations: true } },
     },
   },
-  currentLocation: {
-    select: { id: true, type: true, name: true, contactId: true },
-  },
+  // Sin `currentLocation`: es custodia física interna. Como el FIFO de
+  // linkRollToSaleItem no filtra por ubicación, a este Cliente se le puede
+  // haber asignado un rollo que estaba consignado en el Punto de Reventa de
+  // OTRO instalador — y `currentLocationId` no se limpia al vender. Devolverlo
+  // le mostraba el nombre y el contactId del taller de un competidor.
+  //
   // Sin activationToken ni PII del usuario final: son datos del dueño del auto,
   // no del Cliente que compró el rollo.
   installations: {
