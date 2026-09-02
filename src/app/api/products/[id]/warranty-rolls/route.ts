@@ -64,11 +64,20 @@ export async function GET(
     });
     const total = await prisma.warrantyRoll.count({ where: { productId: id } });
 
+    // Unidades con código de trazabilidad que están en stock y no tienen rollo.
+    // Es el caso de haber generado las unidades ANTES de configurarle la
+    // garantía al producto: los códigos existen, la garantía no. Y no se pueden
+    // regenerar, porque el sistema no deja pasar del stock.
+    const unidadesSinRollo = await prisma.productUnit.count({
+      where: { productId: id, warrantyRoll: null, saleItem: null },
+    });
+
     return NextResponse.json({
       aplica: true,
       stock: product.stock,
       rollosLibres: libres,
       rollosTotales: total,
+      unidadesSinRollo,
       // Positivo: hay unidades en stock sin rollo detrás. Negativo: hay más
       // rollos libres que stock, que también es un desfasaje pero al revés y no
       // se arregla creando — se arregla mirando qué pasó.
@@ -118,10 +127,32 @@ export async function POST(
       );
     }
 
+    // Los rollos nuevos se enganchan a las unidades que quedaron sin uno.
+    //
+    // Sin esto quedaban sueltos, y eso importa cuando se vende eligiendo la
+    // unidad exacta: `linkRollToSaleItem` busca el rollo DE ESA unidad, y si no
+    // lo encuentra no asigna ninguno — ni siquiera cae a la búsqueda genérica,
+    // que está cortada cuando hay unidad especificada. O sea que 120 unidades
+    // trazadas sin rollo eran 120 ventas futuras sin garantía.
+    //
+    // Solo unidades **en stock**: darle un rollo a una unidad ya vendida no
+    // arregla aquella venta, y dejaría un rollo IN_STOCK atado a algo que ya no
+    // está. Si sobran rollos después de cubrirlas, esos van sueltos, que es lo
+    // correcto para el stock que no tiene código de unidad.
+    const unidades = await prisma.productUnit.findMany({
+      where: { productId: id, warrantyRoll: null, saleItem: null },
+      orderBy: { createdAt: "asc" },
+      take: cantidad,
+      select: { id: true },
+    });
+
     // No toca el stock a propósito: el stock ya es el correcto, lo que falta
     // son los rollos que lo respaldan. Un ajuste de stock sería otra cosa.
     await prisma.$transaction(async (tx) => {
-      await ensureWarrantyRolls(tx, id, cantidad, { type: "MANUAL_ADJUSTMENT" });
+      await ensureWarrantyRolls(tx, id, cantidad, {
+        type: "MANUAL_ADJUSTMENT",
+        unitIds: unidades.map((u) => u.id),
+      });
     });
 
     await logOperatorAction({
@@ -129,11 +160,13 @@ export async function POST(
       action: "CREATE_WARRANTY_ROLLS",
       entityType: "PRODUCT",
       entityId: id,
-      description: `Generó ${cantidad} rollo(s) de garantía para "${product.name}" (conciliación de stock)`,
+      description:
+        `Generó ${cantidad} rollo(s) de garantía para "${product.name}" (conciliación de stock)` +
+        (unidades.length > 0 ? `, ${unidades.length} vinculado(s) a unidades existentes` : ""),
       link: `/products/${id}`,
     });
 
-    return NextResponse.json({ creados: cantidad });
+    return NextResponse.json({ creados: cantidad, vinculados: unidades.length });
   } catch (error) {
     log.error({ err: error }, "Error creating warranty rolls");
     return NextResponse.json({ error: "Error al generar los rollos" }, { status: 500 });

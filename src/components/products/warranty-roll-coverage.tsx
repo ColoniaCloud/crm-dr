@@ -12,6 +12,7 @@ interface Cobertura {
   rollosLibres?: number;
   rollosTotales?: number;
   faltantes?: number;
+  unidadesSinRollo?: number;
 }
 
 /**
@@ -69,7 +70,11 @@ export function WarrantyRollCoverage({ productId }: { productId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudieron generar los rollos");
-      setListo(`Se generaron ${data.creados} rollo(s).`);
+      setListo(
+        data.vinculados > 0
+          ? `Se generaron ${data.creados} rollo(s), ${data.vinculados} vinculado(s) a unidades que ya existían.`
+          : `Se generaron ${data.creados} rollo(s).`
+      );
       await cargar();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudieron generar los rollos");
@@ -122,6 +127,14 @@ export function WarrantyRollCoverage({ productId }: { productId: string }) {
           Generar
         </Button>
       </div>
+
+      {(cobertura.unidadesSinRollo ?? 0) > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Hay <strong>{cobertura.unidadesSinRollo}</strong> unidad(es) con código de trazabilidad sin
+          garantía — pasa cuando se generan los códigos antes de configurarle la garantía al producto.
+          Los rollos nuevos se les van a vincular automáticamente.
+        </p>
+      )}
 
       <p className="text-xs text-muted-foreground">
         Generalos solo si esos rollos existen de verdad en el depósito. Esto no cambia el stock —
