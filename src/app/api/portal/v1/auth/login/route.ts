@@ -49,6 +49,14 @@ export async function POST(request: Request) {
       return invalid;
     }
 
+    // Sin contraseña la cuenta está invitada pero sin activar: el Cliente nunca
+    // eligió una. Se rechaza acá, antes de comparar nada, y con el mismo error
+    // genérico que el resto — decir "esta cuenta todavía no se activó" le
+    // confirmaría a cualquiera que ese email es cliente de Kristall.
+    if (!account.passwordHash) {
+      return invalid;
+    }
+
     const passwordMatches = await bcrypt.compare(password, account.passwordHash);
     if (!passwordMatches) {
       return invalid;

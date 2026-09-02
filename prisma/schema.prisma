@@ -1211,13 +1211,23 @@ model ClientPortalAccount {
   contactId         String            @unique
   contact           Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
   email             String            @unique
-  passwordHash      String
+  // Null mientras la cuenta esté **invitada pero sin activar**: el operador
+  // mandó el mail y el Cliente todavía no eligió su contraseña. Antes era
+  // obligatorio, y eso forzaba a que el operador le inventara una contraseña
+  // para poder dejar la cuenta creada — justo lo que la invitación evita.
+  //
+  // Con null, la cuenta NO puede iniciar sesión: el login rechaza antes de
+  // comparar nada, y los porteros del portal la tratan como no activada.
+  passwordHash      String?
   // Kill switch del admin. Distinto de accessLevel: `enabled: false` bloquea
   // todo el portal; accessLevel solo decide cuánto ve adentro.
   enabled           Boolean           @default(true)
   // BASIC lo obtiene cualquier CLIENT que active su cuenta. INSTALLER lo habilita
-  // a mano un operador, y exige que la cuenta ya esté activada.
+  // a mano un operador — desde la ficha, o al mandar la invitación, y en ese
+  // caso el Cliente ya activa directamente con el nivel puesto.
   accessLevel       PortalAccessLevel @default(BASIC)
+  // Cuándo el Cliente eligió su contraseña. Es lo que distingue "invitada" de
+  // "activa": junto con passwordHash, las dos caras del mismo hecho.
   activatedAt       DateTime?
   // WhatsApp que el cliente confirmó o cargó en el portal. NO pisa
   // Contact.whatsapp: si difieren, se le avisa al operador para que decida cuál

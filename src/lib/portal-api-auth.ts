@@ -117,7 +117,10 @@ export async function requireEnabledPortalAccount(
     select: { enabled: true, passwordHash: true },
   });
 
-  if (!account || !account.enabled) {
+  // Sin `passwordHash` la cuenta está invitada pero sin activar, así que nunca
+  // pudo haberse emitido una sesión para ella. Se trata igual que "no tiene
+  // cuenta": falla cerrado.
+  if (!account || !account.enabled || !account.passwordHash) {
     return {
       success: false,
       response: NextResponse.json(
@@ -170,7 +173,15 @@ export async function requireInstallerLevel(
     select: { enabled: true, accessLevel: true, passwordHash: true },
   });
 
-  if (!account || !account.enabled || account.accessLevel !== "INSTALLER") {
+  // `!passwordHash`: invitada y sin activar — ver requireEnabledPortalAccount.
+  // Una cuenta puede estar invitada YA con nivel INSTALLER, y aun así no debe
+  // pasar hasta que el Cliente elija su contraseña.
+  if (
+    !account ||
+    !account.enabled ||
+    !account.passwordHash ||
+    account.accessLevel !== "INSTALLER"
+  ) {
     return {
       success: false,
       response: NextResponse.json(

@@ -166,7 +166,10 @@ export async function POST(request: Request) {
       name: `${contact.firstName} ${contact.lastName}`.trim(),
       company: contact.company,
       accessLevel: account.accessLevel,
-      credentialVersion: credentialVersion(account.passwordHash),
+      // Recién seteada unas líneas más arriba, así que nunca es null acá; el
+      // `??` es solo para el tipo, que ahora admite null por las cuentas
+      // invitadas y sin activar.
+      credentialVersion: credentialVersion(account.passwordHash ?? passwordHash),
     });
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {

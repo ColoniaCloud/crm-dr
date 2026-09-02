@@ -125,16 +125,30 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
     }
   }
 
-  /** Le manda al cliente el mail para que se cree la contraseña él mismo. */
+  /**
+   * Le manda al cliente el mail para que se cree la contraseña él mismo.
+   *
+   * Va con el nivel que esté elegido arriba: si se invita como Portal
+   * Instalador, el cliente activa y ya entra con ese nivel puesto. Antes la
+   * invitación no llevaba nivel, todos activaban en Panel Clientes, y había que
+   * acordarse de volver acá después a subirlo.
+   */
   async function invitar() {
     setInviting(true);
     setError("");
     setNotice("");
     try {
-      const res = await fetch(`/api/clients/${clientId}/portal-invite`, { method: "POST" });
+      const res = await fetch(`/api/clients/${clientId}/portal-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessLevel: form.accessLevel }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar la invitación");
-      setNotice(`Invitación enviada a ${data.sentTo}. El link vence en 24 h.`);
+      setNotice(
+        `Invitación enviada a ${data.sentTo} con nivel ${LEVEL_LABEL[form.accessLevel]}. ` +
+          "El link vence en 24 h."
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar la invitación");
@@ -215,31 +229,12 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                   {" · "}
                   {info.activatedAt
                     ? `Activada por el cliente el ${formatDate(info.activatedAt)}`
-                    : "Creada por un operador (el cliente todavía no eligió su contraseña)"}
+                    : "Invitada — el cliente todavía no eligió su contraseña, así que no puede entrar"}
                 </div>
               )}
 
-              {/* Invitación: el cliente elige su propia contraseña */}
-              {!info?.activatedAt && (
-                <div className="rounded-md border p-3">
-                  <p className="mb-2 text-sm font-medium">Invitar al cliente</p>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    Le manda un mail para que cree su contraseña él mismo. Es el camino recomendado:
-                    así no hay que pasarle una contraseña por WhatsApp.
-                  </p>
-                  {info?.canInvite ? (
-                    <Button size="sm" variant="outline" onClick={invitar} disabled={inviting}>
-                      <Mail className="mr-1 h-4 w-4" />
-                      {inviting ? "Enviando…" : `Enviar invitación a ${info.contactEmail}`}
-                    </Button>
-                  ) : (
-                    <p className="text-xs text-destructive">
-                      Este cliente no tiene email en la ficha. Cargalo primero para poder invitarlo.
-                    </p>
-                  )}
-                </div>
-              )}
-
+              {/* El nivel va ARRIBA de la invitación: es lo primero que hay que
+                  decidir, porque la invitación se manda con el nivel puesto. */}
               <div className="space-y-1">
                 <Label>Nivel de acceso</Label>
                 <Select
@@ -252,15 +247,40 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                   <SelectContent>
                     <SelectItem value="BASIC">Panel Clientes — compras y cuenta corriente</SelectItem>
                     <SelectItem value="INSTALLER">
-                      Portal Instalador — suma stock, garantías y reclamos
+                      Portal Instalador — suma stock, garantías, reclamos y Mi Taller
                     </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Todo cliente que active su cuenta entra con Panel Clientes. El nivel Instalador se
-                  habilita solo desde acá.
+                  {info?.activatedAt
+                    ? "Se aplica al guardar. El cliente lo ve la próxima vez que entre."
+                    : "Elegilo antes de invitar: el cliente activa su cuenta ya con este nivel."}
                 </p>
               </div>
+
+              {/* Invitación: el cliente elige su propia contraseña */}
+              {!info?.activatedAt && (
+                <div className="rounded-md border p-3">
+                  <p className="mb-2 text-sm font-medium">Invitar al cliente</p>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Le manda un mail para que cree su contraseña él mismo, y la cuenta le queda con el
+                    nivel elegido arriba. Es el camino recomendado: así no hay que pasarle una
+                    contraseña por WhatsApp.
+                  </p>
+                  {info?.canInvite ? (
+                    <Button size="sm" variant="outline" onClick={invitar} disabled={inviting}>
+                      <Mail className="mr-1 h-4 w-4" />
+                      {inviting
+                        ? "Enviando…"
+                        : `Invitar a ${info.contactEmail} como ${LEVEL_LABEL[form.accessLevel]}`}
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-destructive">
+                      Este cliente no tiene email en la ficha. Cargalo primero para poder invitarlo.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1">
                 <Label>Email de acceso</Label>
