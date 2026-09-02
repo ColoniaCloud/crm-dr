@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ensureWarrantyRolls } from "@/lib/warranty";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
@@ -78,6 +79,20 @@ export async function POST(request: Request) {
             maxInstallations: warrantyConfig.maxInstallations,
           },
         });
+
+        // Stock inicial con garantía = esa cantidad de rollos físicos.
+        //
+        // Este era el cuarto camino por el que entra stock, y el único que no
+        // creaba rollos: recibir una orden de compra, ajustar stock y dar de
+        // alta unidades sí lo hacen. Por eso un producto creado con stock
+        // inicial arrancaba con mercadería y cero rollos, y al venderlo el
+        // Cliente no veía nada en su panel. Ver el hallazgo P-6.
+        const stockInicial = Number(created.stock ?? 0);
+        if (stockInicial > 0) {
+          await ensureWarrantyRolls(tx, created.id, stockInicial, {
+            type: "MANUAL_ADJUSTMENT",
+          });
+        }
       }
 
       if (discounts && discounts.length > 0) {

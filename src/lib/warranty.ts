@@ -88,8 +88,13 @@ export async function ensureWarrantyRolls(
     unitIds?: string[];
   }
 ): Promise<void> {
+  // `warrantyEnabled: false` es un producto al que se le apagó la garantía:
+  // no tiene que generar rollos nuevos. Antes solo se miraba que la config
+  // existiera, y quedaba inconsistente con linkRollToSaleItem, que sí mira el
+  // flag — un producto con la garantía apagada generaba rollos que después
+  // nunca se asignaban.
   const config = await tx.warrantyConfig.findUnique({ where: { productId } });
-  if (!config) return;
+  if (!config?.warrantyEnabled) return;
 
   const seq = (await tx.warrantyLot.count()) + 1;
   const lotNumber = buildLotNumber(LOT_PREFIX[source.type], seq);

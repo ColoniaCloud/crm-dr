@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, use } from "react";
+import { WarrantyRollCoverage } from "@/components/products/warranty-roll-coverage";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -627,6 +628,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">{product.description}</p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Conciliación de rollos de garantía: va antes de las unidades porque
+          es la pregunta previa — si el stock no tiene rollos detrás, generar
+          códigos de trazabilidad no arregla que el Cliente no vea nada. */}
+      {product && (
+        <div className="mb-4">
+          <WarrantyRollCoverage productId={product.id} />
+        </div>
       )}
 
       {/* ── Units section ── */}
