@@ -65,7 +65,8 @@ const putSchema = z.object({
   password: z.string().min(6).optional(),
   enabled: z.boolean().optional(),
   // BASIC lo obtiene cualquier Cliente que active su cuenta. INSTALLER es la
-  // habilitación manual del segundo nivel y exige la cuenta ya activada.
+  // habilitación manual del segundo nivel: la hace un operador desde la ficha,
+  // antes o después de que el cliente active — el nivel no depende de eso.
   accessLevel: z.enum(["BASIC", "INSTALLER"]).optional(),
 });
 
@@ -90,35 +91,58 @@ export async function PUT(
     }
 
     const existing = await prisma.clientPortalAccount.findUnique({ where: { contactId: id } });
-    if (!password && !existing) {
-      return NextResponse.json(
-        { error: "La contraseña es requerida la primera vez" },
-        { status: 400 }
-      );
+
+    // Crear y modificar son dos operaciones distintas, no una con dos ramas.
+    //
+    // Antes esto era un `upsert`, y traía un bug feo: el payload de `create`
+    // llevaba `passwordHash: passwordHash as string` con `passwordHash` en
+    // `null` cuando no se escribía contraseña. **Prisma valida el `create`
+    // aunque después tome el camino de `update`**, así que rechazaba la
+    // operación entera con "Argument `contact` is missing", y el catch de abajo
+    // la devolvía como "Error al guardar el acceso al portal".
+    //
+    // Consecuencia: no se podía tocar NADA de una cuenta ya existente —ni el
+    // nivel, ni el email, ni el switch de habilitado— sin escribirle además una
+    // contraseña nueva al cliente. El kill switch del admin quedaba inservible
+    // desde la pantalla.
+    //
+    // El `as string` era el que tapaba todo: sin ese cast, TypeScript no habría
+    // dejado pasar un `null` en una columna que no lo admite.
+    const proyeccion = { email: true, enabled: true, accessLevel: true } as const;
+
+    let account;
+    if (!existing) {
+      // Alta a mano: acá sí hace falta la contraseña, porque la fila nace con
+      // ella. El camino recomendado sigue siendo invitar al cliente.
+      if (!password) {
+        return NextResponse.json(
+          { error: "La contraseña es requerida la primera vez" },
+          { status: 400 }
+        );
+      }
+      account = await prisma.clientPortalAccount.create({
+        data: {
+          contactId: id,
+          email,
+          passwordHash: await bcrypt.hash(password, 10),
+          enabled: enabled ?? true,
+          accessLevel: accessLevel ?? "BASIC",
+        },
+        select: proyeccion,
+      });
+    } else {
+      // Modificación: la contraseña es opcional y, si no viene, no se toca.
+      account = await prisma.clientPortalAccount.update({
+        where: { contactId: id },
+        data: {
+          email,
+          ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+          ...(accessLevel !== undefined ? { accessLevel } : {}),
+        },
+        select: proyeccion,
+      });
     }
-
-    // Computed once: building the `create` object below always evaluates its
-    // fields even when Prisma takes the `update` path, so calling bcrypt.hash
-    // inline there would run (and, without a password, fail) on every rotation.
-    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
-
-    const account = await prisma.clientPortalAccount.upsert({
-      where: { contactId: id },
-      create: {
-        contactId: id,
-        email,
-        passwordHash: passwordHash as string,
-        enabled: enabled ?? true,
-        accessLevel: accessLevel ?? "BASIC",
-      },
-      update: {
-        email,
-        ...(passwordHash ? { passwordHash } : {}),
-        ...(enabled !== undefined ? { enabled } : {}),
-        ...(accessLevel !== undefined ? { accessLevel } : {}),
-      },
-      select: { email: true, enabled: true, accessLevel: true },
-    });
 
     const contactName = contact.company || `${contact.firstName} ${contact.lastName}`.trim();
     const cambioNivel =
