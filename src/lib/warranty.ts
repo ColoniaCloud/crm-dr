@@ -206,13 +206,35 @@ export async function getRollsWhere(where: Prisma.WarrantyRollWhereInput) {
  * anywhere) if they don't have one sitting there. No-op if no matching roll
  * is available.
  */
+/**
+ * Resultado de intentar asignarle un rollo de garantía a una línea de venta.
+ *
+ * `sin-rollos-libres` es el que importa: el producto tiene garantía
+ * configurada, así que la venta **debería** llevar un rollo, pero no quedaba
+ * ninguno sin vender. Antes esto era un `return` mudo — la venta se confirmaba,
+ * nadie se enteraba, y el Cliente después abría su panel y veía la compra sin
+ * stock. Que no se pueda asignar es un hecho legítimo; que no se avise, no.
+ */
+export type RollLinkResult =
+  | { assigned: true; fullRollCode: string }
+  | { assigned: false; reason: "sin-garantia" | "sin-rollos-libres" };
+
 export async function linkRollToSaleItem(
   tx: Tx,
   saleItemId: string,
   productId: string,
   productUnitId?: string | null,
   buyerContactId?: string | null
-): Promise<void> {
+): Promise<RollLinkResult> {
+  // Un producto sin garantía configurada no lleva rollo, y eso está bien: no
+  // todo lo que se vende entra en la cadena de garantías. Distinguirlo del
+  // caso "debería llevar y no había" es la mitad del arreglo.
+  const config = await tx.warrantyConfig.findUnique({
+    where: { productId },
+    select: { warrantyEnabled: true },
+  });
+  if (!config?.warrantyEnabled) return { assigned: false, reason: "sin-garantia" };
+
   let roll = productUnitId
     ? await tx.warrantyRoll.findFirst({ where: { unitId: productUnitId, status: "IN_STOCK", saleItemId: null } })
     : null;
@@ -236,7 +258,10 @@ export async function linkRollToSaleItem(
     });
   }
 
-  if (!roll) return;
+  // Hay garantía configurada pero no quedó ningún rollo sin vender. La venta
+  // sigue —el stock existe, la mercadería sale— pero quien llama tiene que
+  // enterarse, porque el Cliente va a abrir su panel y no va a ver el rollo.
+  if (!roll) return { assigned: false, reason: "sin-rollos-libres" };
 
   await tx.warrantyRoll.update({
     where: { id: roll.id },
@@ -258,6 +283,8 @@ export async function linkRollToSaleItem(
       },
     },
   });
+
+  return { assigned: true, fullRollCode: roll.fullRollCode };
 }
 
 /**

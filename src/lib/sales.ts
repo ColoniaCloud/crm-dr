@@ -15,13 +15,25 @@ type Tx = Prisma.TransactionClient;
  * any item — that IS the backorder mechanism: no separate queue, the sale
  * just waits as PENDING until there's enough to confirm it. Also throws if
  * the sale isn't PENDING to begin with (can't re-confirm).
+ *
+ * **Devuelve los productos que quedaron sin rollo de garantía** aunque
+ * deberían haber llevado uno. No falla por eso —la mercadería sale igual y el
+ * stock lo permite—, pero quien llama tiene que avisarle al operador: si no, la
+ * venta se cierra bien y el Cliente después abre su panel, ve la compra y no ve
+ * ningún rollo. Fue exactamente lo que pasó y nadie se enteró hasta que el
+ * Cliente preguntó.
  */
+export interface ConfirmSaleResult {
+  /** Nombres de producto que debían llevar rollo y no consiguieron ninguno. */
+  sinRollo: string[];
+}
+
 export async function confirmSale(
   tx: Tx,
   saleId: string,
   userId: string,
   reasonSuffix = ""
-): Promise<void> {
+): Promise<ConfirmSaleResult> {
   const sale = await tx.sale.findUnique({
     where: { id: saleId },
     include: { items: true },
@@ -54,11 +66,26 @@ export async function confirmSale(
     });
   }
 
+  const sinRollo: string[] = [];
   for (const item of sale.items) {
-    await linkRollToSaleItem(tx, item.id, item.productId, item.productUnitId, sale.contactId);
+    const r = await linkRollToSaleItem(
+      tx,
+      item.id,
+      item.productId,
+      item.productUnitId,
+      sale.contactId
+    );
+    if (!r.assigned && r.reason === "sin-rollos-libres") {
+      const producto = await tx.product.findUnique({
+        where: { id: item.productId },
+        select: { name: true },
+      });
+      sinRollo.push(producto?.name ?? item.productId);
+    }
   }
 
   await tx.sale.update({ where: { id: saleId }, data: { status: "CONFIRMED" } });
+  return { sinRollo };
 }
 
 /**

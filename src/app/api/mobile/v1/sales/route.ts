@@ -89,6 +89,11 @@ export async function POST(request: Request) {
     const tax = requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - discount + tax;
 
+    // Productos con garantía que se quedaron sin rollo al confirmar.
+
+    let sinRollo: string[] = [];
+
+
     const result = await prisma.$transaction(async (tx) => {
       // If invoicing was requested and a tax id was captured on the spot,
       // keep the contact's record up to date (same free-text `cuit` field
@@ -127,7 +132,8 @@ export async function POST(request: Request) {
       // transaction, which is what actually moves stock and assigns the
       // warranty roll. If stock is short, the whole sale fails to create
       // (same behavior as before this change).
-      await confirmSale(tx, sale.id, userId, " (app móvil)");
+      const conf = await confirmSale(tx, sale.id, userId, " (app móvil)");
+      sinRollo = conf.sinRollo;
 
       if (sale.contact.type === "LEAD") {
         await tx.contact.update({ where: { id: contactId }, data: { type: "CLIENT" } });
@@ -135,6 +141,29 @@ export async function POST(request: Request) {
 
       return sale;
     });
+
+    // Mismo aviso que en el CRM de escritorio: la venta se cerró, pero el
+
+    // Cliente no va a ver esos rollos en su panel.
+
+    if (sinRollo.length > 0) {
+
+      await notifyAdmins({
+
+        type: "SALE_WITHOUT_ROLL",
+
+        title: "Una venta quedó sin rollo de garantía",
+
+        message: `Una venta de la app móvil se confirmó sin rollos libres de: ${sinRollo.join(", ")}.`,
+
+        link: `/sales/${result.id}`,
+
+        email: true,
+
+      });
+
+    }
+
 
     const sale = await prisma.sale.findUnique({
       where: { id: result.id },

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
-import { logOperatorAction, ensurePaymentAuditTable } from "@/lib/notifications";
+import { logOperatorAction, ensurePaymentAuditTable, notifyAdmins } from "@/lib/notifications";
 import { confirmSale, restoreSaleStock } from "@/lib/sales";
 
 const log = createLogger("api/sales/[id]");
@@ -123,6 +123,9 @@ export async function PUT(
       existing.contact.company ||
       `${existing.contact.firstName} ${existing.contact.lastName}`.trim();
 
+    // Productos con garantía que se quedaron sin rollo al confirmar.
+    let sinRollo: string[] = [];
+
     if (status && status !== existing.status) {
       const allowed = VALID_TRANSITIONS[existing.status] ?? [];
       if (!allowed.includes(status)) {
@@ -134,7 +137,8 @@ export async function PUT(
 
       await prisma.$transaction(async (tx) => {
         if (status === "CONFIRMED") {
-          await confirmSale(tx, id, session.user.id);
+          const r = await confirmSale(tx, id, session.user.id);
+          sinRollo = r.sinRollo;
         } else if (status === "CANCELLED") {
           const restored = await restoreSaleStock(tx, id, session.user.id, `Venta #${existing.number} cancelada`);
           if (!restored.ok) throw new Error(restored.error);
@@ -150,6 +154,23 @@ export async function PUT(
 
     const updated = await prisma.sale.findUnique({ where: { id } });
 
+    // Si algún producto con garantía se quedó sin rollo, avisarlo. La venta se
+    // confirmó igual —la mercadería sale y el stock lo permitía—, pero sin este
+    // aviso el operador se entera cuando el Cliente le pregunta por qué no ve
+    // su rollo en el panel.
+    if (sinRollo.length > 0) {
+      await notifyAdmins({
+        type: "SALE_WITHOUT_ROLL",
+        title: "Una venta quedó sin rollo de garantía",
+        message:
+          `La venta #${existing.number} de "${cName}" se confirmó, pero no había rollos libres de: ` +
+          `${sinRollo.join(", ")}. El Cliente no va a ver esos rollos en su panel. ` +
+          `Revisá que el stock de garantías esté cargado.`,
+        link: `/sales/${id}`,
+        email: true,
+      });
+    }
+
     await logOperatorAction({
       userId: session.user.id,
       action: "UPDATE_SALE",
@@ -159,7 +180,9 @@ export async function PUT(
       link: `/sales/${id}`,
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(
+      sinRollo.length > 0 ? { ...updated, sinRollo } : updated
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error al actualizar venta";
     log.error({ err: error }, "Error updating sale");
