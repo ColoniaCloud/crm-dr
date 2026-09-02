@@ -11,6 +11,7 @@ import {
   computeInstallmentStatus,
   rebuildAllocations,
 } from "@/lib/account";
+import { checkCredit } from "@/lib/credit";
 
 const log = createLogger("api/sales/[id]/payment-plan");
 
@@ -20,6 +21,12 @@ const log = createLogger("api/sales/[id]/payment-plan");
  * El plan es opcional: una venta sin plan se cobra al contado o con pagos
  * sueltos, que es como funcionan hoy todas las ventas. Crear un plan sobre una
  * venta que ya tenía pagos NO los anula — se imputan hacia atrás por FIFO.
+ *
+ * **Armar un plan es otorgar crédito**, y por eso acá se controla el escalafón.
+ * Hasta septiembre de 2026 no se controlaba: el chequeo vivía solo en el alta
+ * de la venta y solo para las de tipo CONSIGNMENT, así que financiar una venta
+ * REGULAR era la forma de pasarse del límite sin que nada lo frenara. Ver la
+ * nota larga en src/lib/credit.ts.
  */
 
 const createSchema = z.object({
@@ -132,6 +139,26 @@ export async function POST(
     }
 
     const total = financedTotal ?? Number(sale.total);
+
+    // Se excluye ESTA venta del saldo: si ya venía contando como crédito
+    // —porque es CONSIGNMENT, o porque se está reemplazando un plan anterior—
+    // sumarla otra vez la contaría dos veces y rechazaría de más.
+    const credit = await checkCredit(sale.contactId, total, { excluirVentaId: sale.id });
+    if (!credit.ok) {
+      return NextResponse.json(
+        {
+          error:
+            credit.code === "NO_CREDIT_TIER"
+              ? "Este cliente no tiene un escalafón de crédito asignado, así que no se le puede financiar una venta. Asignale uno en su ficha."
+              : credit.error,
+          code: credit.code,
+          balance: credit.balance,
+          limit: credit.limit,
+        },
+        { status: 400 }
+      );
+    }
+
     const cuotas = buildInstallmentSchedule({
       total,
       installmentCount,

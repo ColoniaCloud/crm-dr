@@ -24,7 +24,12 @@ interface CreditTierCardProps {
 }
 
 /**
- * Escalafón de crédito asignado a un Cliente, para ventas a consignación.
+ * Escalafón de crédito asignado a un Cliente.
+ *
+ * El saldo que muestra es **toda la deuda a plazo**: consignaciones y cualquier
+ * venta financiada en cuotas. Antes decía "saldo consignación" y solo contaba
+ * las consignaciones, que era justo la mitad que dejaba pasar de largo una
+ * venta REGULAR financiada — ver src/lib/credit.ts.
  * Mismo patrón autocontenido que ClientPortalAccess: pide su propia lista de
  * escalafones y guarda con su propio PATCH.
  */
@@ -100,7 +105,7 @@ export function CreditTierCard({ clientId, creditTier, consignmentBalance, canEd
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{creditTier.code} — {creditTier.name}</Badge>
             <span className="text-muted-foreground">
-              Saldo consignación: <span className={overLimit ? "font-medium text-destructive" : "text-foreground"}>{formatCurrency(consignmentBalance)}</span> / {formatCurrency(Number(creditTier.limit))}
+              Deuda a plazo: <span className={overLimit ? "font-medium text-destructive" : "text-foreground"}>{formatCurrency(consignmentBalance)}</span> / {formatCurrency(Number(creditTier.limit))}
             </span>
           </div>
         ) : (
