@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
+import { notifyClaimStatusChanged } from "@/lib/warranty-claim-notify";
 
 const log = createLogger("api/warranty-claims/[id]");
 
@@ -76,7 +77,7 @@ export async function PATCH(
     const { id } = await params;
     const existing = await prisma.warrantyClaim.findUnique({
       where: { id },
-      include: { installation: { select: { installationCode: true } } },
+      select: { status: true, installation: { select: { installationCode: true } } },
     });
     if (!existing) {
       return NextResponse.json({ error: "Reclamo no encontrado" }, { status: 404 });
@@ -107,6 +108,17 @@ export async function PATCH(
       description: `Actualizó reclamo de garantía "${existing.installation.installationCode}"${status ? ` → ${status}` : ""}`,
       link: `/warranty-claims`,
     });
+
+    // Avisar DESPUÉS de guardar, y solo si el estado realmente cambió: mover
+    // dos veces al mismo estado, o guardar únicamente la nota de resolución, no
+    // tiene por qué volver a molestar a nadie.
+    //
+    // `notifyClaimStatusChanged` no tira nunca: atrapa y loguea lo suyo. Por
+    // eso se puede esperar sin envolverla — el cambio de estado ya está
+    // guardado y un mail que no sale no puede convertirlo en un 500.
+    if (status && status !== existing.status) {
+      await notifyClaimStatusChanged(id, status);
+    }
 
     return NextResponse.json(claim);
   } catch (error) {

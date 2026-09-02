@@ -52,6 +52,9 @@ export async function POST(
 
     await notifyAdmins({
       type: "WARRANTY_CLAIM",
+      // Un reclamo es alguien de afuera esperando respuesta: sale mail
+      // además de la campanita. Ver la nota en notifyAdmins.
+      email: true,
       title: "Nuevo reclamo de garantía",
       message: `${reporterName} reportó un problema (${installation.installationCode})`,
       link: `/warranty-claims`,

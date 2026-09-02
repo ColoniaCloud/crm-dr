@@ -97,13 +97,27 @@ export async function notifyAdmins(payload: {
   title: string;
   message: string;
   link?: string;
+  /**
+   * Además de la campanita, mandar mail a cada admin.
+   *
+   * **Es opt-in a propósito.** `notifyAdmins` lo usan 17 lugares —cada lead que
+   * entra, cada venta, cada llamada agendada— y mandar correo en todos
+   * convertiría el aviso en ruido: un sistema que manda mail por todo termina
+   * con sus mails en la carpeta de "no leídos para siempre", y el día que pasa
+   * algo importante nadie lo ve.
+   *
+   * Prenderlo solo donde el aviso tiene que salir del CRM porque alguien de
+   * afuera está esperando una respuesta. Hoy: los reclamos de garantía.
+   */
+  email?: boolean;
 }) {
   try {
     const admins = await prisma.user.findMany({
       where: { role: { in: ["ADMIN", "SUPERADMIN"] }, deletedAt: null },
-      select: { id: true },
+      select: { id: true, email: true, name: true },
     });
     if (admins.length === 0) return;
+
     await prisma.notification.createMany({
       data: admins.map((admin) => ({
         userId: admin.id,
@@ -113,6 +127,43 @@ export async function notifyAdmins(payload: {
         link: payload.link ?? null,
       })),
     });
+
+    if (!payload.email || !process.env.SMTP_USER) return;
+
+    const origin = process.env.NEXTAUTH_URL || "";
+    const boton = payload.link
+      ? `<a href="${origin}${escapeHtml(payload.link)}" style="display:inline-block;padding:10px 20px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Ver en el CRM</a>`
+      : "";
+
+    // En serie y con catch por destinatario: que a uno le rebote el correo no
+    // puede dejar a los demás sin aviso, ni tumbar la operación que disparó
+    // esto — el reclamo ya está guardado.
+    for (const admin of admins) {
+      if (!admin.email) continue;
+      try {
+        await transporter.sendMail({
+          from: FROM(),
+          to: admin.email,
+          subject: payload.title,
+          html: `
+            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:24px;background:#f9fafb;">
+              <div style="background:#fff;border-radius:10px;padding:28px;border:1px solid #e5e7eb;">
+                <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;letter-spacing:.08em;color:#6b7280;text-transform:uppercase;">${BRAND.name}</p>
+                <h2 style="color:#111;margin:0 0 20px 0;font-size:20px;">${escapeHtml(payload.title)}</h2>
+                <p style="color:#444;margin:0 0 20px 0;">Hola <strong>${escapeHtml(admin.name ?? "")}</strong>,</p>
+                <p style="color:#444;margin:0 0 20px 0;">${escapeHtml(payload.message)}</p>
+                ${boton ? `<div style="margin-top:20px;">${boton}</div>` : ""}
+              </div>
+              <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">
+                Mensaje automático de ${BRAND.name} · No respondas este correo.
+              </p>
+            </div>
+          `,
+        });
+      } catch (err) {
+        console.error("[notifyAdmins] no se pudo mandar el mail a", admin.email, err);
+      }
+    }
   } catch (err) {
     console.error("[notifyAdmins] error:", err);
   }
