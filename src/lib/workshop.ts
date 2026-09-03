@@ -820,7 +820,19 @@ export async function getWorkshopStock(contactId: string) {
           category: true,
           width: true,
           length: true,
-          warrantyConfig: { select: { maxInstallations: true } },
+          // `installWarrantyMonths` es la garantia que le queda al CLIENTE FINAL
+          // —no `rollWarrantyMonths`, que cubre el rollo sin instalar—, y es la
+          // que el instalador necesita poder decirle en el mostrador.
+          // `warrantyEnabled` viaja con ella porque un producto puede tener
+          // config y tenerla apagada: sin ese dato no se distingue de uno que
+          // si cubre.
+          warrantyConfig: {
+            select: {
+              maxInstallations: true,
+              installWarrantyMonths: true,
+              warrantyEnabled: true,
+            },
+          },
         },
       },
       installations: {
