@@ -148,6 +148,11 @@ const PORTAL_ROLL_SELECT = {
       status: true,
       activatedAt: true,
       expiresAt: true,
+      // Precargados por el taller. No son PII del cliente final —el mail, el
+      // nombre y el telefono siguen sin salir por aca—: identifican el trabajo,
+      // y el instalador necesita reconocer cual instalacion es cual.
+      vehicleType: true,
+      plate: true,
     },
   },
   _count: {

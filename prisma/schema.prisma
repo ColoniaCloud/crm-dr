@@ -1137,6 +1137,14 @@ model WarrantyInstallation {
   clientEmail        String?
   clientPhone        String?
   clientDni          String?
+  /// Tipo de vehiculo, en slug: SEDAN, SUV, CAMION_CHICO, YATE_GRANDE...
+  ///
+  /// String y no enum de Prisma a proposito: la lista sale de los iconos que
+  /// hay en `public/iconos/vehiculos` de kristall-web, y agregar uno nuevo no
+  /// deberia costar una migracion de base. La validacion vive en el endpoint.
+  vehicleType        String?
+  /// Patente/matricula. Se guarda tal cual la escribio el instalador.
+  plate              String?
   installedAt        DateTime?
   activatedAt        DateTime?
   expiresAt          DateTime?

@@ -370,6 +370,14 @@ export async function transferRollLocation(
 }
 
 const DEFAULT_MAX_INSTALLATIONS = 15;
+/**
+ * Meses de garantia cuando el producto no tiene `warrantyConfig`.
+ *
+ * Lo usan dos lugares: el que CALCULA el vencimiento al activar y el que le
+ * DICE a la persona cuanto dura. Si cada uno tuviera su propio numero suelto,
+ * la pantalla podria prometer una cosa y la base guardar otra.
+ */
+const DEFAULT_INSTALL_MONTHS = 12;
 
 /**
  * Creates an additional installation slot on a roll already owned by a
@@ -378,9 +386,35 @@ const DEFAULT_MAX_INSTALLATIONS = 15;
  * NL360 self-serve a new sub-code each time they cut a fresh piece off a
  * roll they bought, up to the product's maxInstallations.
  */
+/**
+ * Lo que el instalador precarga al generar la instalacion.
+ *
+ * Todo opcional: la instalacion se puede seguir generando en blanco y que el
+ * cliente final complete todo. Cuando viene cargado, el formulario publico lo
+ * muestra ya resuelto y la persona solo confirma — que es donde se dejan de
+ * escribir mal las patentes y los mails.
+ */
+/**
+ * Un string vacio no es un dato: guardarlo hace que despues `?? "algo"` no
+ * caiga en el fallback y quede un campo en blanco donde deberia haber un valor.
+ */
+function limpiar(v: string | null | undefined): string | null {
+  const t = v?.trim();
+  return t ? t : null;
+}
+
+export interface DatosPrecargados {
+  clientName?: string | null;
+  clientEmail?: string | null;
+  clientPhone?: string | null;
+  vehicleType?: string | null;
+  plate?: string | null;
+}
+
 export async function createAdditionalInstallation(
   contactId: string,
-  fullRollCode: string
+  fullRollCode: string,
+  datos: DatosPrecargados = {}
 ): Promise<
   | {
       ok: true;
@@ -419,6 +453,16 @@ export async function createAdditionalInstallation(
         installationCode: `${fullRollCode}-I${nextNumber}`,
         activationToken: newActivationToken(),
         status: "PENDING",
+        clientName: limpiar(datos.clientName),
+        clientEmail: limpiar(datos.clientEmail),
+        clientPhone: limpiar(datos.clientPhone),
+        vehicleType: limpiar(datos.vehicleType),
+        // La patente en mayusculas: se escribe de las dos formas y despues no
+        // matchea contra si misma cuando alguien la busca.
+        plate: limpiar(datos.plate)?.toUpperCase() ?? null,
+        // Si hay tipo de vehiculo, el tipo de instalacion ya esta decidido y no
+        // tiene sentido volver a preguntarlo.
+        assetType: datos.vehicleType ? "VEHICLE" : null,
       },
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
     });
@@ -494,7 +538,8 @@ export async function activateInstallationWarrantyTx(
     throw new Error(`Installation ${installationId} is not in PENDING status`);
   }
 
-  const months = installation.roll.product.warrantyConfig?.installWarrantyMonths ?? 12;
+  const months =
+    installation.roll.product.warrantyConfig?.installWarrantyMonths ?? DEFAULT_INSTALL_MONTHS;
   const activatedAt = new Date();
   const expiresAt = addMonths(activatedAt, months);
 
@@ -613,7 +658,14 @@ export async function verifyWarranty(activationToken: string) {
       roll: {
         include: {
           lot: true,
-          product: { select: { id: true, name: true, brand: true } },
+          product: {
+            select: {
+              id: true,
+              name: true,
+              brand: true,
+              warrantyConfig: { select: { installWarrantyMonths: true } },
+            },
+          },
           // Quién vendió el rollo, o sea el taller que hizo el trabajo. Se usa
           // para firmar la garantía con su nombre y su logo.
           saleItem: {
@@ -678,6 +730,13 @@ export async function verifyWarranty(activationToken: string) {
     fullRollCode: installation.roll.fullRollCode,
     assetType: installation.assetType,
     assetDescription: installation.assetDescription,
+    vehicleType: installation.vehicleType,
+    plate: installation.plate,
+    // Cuánto va a durar la garantía cuando se active. `expiresAt` todavía es
+    // null mientras está PENDING, así que sin esto no hay forma de decirle a la
+    // persona cuánto dura ANTES de activarla.
+    warrantyMonths:
+      installation.roll.product.warrantyConfig?.installWarrantyMonths ?? DEFAULT_INSTALL_MONTHS,
     clientName: installation.clientName,
     clientEmail: installation.clientEmail,
     clientPhone: installation.clientPhone,
@@ -704,9 +763,24 @@ export type WarrantyStatus = NonNullable<Awaited<ReturnType<typeof verifyWarrant
  * The public subset of a warranty status: exactly what
  * GET /api/public/warranty/:token and POST /api/public/warranty/login return
  * (WARRANTY_API.md 5.1 y 5.5). Deliberately omits the activationToken — which
- * IS the full capability over the warranty — and every personal field
- * (clientName/Email/Phone/Dni), plus the internal lotNumber/fullRollCode.
- * Both public routes go through here so they cannot drift apart again.
+ * IS the full capability over the warranty — plus the internal
+ * lotNumber/fullRollCode.
+ *
+ * **Sobre los datos precargados.** Hasta acá esta proyección no devolvía NINGÚN
+ * dato personal. Ahora devuelve los que el instalador precargó —mail, tipo de
+ * vehículo y patente— porque la pantalla de activación le muestra al cliente
+ * una ficha con eso para que confirme antes de activar, y sin ellos no hay
+ * ficha que mostrar.
+ *
+ * El límite que se mantiene: **solo sale lo precargado por el taller**, nunca
+ * lo que después cargó el propio cliente. `clientName`, `clientPhone` y
+ * `clientDni` siguen sin salir. Y el `activationToken` es un secreto de 48
+ * caracteres que solo tienen el taller y el dueño del vehículo — quien abre esa
+ * URL ya es una de esas dos personas.
+ *
+ * Aun así es una filtración más que antes: si el link se reenvía, el mail y la
+ * patente viajan con él. Se asume a cambio de que el cliente pueda verificar
+ * sus datos antes de activar.
  */
 export function pickPublicStatus(warranty: WarrantyStatus) {
   return {
@@ -721,6 +795,15 @@ export function pickPublicStatus(warranty: WarrantyStatus) {
     // personal — ver la nota en verifyWarranty. `logoPath` es relativo al CRM;
     // quien lo muestre tiene que anteponerle la base del CRM, no la suya.
     installer: warranty.installer,
+    // Lo precargado por el taller, para la ficha de confirmación. Ver la nota
+    // de arriba: NO se agrega clientName ni clientPhone ni clientDni.
+    vehicleType: warranty.vehicleType,
+    plate: warranty.plate,
+    clientEmail: warranty.clientEmail,
+    // Cuánto dura la garantía una vez activada. Antes solo salía `expiresAt`,
+    // que en una garantía PENDING todavía es null — o sea que no había forma de
+    // decirle a la persona cuánto va a durar ANTES de activarla.
+    warrantyMonths: warranty.warrantyMonths,
   };
 }
 

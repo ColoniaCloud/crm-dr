@@ -837,7 +837,18 @@ export async function getWorkshopStock(contactId: string) {
       },
       installations: {
         orderBy: { installationNumber: "asc" },
-        select: { id: true, installationCode: true, status: true, activatedAt: true, expiresAt: true },
+        select: {
+          id: true,
+          installationCode: true,
+          status: true,
+          activatedAt: true,
+          expiresAt: true,
+      // Precargados por el taller. No son PII del cliente final —el mail, el
+      // nombre y el telefono siguen sin salir por aca—: identifican el trabajo,
+      // y el instalador necesita reconocer cual instalacion es cual.
+      vehicleType: true,
+      plate: true,
+        },
       },
       _count: { select: { installations: { where: { status: "ACTIVE" } } } },
     },

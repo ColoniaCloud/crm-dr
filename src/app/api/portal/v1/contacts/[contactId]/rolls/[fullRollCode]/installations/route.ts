@@ -4,8 +4,26 @@ import { rateLimit } from "@/lib/rate-limit";
 import { findClientContact } from "@/lib/client-portal";
 import { createAdditionalInstallation } from "@/lib/warranty";
 import { createLogger } from "@/lib/logger";
+import { z } from "zod";
+import { validateBody } from "@/lib/api-validation";
+import { VEHICLE_TYPES } from "@/lib/vehicle-types";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/rolls/[fullRollCode]/installations");
+
+/**
+ * Datos que el instalador precarga. Todo opcional y el body entero tambien: la
+ * instalacion en blanco tiene que seguir funcionando, porque hasta ahora era la
+ * unica forma de generarla y hay talleres que la usan asi.
+ */
+const schema = z
+  .object({
+    clientName: z.string().trim().max(191).nullish(),
+    clientEmail: z.string().trim().email("Email invalido").max(191).nullish(),
+    clientPhone: z.string().trim().max(50).nullish(),
+    vehicleType: z.enum(VEHICLE_TYPES).nullish(),
+    plate: z.string().trim().max(20).nullish(),
+  })
+  .partial();
 
 export async function POST(
   request: Request,
@@ -29,7 +47,12 @@ export async function POST(
     const level = await requireInstallerLevel(contactId, request);
     if (!level.success) return level.response;
 
-    const result = await createAdditionalInstallation(contactId, fullRollCode);
+    // Body opcional: sin body, instalacion en blanco como siempre.
+    const json = await request.json().catch(() => ({}));
+    const validation = validateBody(schema, json ?? {});
+    if (!validation.success) return validation.response;
+
+    const result = await createAdditionalInstallation(contactId, fullRollCode, validation.data);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
