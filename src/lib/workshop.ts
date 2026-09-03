@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, WorkOrderStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
@@ -1187,4 +1188,233 @@ export async function getPublicWorkshop(handle: string) {
       durationMinutes: v.durationMinutes,
     })),
   };
+}
+
+// ─── Pedidos de turno ────────────────────────────────────────────────────────
+
+/**
+ * El token con el que el cliente cancela desde el mail.
+ *
+ * Aleatorio y no el id del pedido: va en una URL que viaja por correo, y ahí no
+ * ponemos identificadores del sistema (F0-23, y lo mismo que se hizo con el
+ * slug del logo en O-5).
+ */
+function newCancelToken(): string {
+  return randomBytes(24).toString("hex");
+}
+
+/**
+ * Crea un pedido de turno desde la página pública.
+ *
+ * **No crea una orden de trabajo**, y esa es la decisión de fondo de esta fase:
+ * un formulario público que escribe en el CRM es un formulario que alguien va a
+ * llenar de basura. El pedido queda PENDIENTE y solo se convierte en orden
+ * cuando el instalador lo confirma.
+ *
+ * El nombre y la duración del servicio se copian en el pedido en vez de
+ * referenciarse: el taller puede renombrarlo o darlo de baja después, y el
+ * pedido tiene que seguir diciendo qué se pidió ese día.
+ *
+ * Devuelve `null` si el taller no existe o no publicó su página — el que llama
+ * lo traduce a 404, igual que la consulta pública.
+ */
+export async function createBooking(
+  handle: string,
+  datos: {
+    serviceId?: string | null;
+    clientName: string;
+    clientEmail?: string | null;
+    clientPhone: string;
+    vehicleType?: string | null;
+    plate?: string | null;
+    notes?: string | null;
+    preferredAt: Date;
+  }
+) {
+  const taller = await prisma.workshopSettings.findUnique({
+    where: { handle },
+    select: { contactId: true, publicPageEnabled: true },
+  });
+  if (!taller || !taller.publicPageEnabled) return null;
+
+  // El servicio se busca ACOTADO al taller: un serviceId de otro taller no
+  // puede colarse en este pedido.
+  const servicio = datos.serviceId
+    ? await prisma.workshopService.findFirst({
+        where: { id: datos.serviceId, contactId: taller.contactId, active: true },
+        select: { id: true, name: true, durationMinutes: true },
+      })
+    : null;
+
+  return prisma.workshopBooking.create({
+    data: {
+      contactId: taller.contactId,
+      serviceId: servicio?.id ?? null,
+      // Sin servicio elegido queda constancia igual: el cliente pidió turno
+      // para algo, y el instalador lo resuelve hablando.
+      serviceName: servicio?.name ?? "Consulta general",
+      durationMinutes: servicio?.durationMinutes ?? 60,
+      clientName: datos.clientName.trim(),
+      clientEmail: datos.clientEmail?.trim() || null,
+      clientPhone: datos.clientPhone.trim(),
+      vehicleType: datos.vehicleType || null,
+      plate: datos.plate?.trim().toUpperCase() || null,
+      notes: datos.notes?.trim() || null,
+      preferredAt: datos.preferredAt,
+      cancelToken: newCancelToken(),
+    },
+    select: { id: true, cancelToken: true, contactId: true, serviceName: true, preferredAt: true },
+  });
+}
+
+/** Los pedidos de turno del taller, los pendientes primero. */
+export async function listBookings(contactId: string, soloPendientes = false) {
+  return prisma.workshopBooking.findMany({
+    where: { contactId, ...(soloPendientes ? { status: "PENDIENTE" as const } : {}) },
+    orderBy: [{ status: "asc" }, { preferredAt: "asc" }],
+    take: 200,
+    select: {
+      id: true,
+      serviceName: true,
+      durationMinutes: true,
+      clientName: true,
+      clientEmail: true,
+      clientPhone: true,
+      vehicleType: true,
+      plate: true,
+      notes: true,
+      preferredAt: true,
+      status: true,
+      workOrderId: true,
+      respondedAt: true,
+      createdAt: true,
+    },
+  });
+}
+
+/**
+ * Confirmar un pedido: se convierte en cliente, vehículo y orden agendada.
+ *
+ * Todo en una transacción. Si algo falla a mitad, el pedido sigue PENDIENTE y
+ * se puede reintentar — lo contrario dejaría un cliente creado sin la orden que
+ * lo justificaba.
+ *
+ * El cliente se busca antes de crearse, por teléfono o por mail: alguien que ya
+ * vino dos veces no tiene que aparecer dos veces en la agenda del taller.
+ */
+export async function confirmBooking(
+  contactId: string,
+  bookingId: string,
+  scheduledAt?: Date
+): Promise<{ ok: true; workOrderId: string } | { ok: false; error: string; status: number }> {
+  const booking = await prisma.workshopBooking.findFirst({
+    where: { id: bookingId, contactId },
+  });
+  if (!booking) return { ok: false, error: "Pedido no encontrado", status: 404 };
+  if (booking.status !== "PENDIENTE") {
+    return { ok: false, error: "Este pedido ya fue respondido", status: 409 };
+  }
+
+  const cuando = scheduledAt ?? booking.preferredAt;
+
+  const workOrderId = await prisma.$transaction(async (tx) => {
+    const telefono = booking.clientPhone.trim();
+    const email = booking.clientEmail?.trim() || null;
+
+    // Se busca por teléfono o mail antes de crear. El OR con el mail solo
+    // cuando hay mail: `email: null` matchearía a todos los que no tienen.
+    const existente = await tx.workshopClient.findFirst({
+      where: {
+        contactId,
+        OR: [{ phone: telefono }, ...(email ? [{ email }] : [])],
+      },
+      select: { id: true },
+    });
+
+    const cliente =
+      existente ??
+      (await tx.workshopClient.create({
+        data: { contactId, name: booking.clientName, phone: telefono, email },
+        select: { id: true },
+      }));
+
+    // El vehículo solo si sabemos algo de él. Un asset vacío es ruido en la
+    // ficha del cliente.
+    const asset =
+      booking.plate || booking.vehicleType
+        ? await tx.workshopAsset.create({
+            data: {
+              workshopClientId: cliente.id,
+              type: "VEHICLE",
+              identifier: booking.plate,
+              notes: booking.vehicleType ? `Tipo: ${booking.vehicleType}` : null,
+            },
+            select: { id: true },
+          })
+        : null;
+
+    await tx.workshopSettings.upsert({
+      where: { contactId },
+      create: { contactId },
+      update: {},
+    });
+    const settings = await tx.workshopSettings.update({
+      where: { contactId },
+      data: { nextOrderNumber: { increment: 1 } },
+      select: { nextOrderNumber: true },
+    });
+
+    const orden = await tx.workOrder.create({
+      data: {
+        contactId,
+        orderNumber: settings.nextOrderNumber - 1,
+        workshopClientId: cliente.id,
+        assetId: asset?.id ?? null,
+        scheduledAt: cuando,
+        status: "AGENDADA",
+        notes: booking.notes,
+        items: { create: [{ description: booking.serviceName }] },
+      },
+      select: { id: true },
+    });
+
+    await tx.workshopBooking.update({
+      where: { id: booking.id },
+      data: { status: "CONFIRMADA", respondedAt: new Date(), workOrderId: orden.id },
+    });
+
+    return orden.id;
+  });
+
+  return { ok: true, workOrderId };
+}
+
+/** Rechazar. No borra: el instalador tiene que poder ver qué rechazó. */
+export async function rejectBooking(
+  contactId: string,
+  bookingId: string
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const r = await prisma.workshopBooking.updateMany({
+    where: { id: bookingId, contactId, status: "PENDIENTE" },
+    data: { status: "RECHAZADA", respondedAt: new Date() },
+  });
+  if (r.count === 0) {
+    return { ok: false, error: "Pedido no encontrado o ya respondido", status: 404 };
+  }
+  return { ok: true };
+}
+
+/**
+ * Cancelación por parte del cliente, con el token que le llegó por mail.
+ *
+ * Solo se puede cancelar lo que todavía está PENDIENTE: una vez que el taller
+ * confirmó hay una orden agendada, y deshacer eso desde un link de correo sin
+ * que el taller se entere sería peor que un llamado.
+ */
+export async function cancelBookingByToken(cancelToken: string): Promise<boolean> {
+  const r = await prisma.workshopBooking.updateMany({
+    where: { cancelToken, status: "PENDIENTE" },
+    data: { status: "CANCELADA", respondedAt: new Date() },
+  });
+  return r.count > 0;
 }

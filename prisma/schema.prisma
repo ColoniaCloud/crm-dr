@@ -304,6 +304,7 @@ model Contact {
   workOrders          WorkOrder[]
   workshopSettings    WorkshopSettings?
   workshopServices    WorkshopService[]
+  workshopBookings    WorkshopBooking[]
 
   source         LeadSource            @default(MANUAL)
   placeId        String?               @unique
@@ -1572,6 +1573,9 @@ model WorkOrder {
   warrantyInstallationId String?               @unique
   warrantyInstallation   WarrantyInstallation? @relation(fields: [warrantyInstallationId], references: [id], onDelete: SetNull)
 
+  /// El pedido de turno del que salio esta orden, si vino de la pagina publica.
+  booking WorkshopBooking?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1692,8 +1696,70 @@ model WorkshopService {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  bookings WorkshopBooking[]
+
   @@index([contactId, active, sortOrder])
   @@map("workshop_services")
+}
+
+/// Un pedido de turno hecho desde la pagina publica del taller.
+///
+/// **No es una orden de trabajo, y esa es toda la razon de que exista.** Un
+/// formulario publico que escribe en el CRM es un formulario que alguien va a
+/// llenar de basura; si cada pedido creara una `WorkOrder`, la agenda del
+/// instalador seria de cualquiera. El pedido entra aca, el instalador lo
+/// confirma, y recien ahi se convierte en orden.
+model WorkshopBooking {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  serviceId String?
+  service   WorkshopService? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  /// El nombre del servicio se COPIA, no se referencia.
+  ///
+  /// El taller puede renombrarlo o darlo de baja despues, y el pedido tiene que
+  /// seguir diciendo que fue lo que se pidio ese dia. Lo mismo con la duracion,
+  /// que es con la que se reservo el hueco.
+  serviceName     String
+  durationMinutes Int    @default(60)
+
+  clientName  String
+  clientEmail String?
+  clientPhone String
+  vehicleType String?
+  plate       String?
+  notes       String? @db.Text
+
+  /// Lo que PIDIO el cliente. La fecha real se decide al confirmar: el taller
+  /// puede correrlo media hora y sigue siendo el mismo turno.
+  preferredAt DateTime
+
+  status WorkshopBookingStatus @default(PENDIENTE)
+
+  /// Para que el cliente pueda cancelar desde el mail sin cuenta ni sesion.
+  /// Aleatorio y no el id: va en una URL que se manda por correo (F0-23).
+  cancelToken String @unique
+
+  /// Se llena al confirmar. Es el puente al mundo de Mi Taller.
+  workOrderId String?    @unique
+  workOrder   WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+
+  respondedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([contactId, status, preferredAt])
+  @@map("workshop_bookings")
+}
+
+enum WorkshopBookingStatus {
+  PENDIENTE
+  CONFIRMADA
+  RECHAZADA
+  /// La cancela el cliente antes de que el taller responda.
+  CANCELADA
 }
 
 model WorkshopSettings {
