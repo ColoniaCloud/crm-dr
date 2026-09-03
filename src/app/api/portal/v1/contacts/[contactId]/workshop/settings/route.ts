@@ -5,6 +5,7 @@ import { requireWorkshopAccess } from "@/lib/workshop-auth";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { newLogoSlug, workshopLogoPath } from "@/lib/workshop-logo";
+import { validarHandle, MENSAJE_HANDLE } from "@/lib/workshop-handle";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/workshop/settings");
 
@@ -48,6 +49,12 @@ export async function GET(request: Request, { params }: Params) {
         logoMimeType: true,
         logo: true,
         logoSlug: true,
+        handle: true,
+        publicPageEnabled: true,
+        publicAddress: true,
+        publicLat: true,
+        publicLng: true,
+        publicPhone: true,
       },
     });
 
@@ -65,6 +72,12 @@ export async function GET(request: Request, { params }: Params) {
         nextOrderNumber: 1,
         tieneLogo: false,
         logoUrl: null,
+        handle: null,
+        publicPageEnabled: false,
+        publicAddress: null,
+        publicLat: null,
+        publicLng: null,
+        publicPhone: null,
       });
     }
 
@@ -90,6 +103,19 @@ const schema = z
     /** Base64 sin el prefijo `data:`. `null` borra el logo. */
     logo: z.string().max(MAX_BASE64, "La imagen es muy pesada, máximo 220 KB").nullable(),
     logoMimeType: z.enum(MIMES).nullable(),
+
+    /** El nombre de usuario publico. La forma la valida `workshop-handle.ts`. */
+    handle: z.string().trim().toLowerCase().nullable(),
+    publicPageEnabled: z.boolean(),
+    /**
+     * La direccion que se muestra en la pagina del taller. **No hereda de
+     * `Contact.storeAddress`**: F0-24 fue una fuga de ubicacion de talleres, y
+     * esta sale porque el instalador la escribio aca a proposito.
+     */
+    publicAddress: z.string().trim().max(300).nullable(),
+    publicLat: z.number().min(-90).max(90).nullable(),
+    publicLng: z.number().min(-180).max(180).nullable(),
+    publicPhone: z.string().trim().max(50).nullable(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "No hay nada que actualizar" });
@@ -113,7 +139,35 @@ export async function PATCH(request: Request, { params }: Params) {
     );
   }
 
+  // El handle se valida con la MISMA funcion que usa el endpoint que dice si
+  // esta libre. Si aca se validara distinto, la pantalla podria aprobar uno que
+  // el guardado despues rechaza.
+  if (data.handle) {
+    const error = validarHandle(data.handle);
+    if (error) {
+      return NextResponse.json({ error: MENSAJE_HANDLE[error] }, { status: 400 });
+    }
+  }
+
   try {
+    // No se publica una pagina sin handle: seria una URL que no se puede armar.
+    // Se mira lo que va a QUEDAR guardado y no solo lo que vino en el request,
+    // porque el instalador puede estar prendiendo el switch sin remandar el
+    // handle que ya tenia.
+    if (data.publicPageEnabled) {
+      const actual = await prisma.workshopSettings.findUnique({
+        where: { contactId: gate.contactId },
+        select: { handle: true },
+      });
+      const handleFinal = data.handle !== undefined ? data.handle : actual?.handle;
+      if (!handleFinal) {
+        return NextResponse.json(
+          { error: "Elegi un nombre de usuario antes de publicar tu pagina." },
+          { status: 400 }
+        );
+      }
+    }
+
     // El slug con el que se va a servir el logo. Si el taller ya tenía uno se
     // reusa a propósito: la URL vieja quedó en mails ya enviados, y que siga
     // funcionando —mostrando el logo nuevo— es mejor que dejarla en 404.
@@ -138,7 +192,7 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(data.logo === null ? { logoMimeType: null } : {}),
         ...(slug !== undefined ? { logoSlug: slug } : {}),
       },
-      select: { logo: true, logoSlug: true },
+      select: { logo: true, logoSlug: true, handle: true, publicPageEnabled: true },
     });
 
     return NextResponse.json({
@@ -146,6 +200,8 @@ export async function PATCH(request: Request, { params }: Params) {
       tieneLogo: Boolean(guardado.logo),
       logoUrl:
         guardado.logo && guardado.logoSlug ? workshopLogoPath(guardado.logoSlug) : null,
+      handle: guardado.handle,
+      publicPageEnabled: guardado.publicPageEnabled,
     });
   } catch (error) {
     log.error({ err: error }, "Error saving workshop settings");

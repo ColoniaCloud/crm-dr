@@ -303,6 +303,7 @@ model Contact {
   workshopClients     WorkshopClient[]
   workOrders          WorkOrder[]
   workshopSettings    WorkshopSettings?
+  workshopServices    WorkshopService[]
 
   source         LeadSource            @default(MANUAL)
   placeId        String?               @unique
@@ -1640,6 +1641,43 @@ model WorkOrderPayment {
 /// Además de la config, es donde vive el contador de OT: se pide con un
 /// `increment` atómico dentro de la transacción del alta, que es seguro contra
 /// carreras — un `max(orderNumber) + 1` no lo es.
+/// Un servicio del catálogo del taller: los que se muestran en su página
+/// pública y entre los que elige el cliente al pedir turno.
+///
+/// No existía nada parecido. `WorkOrderItem.description` es texto libre por
+/// orden, o sea que cada trabajo se describía de cero y no había catálogo.
+model WorkshopService {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String? @db.Text
+
+  /// Opcional: el instalador decide si muestra precio.
+  ///
+  /// `priceFrom` y no `price` porque en polarizado el precio depende del
+  /// vehículo. Publicar un número cerrado obliga a discutirlo después, que es
+  /// justo la conversación que la página tendría que ahorrar.
+  priceFrom Decimal? @db.Decimal(10, 2)
+  currency  Currency @default(ARS)
+
+  /// **El campo que se olvida.** Sin duración no se pueden calcular los huecos
+  /// libres de la agenda, y el pedido de turno degrada a «mandame un mensaje».
+  durationMinutes Int @default(60)
+
+  /// Un servicio no se borra, se desactiva: si se borrara, los pedidos de turno
+  /// viejos perderían el servicio que los originó.
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contactId, active, sortOrder])
+  @@map("workshop_services")
+}
+
 model WorkshopSettings {
   id        String  @id @default(cuid())
   contactId String  @unique
@@ -1674,7 +1712,7 @@ model WorkshopSettings {
   /// **no se sirve como data URI**: los clientes de correo bloquean las
   /// imágenes embebidas así, y este logo tiene que verse en el mail de garantía
   /// que recibe el usuario final. Por eso sale por
-  /// `GET /api/public/workshop/[contactId]/logo`, que devuelve los bytes con su
+  /// `GET /api/public/workshop/logo/[slug]`, que devuelve los bytes con su
   /// tipo, y en el HTML entra como una URL normal.
   logo         String? @db.LongText
   /// `image/png`, `image/jpeg`, `image/webp`. Hace falta para servirlo bien.
@@ -1688,6 +1726,36 @@ model WorkshopSettings {
   /// que se tomó con `activationToken` en F0-23: si va a estar a la vista, que
   /// sea un valor aleatorio y no un identificador del sistema.
   logoSlug     String? @unique
+
+  /// El nombre de usuario público: polariz.ar/<handle>. Único global.
+  ///
+  /// Un taller con sucursales lo resuelve internamente (`tallercarlos-centro`)
+  /// y no con dos cuentas. Las reglas de forma y la lista de palabras
+  /// reservadas viven en `lib/workshop-handle.ts`: el handle compite con las
+  /// rutas de polariz.ar, así que si alguien toma `blog`, ese sitio no puede
+  /// tener `/blog` nunca más.
+  handle String? @unique
+
+  /// La página no existe hasta que el instalador la publica.
+  ///
+  /// Sin esto, elegir un handle publicaría un taller sin servicios cargados. Y
+  /// mientras está en `false` el endpoint público responde 404 **igual que si
+  /// el handle no existiera**: un taller sin publicar no tiene que ser
+  /// distinguible de uno inexistente, o cualquiera podría averiguar qué
+  /// handles están tomados.
+  publicPageEnabled Boolean @default(false)
+
+  /// Dirección pública, **aparte de `Contact.storeAddress`**.
+  ///
+  /// F0-24 fue exactamente una fuga de ubicación de talleres, así que el código
+  /// está escrito para no soltar la interna. Esta sale porque el instalador la
+  /// escribió acá a propósito, y puede ser distinta: el domicilio fiscal no
+  /// siempre es el local donde se atiende.
+  publicAddress String?
+  publicLat     Decimal? @db.Decimal(10, 7)
+  publicLng     Decimal? @db.Decimal(10, 7)
+  /// El teléfono que se muestra puede no ser el de la ficha del CRM.
+  publicPhone   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

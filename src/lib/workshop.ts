@@ -990,3 +990,119 @@ export async function getWorkshopSummary(contactId: string, desde: Date, hasta: 
     },
   };
 }
+
+// ─── Servicios y página pública ──────────────────────────────────────────────
+//
+// El catálogo de servicios y el handle son lo que hace posible la página del
+// taller en polariz.ar. Viven acá y no en un archivo aparte porque comparten el
+// filtro por `contactId` con todo lo demás de Mi Taller: el dueño del dato es
+// siempre el instalador logueado, nunca un id que venga del request.
+
+/** Los servicios del taller. Incluye los inactivos: el dueño los tiene que ver. */
+export async function getWorkshopServices(contactId: string) {
+  return prisma.workshopService.findMany({
+    where: { contactId },
+    orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      priceFrom: true,
+      currency: true,
+      durationMinutes: true,
+      active: true,
+      sortOrder: true,
+    },
+  });
+}
+
+/**
+ * Un servicio nuevo va al final de la lista.
+ *
+ * `sortOrder` se calcula acá y no se pide a la pantalla: si lo mandara el
+ * cliente, dos altas simultáneas se pisarían el mismo número.
+ */
+export async function createWorkshopService(
+  contactId: string,
+  datos: {
+    name: string;
+    description?: string | null;
+    priceFrom?: number | null;
+    currency?: "ARS" | "USD";
+    durationMinutes?: number;
+  }
+) {
+  const ultimo = await prisma.workshopService.findFirst({
+    where: { contactId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true },
+  });
+
+  return prisma.workshopService.create({
+    data: {
+      contactId,
+      name: datos.name,
+      description: datos.description ?? null,
+      priceFrom: datos.priceFrom ?? null,
+      currency: datos.currency ?? "ARS",
+      durationMinutes: datos.durationMinutes ?? 60,
+      sortOrder: (ultimo?.sortOrder ?? -1) + 1,
+    },
+    select: { id: true },
+  });
+}
+
+/**
+ * Editar y desactivar.
+ *
+ * El `updateMany` con el `contactId` en el where es la barrera de propiedad: un
+ * id de otro taller no da error, da 0 filas afectadas, y el endpoint lo traduce
+ * a 404. Nunca confirma que ese id exista.
+ */
+export async function updateWorkshopService(
+  contactId: string,
+  serviceId: string,
+  datos: Record<string, unknown>
+): Promise<boolean> {
+  const r = await prisma.workshopService.updateMany({
+    where: { id: serviceId, contactId },
+    data: datos,
+  });
+  return r.count > 0;
+}
+
+/**
+ * No borra: desactiva.
+ *
+ * Un servicio borrado se llevaría puesto el pedido de turno que lo originó, y
+ * el instalador perdería el registro de qué le pidieron.
+ */
+export async function deactivateWorkshopService(contactId: string, serviceId: string) {
+  return updateWorkshopService(contactId, serviceId, { active: false });
+}
+
+/**
+ * De una lista de candidatos, cuáles están libres.
+ *
+ * Una sola consulta para todos: preguntar de a uno sería una consulta por cada
+ * taller que ya tomó ese nombre, justo en la pantalla donde el instalador está
+ * esperando la sugerencia.
+ *
+ * `excluirContactId` es para que el handle propio no se le reporte como
+ * ocupado a su dueño cuando vuelve a entrar a la configuración.
+ */
+export async function handlesLibres(
+  candidatos: string[],
+  excluirContactId?: string
+): Promise<string[]> {
+  if (candidatos.length === 0) return [];
+  const tomados = await prisma.workshopSettings.findMany({
+    where: {
+      handle: { in: candidatos },
+      ...(excluirContactId ? { contactId: { not: excluirContactId } } : {}),
+    },
+    select: { handle: true },
+  });
+  const ocupados = new Set(tomados.map((t) => t.handle));
+  return candidatos.filter((c) => !ocupados.has(c));
+}
