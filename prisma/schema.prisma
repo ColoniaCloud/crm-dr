@@ -1204,6 +1204,24 @@ model WarrantyApiClient {
 
 // ─── Portal de clientes — API server-to-server para el sitio externo ────────
 
+/// Sitios públicos que consultan datos de talleres server-to-server.
+///
+/// Hoy es polariz.ar, que renderiza la página del taller y recibe los pedidos
+/// de turno. Es un tipo de cliente aparte y no una `PortalApiClient` a
+/// propósito: esta key puede leer talleres publicados y crear pedidos de turno,
+/// pero **no** entra al Panel de Clientes. Separarlas permite revocar polariz.ar
+/// sin dejar sin portal a kristallfilm.com.
+model PublicSiteApiClient {
+  id         String    @id @default(cuid())
+  name       String
+  apiKeyHash String    @unique
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@map("public_site_api_clients")
+}
+
 model PortalApiClient {
   id         String    @id @default(cuid())
   name       String

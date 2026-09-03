@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma, WorkOrderStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
+import { workshopLogoPath } from "@/lib/workshop-logo";
 import {
   generarGarantiasDeOrden,
   enviarMailDeGarantia,
@@ -1105,4 +1106,85 @@ export async function handlesLibres(
   });
   const ocupados = new Set(tomados.map((t) => t.handle));
   return candidatos.filter((c) => !ocupados.has(c));
+}
+
+/**
+ * La ficha pública de un taller, por handle.
+ *
+ * **Es lo único del taller que sale del CRM sin sesión**, así que la proyección
+ * es explícita y corta: nombre comercial, logo, cómo contactarlo, cuándo abre y
+ * qué ofrece. No sale el `contactId`, ni el email de la ficha, ni la cuenta
+ * corriente, ni el stock, ni los clientes del taller.
+ *
+ * **Devuelve `null` si no está publicada, igual que si el handle no existiera.**
+ * Es deliberado: si un taller sin publicar respondiera distinto de uno
+ * inexistente, cualquiera podría averiguar qué handles están tomados probando.
+ */
+export async function getPublicWorkshop(handle: string) {
+  const s = await prisma.workshopSettings.findUnique({
+    where: { handle },
+    select: {
+      workshopName: true,
+      logoSlug: true,
+      logo: true,
+      openingTime: true,
+      closingTime: true,
+      workingDays: true,
+      publicAddress: true,
+      publicLat: true,
+      publicLng: true,
+      publicPhone: true,
+      publicPageEnabled: true,
+      // Se necesita para traer los servicios, pero **no sale en la respuesta**.
+      contactId: true,
+      contact: { select: { company: true, firstName: true, lastName: true } },
+    },
+  });
+
+  if (!s || !s.publicPageEnabled) return null;
+
+  const servicios = await prisma.workshopService.findMany({
+    where: { contactId: s.contactId, active: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      priceFrom: true,
+      currency: true,
+      durationMinutes: true,
+    },
+  });
+
+  return {
+    // El nombre de fantasía manda sobre la razón social: es con el que el
+    // taller se presenta. Nunca queda vacío.
+    name:
+      s.workshopName?.trim() ||
+      s.contact.company?.trim() ||
+      `${s.contact.firstName} ${s.contact.lastName}`.trim(),
+    // Ruta relativa al CRM, igual que en las garantías: quien la muestre tiene
+    // que anteponerle la base del CRM, no la suya.
+    logoPath: s.logo && s.logoSlug ? workshopLogoPath(s.logoSlug) : null,
+    address: s.publicAddress,
+    // Las coordenadas van juntas o no van: una sola no ubica nada.
+    lat: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLat) : null,
+    lng: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLng) : null,
+    phone: s.publicPhone,
+    hours: {
+      opening: s.openingTime,
+      closing: s.closingTime,
+      // "1,2,3,4,5" — lunes a viernes. Se manda crudo y lo formatea quien lo
+      // muestra, que es el que sabe en qué idioma está escribiendo.
+      days: s.workingDays,
+    },
+    services: servicios.map((v) => ({
+      id: v.id,
+      name: v.name,
+      description: v.description,
+      priceFrom: v.priceFrom === null ? null : Number(v.priceFrom),
+      currency: v.currency,
+      durationMinutes: v.durationMinutes,
+    })),
+  };
 }

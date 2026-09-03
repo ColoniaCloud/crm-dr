@@ -1,0 +1,68 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { createLogger } from "@/lib/logger";
+import { logOperatorAction } from "@/lib/notifications";
+import { generatePublicSiteApiKey, hashPublicSiteApiKey } from "@/lib/public-site-auth";
+
+const log = createLogger("api/public-site-api-clients");
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (session.user.role !== "SUPERADMIN") {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  try {
+    const clients = await prisma.publicSiteApiClient.findMany({
+      select: { id: true, name: true, active: true, createdAt: true, lastUsedAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return NextResponse.json(clients);
+  } catch (error) {
+    log.error({ err: error }, "Error fetching portal api clients");
+    return NextResponse.json({ error: "Error al obtener los clientes de API" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  if (session.user.role !== "SUPERADMIN") {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  try {
+    const { name } = await request.json();
+    if (!name) {
+      return NextResponse.json({ error: "name es requerido" }, { status: 400 });
+    }
+
+    const apiKey = generatePublicSiteApiKey();
+    const apiKeyHash = await hashPublicSiteApiKey(apiKey);
+
+    const client = await prisma.publicSiteApiClient.create({
+      data: { name, apiKeyHash },
+      select: { id: true, name: true, active: true, createdAt: true },
+    });
+
+    await logOperatorAction({
+      userId: session.user.id,
+      action: "CREATE_PUBLIC_SITE_API_CLIENT",
+      entityType: "PUBLIC_SITE_API_CLIENT",
+      entityId: client.id,
+      description: `Creó una API key de sitio publico para "${name}"`,
+    });
+
+    // apiKey is only ever returned once, at creation time
+    return NextResponse.json({ ...client, apiKey }, { status: 201 });
+  } catch (error) {
+    log.error({ err: error }, "Error creating portal api client");
+    return NextResponse.json({ error: "Error al crear el cliente de API" }, { status: 500 });
+  }
+}
