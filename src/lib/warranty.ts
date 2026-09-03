@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { addMonths } from "date-fns";
 import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
+import { workshopLogoPath } from "@/lib/workshop-logo";
 
 type Tx = Prisma.TransactionClient;
 
@@ -613,11 +614,56 @@ export async function verifyWarranty(activationToken: string) {
         include: {
           lot: true,
           product: { select: { id: true, name: true, brand: true } },
+          // Quién vendió el rollo, o sea el taller que hizo el trabajo. Se usa
+          // para firmar la garantía con su nombre y su logo.
+          saleItem: {
+            select: {
+              sale: {
+                select: {
+                  contact: {
+                    select: {
+                      id: true,
+                      company: true,
+                      firstName: true,
+                      lastName: true,
+                      workshopSettings: {
+                        select: { workshopName: true, logo: true, logoSlug: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
   });
   if (!installation) return null;
+
+  // Nombre y logo del taller. **Es lo único del vendedor que sale del CRM**, y
+  // no es dato sensible: el nombre comercial y el logo están en la fachada del
+  // local. No sale el contactId —el logo va por un slug aleatorio justamente
+  // para eso—, ni el email, ni la ubicación; esto último fue el hallazgo F0-24.
+  //
+  // `installerName` de la instalación manda sobre la config actual: la garantía
+  // dice quién hizo ESE trabajo, no cómo se llama el taller hoy.
+  const vendedor = installation.roll.saleItem?.sale.contact ?? null;
+  const installer = vendedor
+    ? {
+        name:
+          installation.installerName?.trim() ||
+          vendedor.workshopSettings?.workshopName?.trim() ||
+          vendedor.company?.trim() ||
+          `${vendedor.firstName} ${vendedor.lastName}`.trim(),
+        logoPath:
+          vendedor.workshopSettings?.logo && vendedor.workshopSettings.logoSlug
+            ? workshopLogoPath(vendedor.workshopSettings.logoSlug)
+            : null,
+      }
+    : installation.installerName?.trim()
+      ? { name: installation.installerName.trim(), logoPath: null }
+      : null;
 
   const now = new Date();
   const isExpired = isWarrantyExpired(installation, now);
@@ -625,6 +671,7 @@ export async function verifyWarranty(activationToken: string) {
   return {
     installationCode: installation.installationCode,
     activationToken: installation.activationToken,
+    installer,
     status: isExpired ? ("EXPIRED" as const) : installation.status,
     product: installation.roll.product,
     lotNumber: installation.roll.lot.lotNumber,
@@ -670,6 +717,10 @@ export function pickPublicStatus(warranty: WarrantyStatus) {
     daysRemaining: warranty.daysRemaining,
     expiresAt: warranty.expiresAt,
     assetType: warranty.assetType,
+    // Nombre y logo del taller que hizo el trabajo. Es marca comercial, no dato
+    // personal — ver la nota en verifyWarranty. `logoPath` es relativo al CRM;
+    // quien lo muestre tiene que anteponerle la base del CRM, no la suya.
+    installer: warranty.installer,
   };
 }
 

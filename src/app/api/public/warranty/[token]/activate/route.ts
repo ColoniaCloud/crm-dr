@@ -4,6 +4,7 @@ import { createLogger } from "@/lib/logger";
 import { activateInstallationWarranty } from "@/lib/warranty";
 import { verifyWarrantyApiKey } from "@/lib/warranty-api-auth";
 import { notifyWarrantyActivated } from "@/lib/client-portal";
+import { enviarMailDeActivacion } from "@/lib/warranty-activation-email";
 
 const log = createLogger("api/public/warranty/[token]/activate");
 
@@ -50,6 +51,11 @@ export async function POST(
       notes,
     });
     await notifyWarrantyActivated(installation.id);
+
+    // El comprobante para el usuario final, con el link de reclamos. Va después
+    // de activar y no tira nunca: la garantía ya quedó activada, un mail que no
+    // sale no puede deshacerla.
+    await enviarMailDeActivacion(installation.id);
 
     return NextResponse.json({ activated: true, expiresAt });
   } catch (error) {

@@ -1660,6 +1660,27 @@ model WorkshopSettings {
 
   defaultCurrency Currency @default(ARS)
 
+  /// Logo del taller, en base64 (`iVBORw0…`, sin el prefijo `data:`).
+  ///
+  /// Se guarda en la base como ya se guardan las imágenes de producto, pero
+  /// **no se sirve como data URI**: los clientes de correo bloquean las
+  /// imágenes embebidas así, y este logo tiene que verse en el mail de garantía
+  /// que recibe el usuario final. Por eso sale por
+  /// `GET /api/public/workshop/[contactId]/logo`, que devuelve los bytes con su
+  /// tipo, y en el HTML entra como una URL normal.
+  logo         String? @db.LongText
+  /// `image/png`, `image/jpeg`, `image/webp`. Hace falta para servirlo bien.
+  logoMimeType String?
+  /// Clave opaca con la que se sirve el logo públicamente.
+  ///
+  /// Existe para que la URL del logo **no lleve el `contactId`**. No es que ese
+  /// id sea explotable —la API del portal exige la api key y nunca acepta un
+  /// contactId que venga del request—, pero un id interno en una URL que va en
+  /// un mail a cualquier usuario final es una filtración gratis. Mismo criterio
+  /// que se tomó con `activationToken` en F0-23: si va a estar a la vista, que
+  /// sea un valor aleatorio y no un identificador del sistema.
+  logoSlug     String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
