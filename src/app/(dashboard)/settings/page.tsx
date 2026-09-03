@@ -484,6 +484,14 @@ export default function SettingsPage() {
             createUrl="/api/portal-api-clients"
             toggleUrl={(id) => `/api/portal-api-clients/${id}`}
           />
+          <ApiKeyManager
+            title="API Keys de Sitios Públicos"
+            description="Claves para los sitios que muestran la página pública de un taller (polariz.ar). Solo leen talleres publicados y reciben pedidos de turno: no entran al Panel de Clientes, así que se pueden revocar sin dejar sin panel a nadie"
+            namePlaceholder="Nombre del sitio (ej. polariz.ar)"
+            listUrl="/api/public-site-api-clients"
+            createUrl="/api/public-site-api-clients"
+            toggleUrl={(id) => `/api/public-site-api-clients/${id}`}
+          />
         </>
       )}
 
