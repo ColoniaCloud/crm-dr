@@ -34,6 +34,17 @@ const schema = z.object({
   vehicleType: z.enum(VEHICLE_TYPES).nullish(),
   plate: z.string().trim().max(20).nullish(),
   notes: z.string().trim().max(1000).nullish(),
+  alreadyTinted: z.boolean().nullish(),
+  /**
+   * Foto del vehiculo en base64, sin el prefijo `data:`.
+   *
+   * 900 KB de base64 son unos 670 KB de imagen. El navegador la achica antes de
+   * mandarla, asi que llegar a este tope significa que algo no la achico — y en
+   * ese caso es mejor rechazarla que guardar megabytes por pedido en una tabla
+   * que crece con cada visitante.
+   */
+  photo: z.string().max(900 * 1024, "La foto es muy pesada").nullish(),
+  photoMimeType: z.enum(["image/png", "image/jpeg", "image/webp"]).nullish(),
   preferredAt: z.string().datetime({ offset: true }),
 });
 

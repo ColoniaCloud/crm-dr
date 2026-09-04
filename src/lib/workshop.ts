@@ -1135,6 +1135,7 @@ export async function getPublicWorkshop(handle: string) {
       publicLat: true,
       publicLng: true,
       publicPhone: true,
+      publicEmail: true,
       publicPageEnabled: true,
       // Se necesita para traer los servicios, pero **no sale en la respuesta**.
       contactId: true,
@@ -1172,6 +1173,7 @@ export async function getPublicWorkshop(handle: string) {
     lat: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLat) : null,
     lng: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLng) : null,
     phone: s.publicPhone,
+    email: s.publicEmail,
     hours: {
       opening: s.openingTime,
       closing: s.closingTime,
@@ -1228,6 +1230,10 @@ export async function createBooking(
     vehicleType?: string | null;
     plate?: string | null;
     notes?: string | null;
+    alreadyTinted?: boolean | null;
+    /** Base64 **sin** el prefijo `data:`. */
+    photo?: string | null;
+    photoMimeType?: string | null;
     preferredAt: Date;
   }
 ) {
@@ -1260,6 +1266,11 @@ export async function createBooking(
       vehicleType: datos.vehicleType || null,
       plate: datos.plate?.trim().toUpperCase() || null,
       notes: datos.notes?.trim() || null,
+      alreadyTinted: datos.alreadyTinted ?? null,
+      // La foto y su tipo van juntas: guardar los bytes sin saber que son deja
+      // una imagen que despues no se puede servir con el Content-Type correcto.
+      photo: datos.photo && datos.photoMimeType ? datos.photo : null,
+      photoMimeType: datos.photo && datos.photoMimeType ? datos.photoMimeType : null,
       preferredAt: datos.preferredAt,
       cancelToken: newCancelToken(),
     },
@@ -1283,6 +1294,10 @@ export async function listBookings(contactId: string, soloPendientes = false) {
       vehicleType: true,
       plate: true,
       notes: true,
+      alreadyTinted: true,
+      // La foto NO viaja en el listado: son cientos de KB por pedido. Solo si
+      // hay, y el que quiera verla la pide por su endpoint.
+      photoMimeType: true,
       preferredAt: true,
       status: true,
       workOrderId: true,

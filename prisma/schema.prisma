@@ -1732,6 +1732,27 @@ model WorkshopBooking {
   plate       String?
   notes       String? @db.Text
 
+  /// Si el vehiculo ya tiene lamina puesta.
+  ///
+  /// Cambia el trabajo y el precio: sacar lamina vieja lleva tiempo y a veces
+  /// deja el vidrio con pegamento. Que el taller lo sepa ANTES de confirmar es
+  /// la diferencia entre un turno de dos horas y uno de cuatro.
+  ///
+  /// `null` = no contesto (los pedidos anteriores a este campo).
+  alreadyTinted Boolean?
+
+  /// Foto del vehiculo, en base64 sin el prefijo `data:`.
+  ///
+  /// Se guarda en la base como el logo del taller. Es opcional y la manda el
+  /// cliente desde el telefono, ya achicada del lado del navegador: subir la
+  /// foto original de una camara moderna serian varios MB por pedido.
+  ///
+  /// **No se sirve publicamente.** A diferencia del logo, esto es el auto de una
+  /// persona con su patente a la vista: solo lo ve el taller dueño del pedido,
+  /// autenticado.
+  photo         String? @db.LongText
+  photoMimeType String?
+
   /// Lo que PIDIO el cliente. La fecha real se decide al confirmar: el taller
   /// puede correrlo media hora y sigue siendo el mismo turno.
   preferredAt DateTime
@@ -1840,6 +1861,13 @@ model WorkshopSettings {
   publicLng     Decimal? @db.Decimal(10, 7)
   /// El teléfono que se muestra puede no ser el de la ficha del CRM.
   publicPhone   String?
+
+  /// El mail de contacto que se publica.
+  ///
+  /// Aparte del `Contact.email`, que es con el que el instalador entra al panel
+  /// y por donde le mandamos avisos internos: publicar ese seria exponer su
+  /// usuario. Este lo elige el, y suele ser el de atencion al publico.
+  publicEmail String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

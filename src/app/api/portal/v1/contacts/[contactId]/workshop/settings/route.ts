@@ -55,6 +55,7 @@ export async function GET(request: Request, { params }: Params) {
         publicLat: true,
         publicLng: true,
         publicPhone: true,
+        publicEmail: true,
       },
     });
 
@@ -78,6 +79,7 @@ export async function GET(request: Request, { params }: Params) {
         publicLat: null,
         publicLng: null,
         publicPhone: null,
+        publicEmail: null,
       });
     }
 
@@ -116,6 +118,7 @@ const schema = z
     publicLat: z.number().min(-90).max(90).nullable(),
     publicLng: z.number().min(-180).max(180).nullable(),
     publicPhone: z.string().trim().max(50).nullable(),
+    publicEmail: z.string().trim().email("Revisá el email").max(191).nullable(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "No hay nada que actualizar" });
