@@ -57,6 +57,9 @@ export async function GET(request: Request, { params }: Params) {
         publicLng: true,
         publicPhone: true,
         publicEmail: true,
+        worksAtShop: true,
+        worksOnSite: true,
+        worksForDealers: true,
       },
     });
 
@@ -82,6 +85,9 @@ export async function GET(request: Request, { params }: Params) {
         publicLng: null,
         publicPhone: null,
         publicEmail: null,
+        worksAtShop: true,
+        worksOnSite: false,
+        worksForDealers: false,
       });
     }
 
@@ -123,6 +129,9 @@ const schema = z
     publicLng: z.number().min(-180).max(180).nullable(),
     publicPhone: z.string().trim().max(50).nullable(),
     publicEmail: z.string().trim().email("Revisá el email").max(191).nullable(),
+    worksAtShop: z.boolean(),
+    worksOnSite: z.boolean(),
+    worksForDealers: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "No hay nada que actualizar" });

@@ -1137,6 +1137,9 @@ export async function getPublicWorkshop(handle: string) {
       publicLng: true,
       publicPhone: true,
       publicEmail: true,
+      worksAtShop: true,
+      worksOnSite: true,
+      worksForDealers: true,
       publicPageEnabled: true,
       // Se necesita para traer los servicios, pero **no sale en la respuesta**.
       contactId: true,
@@ -1177,6 +1180,12 @@ export async function getPublicWorkshop(handle: string) {
     lng: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLng) : null,
     phone: s.publicPhone,
     email: s.publicEmail,
+    /// Que tarjetas de modalidad van activas en la pagina.
+    modalidades: {
+      taller: s.worksAtShop,
+      domicilio: s.worksOnSite,
+      concesionarias: s.worksForDealers,
+    },
     hours: {
       opening: s.openingTime,
       closing: s.closingTime,

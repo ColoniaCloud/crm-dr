@@ -1880,6 +1880,20 @@ model WorkshopSettings {
   /// El teléfono que se muestra puede no ser el de la ficha del CRM.
   publicPhone   String?
 
+  /// Como trabaja el taller. Se puede marcar mas de una.
+  ///
+  /// Tres booleanos y no una lista: son tres opciones fijas que no van a
+  /// crecer, y en booleanos cada una se consulta y se filtra sin parsear nada.
+  /// Definen que tarjetas aparecen activas en la pagina publica; las que no,
+  /// se muestran igual pero apagadas — decir "esto no lo hago" tambien informa,
+  /// y ademas evita que la pagina se vea distinta segun el taller.
+  ///
+  /// `worksAtShop` arranca en true porque es lo que hace todo el mundo: un
+  /// taller que no atiende en su local es la excepcion.
+  worksAtShop     Boolean @default(true)
+  worksOnSite     Boolean @default(false)
+  worksForDealers Boolean @default(false)
+
   /// El mail de contacto que se publica.
   ///
   /// Aparte del `Contact.email`, que es con el que el instalador entra al panel
