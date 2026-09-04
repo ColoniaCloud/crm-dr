@@ -1775,6 +1775,12 @@ model WorkshopBooking {
   @@map("workshop_bookings")
 }
 
+/// Sobre que fondo se ve bien un logo. Ver `WorkshopSettings.logoBackground`.
+enum LogoBackground {
+  CLARO
+  OSCURO
+}
+
 enum WorkshopBookingStatus {
   PENDIENTE
   CONFIRMADA
@@ -1822,6 +1828,18 @@ model WorkshopSettings {
   logo         String? @db.LongText
   /// `image/png`, `image/jpeg`, `image/webp`. Hace falta para servirlo bien.
   logoMimeType String?
+
+  /// Sobre que fondo se ve bien el logo del taller.
+  ///
+  /// Existe porque un logo no es una imagen cualquiera: muchos son de trazo
+  /// oscuro sobre transparente, y puestos sobre fondo claro se ven, pero sobre
+  /// oscuro desaparecen. Y al reves con los de trazo blanco. No hay forma
+  /// confiable de deducirlo mirando los pixeles —un PNG con transparencia puede
+  /// tener de todo—, asi que se pregunta.
+  ///
+  /// Define el color de la cabecera de la pagina publica, no el de la pagina
+  /// entera: el resto es claro siempre.
+  logoBackground LogoBackground @default(CLARO)
   /// Clave opaca con la que se sirve el logo públicamente.
   ///
   /// Existe para que la URL del logo **no lleve el `contactId`**. No es que ese
@@ -1830,7 +1848,7 @@ model WorkshopSettings {
   /// un mail a cualquier usuario final es una filtración gratis. Mismo criterio
   /// que se tomó con `activationToken` en F0-23: si va a estar a la vista, que
   /// sea un valor aleatorio y no un identificador del sistema.
-  logoSlug     String? @unique
+  logoSlug       String?        @unique
 
   /// El nombre de usuario público: polariz.ar/<handle>. Único global.
   ///

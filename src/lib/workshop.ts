@@ -1128,6 +1128,7 @@ export async function getPublicWorkshop(handle: string) {
       workshopName: true,
       logoSlug: true,
       logo: true,
+      logoBackground: true,
       openingTime: true,
       closingTime: true,
       workingDays: true,
@@ -1168,6 +1169,8 @@ export async function getPublicWorkshop(handle: string) {
     // Ruta relativa al CRM, igual que en las garantías: quien la muestre tiene
     // que anteponerle la base del CRM, no la suya.
     logoPath: s.logo && s.logoSlug ? workshopLogoPath(s.logoSlug) : null,
+    /// Sobre que fondo dibujar la cabecera para que el logo se vea.
+    logoBackground: s.logoBackground,
     address: s.publicAddress,
     // Las coordenadas van juntas o no van: una sola no ubica nada.
     lat: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLat) : null,

@@ -48,6 +48,7 @@ export async function GET(request: Request, { params }: Params) {
         nextOrderNumber: true,
         logoMimeType: true,
         logo: true,
+        logoBackground: true,
         logoSlug: true,
         handle: true,
         publicPageEnabled: true,
@@ -73,6 +74,7 @@ export async function GET(request: Request, { params }: Params) {
         nextOrderNumber: 1,
         tieneLogo: false,
         logoUrl: null,
+        logoBackground: "CLARO" as const,
         handle: null,
         publicPageEnabled: false,
         publicAddress: null,
@@ -105,6 +107,8 @@ const schema = z
     /** Base64 sin el prefijo `data:`. `null` borra el logo. */
     logo: z.string().max(MAX_BASE64, "La imagen es muy pesada, máximo 220 KB").nullable(),
     logoMimeType: z.enum(MIMES).nullable(),
+    /** Sobre que fondo se ve bien el logo. Define la cabecera de la pagina. */
+    logoBackground: z.enum(["CLARO", "OSCURO"]),
 
     /** El nombre de usuario publico. La forma la valida `workshop-handle.ts`. */
     handle: z.string().trim().toLowerCase().nullable(),
