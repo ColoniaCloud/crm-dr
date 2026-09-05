@@ -1676,6 +1676,18 @@ model WorkshopService {
   name        String
   description String? @db.Text
 
+  /// Sobre que se aplica este servicio.
+  ///
+  /// Es lo que reconfigura el formulario de la pagina publica: elegir
+  /// "Polarizado completo" pide vehiculo y patente, elegir "Control solar en
+  /// vidrios" pide tipo de inmueble y direccion. Va en el servicio y no solo en
+  /// el taller porque un taller que hace las dos cosas necesita las dos formas
+  /// en la misma pagina.
+  ///
+  /// El default deja a los servicios que ya existen como lo que efectivamente
+  /// son: polarizado de autos.
+  category ServiceCategory @default(AUTOMOTIVE)
+
   /// Opcional: el instalador decide si muestra precio.
   ///
   /// `priceFrom` y no `price` porque en polarizado el precio depende del
@@ -1728,8 +1740,37 @@ model WorkshopBooking {
   clientName  String
   clientEmail String?
   clientPhone String
+
+  /// El rubro del pedido, **copiado** del servicio como `serviceName`.
+  ///
+  /// No se deriva del servicio al leer: el instalador puede cambiarle el rubro a
+  /// un servicio despues, y el pedido tiene que seguir diciendo que se pidio ese
+  /// dia. Es lo que decide que campos de abajo estan llenos.
+  category ServiceCategory @default(AUTOMOTIVE)
+
+  // ── Automotriz ──
   vehicleType String?
   plate       String?
+
+  // ── Arquitectura ──
+  /// `CASA | OFICINA | LOCAL | EDIFICIO | OTRO`. String y no enum por lo mismo
+  /// que `vehicleType`: la lista la define el frontend y agregar una opcion no
+  /// deberia costar una migracion. La validacion vive en el endpoint.
+  propertyType String?
+  /// Cuantos vidrios, aproximado. Es lo que el cliente sabe contar; los metros
+  /// cuadrados casi nunca los tiene a mano.
+  glassCount   Int?
+  approxM2     Decimal? @db.Decimal(8, 2)
+  /// `CONTROL_SOLAR | PRIVACIDAD | SEGURIDAD | DECORATIVO`. Cambia que lamina se
+  /// presupuesta, asi que saberlo antes de la visita ahorra un viaje.
+  goal         String?
+  /// Donde queda el inmueble.
+  ///
+  /// **Sin esto una visita no se puede hacer**, y por eso el endpoint lo exige
+  /// en los pedidos de arquitectura. En automotriz no hace falta: el auto va al
+  /// taller, no al reves.
+  siteAddress  String?  @db.Text
+
   notes       String? @db.Text
 
   /// Si el vehiculo ya tiene lamina puesta.
@@ -1756,6 +1797,15 @@ model WorkshopBooking {
   /// Lo que PIDIO el cliente. La fecha real se decide al confirmar: el taller
   /// puede correrlo media hora y sigue siendo el mismo turno.
   preferredAt DateTime
+
+  /// Franja del dia, solo para las visitas de arquitectura: `MANANA` o `TARDE`.
+  ///
+  /// En automotriz queda null y manda la hora exacta de `preferredAt`. En
+  /// arquitectura no se agenda un hueco sino una visita para medir, y prometer
+  /// "10:30" cuando lo que se acordo es "el jueves a la mañana" es una precision
+  /// que no existe. Guardar la franja aparte deja que la bandeja lo muestre como
+  /// se pidio, en vez de inventar una hora a partir de `preferredAt`.
+  timeWindow String?
 
   status WorkshopBookingStatus @default(PENDIENTE)
 
@@ -1787,6 +1837,20 @@ enum WorkshopBookingStatus {
   RECHAZADA
   /// La cancela el cliente antes de que el taller responda.
   CANCELADA
+}
+
+/// Sobre que trabaja un servicio del taller: autos o vidrios de edificio.
+///
+/// **No reusa `ProductCategory`** aunque se parezca. Aquel tiene `PPF`, que es
+/// un producto distinto pero se aplica sobre autos: ofrecerlo como tercera
+/// opcion en el selector del taller invitaria a clasificar mal un servicio que
+/// para todo lo que importa aca —patente, bahia, turno con hora— es automotriz.
+///
+/// Lo que decide esta categoria es **que se le pregunta al cliente**: un auto
+/// tiene tipo y patente, un inmueble tiene metros y direccion.
+enum ServiceCategory {
+  AUTOMOTIVE
+  ARCHITECTURAL
 }
 
 model WorkshopSettings {
@@ -1893,6 +1957,23 @@ model WorkshopSettings {
   worksAtShop     Boolean @default(true)
   worksOnSite     Boolean @default(false)
   worksForDealers Boolean @default(false)
+
+  /// Sobre que trabaja el taller: autos, vidrios de edificio, o las dos cosas.
+  ///
+  /// **Dos booleanos y no un enum con AMBOS.** Un enum de tres valores para dos
+  /// hechos independientes obliga a que cada consumidor escriba
+  /// `r === AMBOS || r === AUTOMOTRIZ`, que es la forma larga de un booleano; y
+  /// con un tercer rubro haria falta un enum de siete. Mismo criterio que los
+  /// tres de arriba.
+  ///
+  /// `doesAutomotive` arranca en true: todos los instaladores que existen hoy
+  /// polarizan autos, y el default tiene que dejarlos como estaban.
+  ///
+  /// Define la **forma de la pagina publica** (que bloques y que tarjetas
+  /// existen). Que se le pregunta al cliente en el formulario lo decide el
+  /// servicio que eligio, no esto — ver `WorkshopService.category`.
+  doesAutomotive    Boolean @default(true)
+  doesArchitectural Boolean @default(false)
 
   /// El mail de contacto que se publica.
   ///

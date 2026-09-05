@@ -60,6 +60,8 @@ export async function GET(request: Request, { params }: Params) {
         worksAtShop: true,
         worksOnSite: true,
         worksForDealers: true,
+        doesAutomotive: true,
+        doesArchitectural: true,
       },
     });
 
@@ -88,6 +90,8 @@ export async function GET(request: Request, { params }: Params) {
         worksAtShop: true,
         worksOnSite: false,
         worksForDealers: false,
+        doesAutomotive: true,
+        doesArchitectural: false,
       });
     }
 
@@ -132,6 +136,13 @@ const schema = z
     worksAtShop: z.boolean(),
     worksOnSite: z.boolean(),
     worksForDealers: z.boolean(),
+    /**
+     * Sobre qué trabaja el taller. Define la forma de su página pública: con
+     * los dos, los servicios se agrupan en dos bloques y el formulario cambia
+     * según cuál eligió el visitante.
+     */
+    doesAutomotive: z.boolean(),
+    doesArchitectural: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "No hay nada que actualizar" });
@@ -179,6 +190,26 @@ export async function PATCH(request: Request, { params }: Params) {
       if (!handleFinal) {
         return NextResponse.json(
           { error: "Elegi un nombre de usuario antes de publicar tu pagina." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Un taller sin ningún rubro no tiene página posible: no hay servicios que
+    // agrupar ni formulario que dibujar. Se mira lo que va a QUEDAR guardado y
+    // no solo lo que vino, porque la pantalla manda un campo por vez —
+    // desmarcar el último llega como `{ doesAutomotive: false }` a secas, sin
+    // el otro, y validar solo el body dejaría pasar los dos en false.
+    if (data.doesAutomotive === false || data.doesArchitectural === false) {
+      const actual = await prisma.workshopSettings.findUnique({
+        where: { contactId: gate.contactId },
+        select: { doesAutomotive: true, doesArchitectural: true },
+      });
+      const auto = data.doesAutomotive ?? actual?.doesAutomotive ?? true;
+      const arq = data.doesArchitectural ?? actual?.doesArchitectural ?? false;
+      if (!auto && !arq) {
+        return NextResponse.json(
+          { error: "Elegí al menos un rubro: autos, arquitectura o los dos." },
           { status: 400 }
         );
       }

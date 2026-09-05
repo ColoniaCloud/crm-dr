@@ -13,6 +13,7 @@ const schema = z
   .object({
     name: z.string().trim().min(2).max(120),
     description: z.string().trim().max(2000).nullable(),
+    category: z.enum(["AUTOMOTIVE", "ARCHITECTURAL"]),
     priceFrom: z.number().positive().nullable(),
     currency: z.enum(["ARS", "USD"]),
     durationMinutes: z.number().int().min(15).max(480),

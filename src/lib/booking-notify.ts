@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import {
+  propertyTypeLabel,
+  propertyGoalLabel,
+  timeWindowLabel,
+} from "@/lib/property-types";
 import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { sendWhatsapp, isWhatsappConfigured } from "@/lib/whatsapp";
@@ -29,6 +34,11 @@ function sitioPublicoBase(): string {
   return (process.env.PUBLIC_SITE_URL || "https://polariz.ar").replace(/\/$/, "");
 }
 
+/** Sin hora: para las visitas de arquitectura, donde la hora no se pidio. */
+function fechaCorta(d: Date): string {
+  return d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+}
+
 function fechaLarga(d: Date): string {
   return d.toLocaleString("es-AR", {
     weekday: "long",
@@ -55,8 +65,15 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
         clientName: true,
         clientPhone: true,
         clientEmail: true,
+        category: true,
         vehicleType: true,
         plate: true,
+        propertyType: true,
+        glassCount: true,
+        approxM2: true,
+        goal: true,
+        siteAddress: true,
+        timeWindow: true,
         notes: true,
         preferredAt: true,
         contactId: true,
@@ -65,7 +82,13 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
     });
     if (!b) return;
 
-    const cuando = fechaLarga(b.preferredAt);
+    // En arquitectura la hora exacta no se pidio: se pidio una franja. Decirle
+    // al taller "10:30" cuando el cliente marco "el jueves a la manana" seria
+    // inventarle un compromiso que nadie asumio.
+    const cuando =
+      b.category === "ARCHITECTURAL" && b.timeWindow
+        ? `${fechaCorta(b.preferredAt)}, ${timeWindowLabel(b.timeWindow)}`
+        : fechaLarga(b.preferredAt);
     const linkBandeja = `${portalBaseUrl()}/cliente/taller/turnos`;
 
     const filas: [string, string][] = [
@@ -75,7 +98,21 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
       ["Teléfono", b.clientPhone],
     ];
     if (b.clientEmail) filas.push(["Email", b.clientEmail]);
-    if (b.plate) filas.push(["Patente", b.plate]);
+
+    // Cada rubro muestra lo suyo. Un pedido de arquitectura con una fila
+    // "Patente: —" es peor que no tener la fila.
+    if (b.category === "ARCHITECTURAL") {
+      // La direccion va primero: sin ella el taller no puede decidir si va.
+      if (b.siteAddress) filas.push(["Dirección", b.siteAddress]);
+      const inmueble = propertyTypeLabel(b.propertyType);
+      if (inmueble) filas.push(["Inmueble", inmueble]);
+      if (b.glassCount !== null) filas.push(["Vidrios", String(b.glassCount)]);
+      if (b.approxM2 !== null) filas.push(["Superficie", `${Number(b.approxM2)} m²`]);
+      const objetivo = propertyGoalLabel(b.goal);
+      if (objetivo) filas.push(["Busca", objetivo]);
+    } else if (b.plate) {
+      filas.push(["Patente", b.plate]);
+    }
     if (b.notes) filas.push(["Comentario", b.notes]);
 
     await Promise.allSettled([
@@ -128,7 +165,15 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
             `${b.serviceName}\n` +
             `${cuando}\n\n` +
             `${b.clientName} — ${b.clientPhone}\n` +
-            (b.plate ? `Patente: ${b.plate}\n` : "") +
+            // La direccion es lo unico imprescindible de una visita, asi que va
+            // tambien en el WhatsApp, que es lo que el taller mira de verdad.
+            (b.category === "ARCHITECTURAL"
+              ? b.siteAddress
+                ? `Direccion: ${b.siteAddress}\n`
+                : ""
+              : b.plate
+                ? `Patente: ${b.plate}\n`
+                : "") +
             `\nConfirmalo desde tu panel:\n${linkBandeja}`,
         });
       })(),

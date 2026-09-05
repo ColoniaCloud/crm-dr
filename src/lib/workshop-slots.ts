@@ -133,9 +133,16 @@ export async function getAvailableSlots(
   const servicio = opciones.serviceId
     ? await prisma.workshopService.findFirst({
         where: { id: opciones.serviceId, contactId: s.contactId, active: true },
-        select: { durationMinutes: true },
+        select: { durationMinutes: true, category: true },
       })
     : null;
+
+  // Arquitectura no tiene huecos, y devolver lista vacía es la respuesta
+  // correcta, no una degradación: lo que se pide ahí es una visita para medir,
+  // que no ocupa una bahía ni dura lo que dice el servicio. Calcularlos igual
+  // sería ofrecer un "jueves 10:30" que nadie se comprometió a cumplir.
+  if (servicio?.category === "ARCHITECTURAL") return [];
+
   const duracion = servicio?.durationMinutes ?? DURACION_ASUMIDA_MIN;
 
   // No se ofrece nada para hoy más temprano que dentro de dos horas: un turno

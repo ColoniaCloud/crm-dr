@@ -22,6 +22,13 @@ const schema = z
     clientPhone: z.string().trim().max(50).nullish(),
     vehicleType: z.enum(VEHICLE_TYPES).nullish(),
     plate: z.string().trim().max(20).nullish(),
+    /**
+     * Para los rollos de arquitectura, donde no hay patente ni tipo de
+     * vehiculo. Cual de los dos juegos de campos se usa **no lo decide el
+     * body**: lo decide la categoria del producto del rollo, que ya esta en la
+     * base. Ver `createAdditionalInstallation`.
+     */
+    assetDescription: z.string().trim().max(2000).nullish(),
   })
   .partial();
 

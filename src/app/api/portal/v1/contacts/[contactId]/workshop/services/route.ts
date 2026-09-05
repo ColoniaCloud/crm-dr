@@ -31,6 +31,13 @@ const schema = z.object({
   name: z.string().trim().min(2, "Poné un nombre").max(120),
   description: z.string().trim().max(2000).nullish(),
   /**
+   * Sobre qué se aplica. Es lo que reconfigura el formulario de la página
+   * pública: un servicio de auto pide patente, uno de arquitectura pide
+   * dirección del inmueble. Opcional, y sin él queda automotriz — al taller
+   * que solo hace autos nunca se le pregunta.
+   */
+  category: z.enum(["AUTOMOTIVE", "ARCHITECTURAL"]).optional(),
+  /**
    * El precio es opcional: en polarizado depende del vehículo, y el instalador
    * decide si lo publica. `positive` y no `nonnegative` — un servicio a $0 es
    * casi siempre un error de tipeo, y si de verdad es gratis se dice en la

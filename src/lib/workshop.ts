@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import type { Prisma, WorkOrderStatus } from "@prisma/client";
+import type { Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import {
@@ -1009,6 +1009,7 @@ export async function getWorkshopServices(contactId: string) {
       id: true,
       name: true,
       description: true,
+      category: true,
       priceFrom: true,
       currency: true,
       durationMinutes: true,
@@ -1029,6 +1030,7 @@ export async function createWorkshopService(
   datos: {
     name: string;
     description?: string | null;
+    category?: ServiceCategory;
     priceFrom?: number | null;
     currency?: "ARS" | "USD";
     durationMinutes?: number;
@@ -1045,6 +1047,9 @@ export async function createWorkshopService(
       contactId,
       name: datos.name,
       description: datos.description ?? null,
+      // Sin categoria es automotriz: es lo que hace la enorme mayoria, y el
+      // taller que solo hace autos nunca ve la pregunta.
+      category: datos.category ?? "AUTOMOTIVE",
       priceFrom: datos.priceFrom ?? null,
       currency: datos.currency ?? "ARS",
       durationMinutes: datos.durationMinutes ?? 60,
@@ -1140,6 +1145,8 @@ export async function getPublicWorkshop(handle: string) {
       worksAtShop: true,
       worksOnSite: true,
       worksForDealers: true,
+      doesAutomotive: true,
+      doesArchitectural: true,
       publicPageEnabled: true,
       // Se necesita para traer los servicios, pero **no sale en la respuesta**.
       contactId: true,
@@ -1156,6 +1163,7 @@ export async function getPublicWorkshop(handle: string) {
       id: true,
       name: true,
       description: true,
+      category: true,
       priceFrom: true,
       currency: true,
       durationMinutes: true,
@@ -1186,6 +1194,13 @@ export async function getPublicWorkshop(handle: string) {
       domicilio: s.worksOnSite,
       concesionarias: s.worksForDealers,
     },
+    /// Sobre que trabaja el taller. Define la FORMA de la pagina: si hay uno
+    /// solo, los servicios van en una lista sin titulos de bloque; si hay dos,
+    /// van agrupados y el formulario cambia segun cual eligio el visitante.
+    rubros: {
+      automotriz: s.doesAutomotive,
+      arquitectura: s.doesArchitectural,
+    },
     hours: {
       opening: s.openingTime,
       closing: s.closingTime,
@@ -1197,6 +1212,10 @@ export async function getPublicWorkshop(handle: string) {
       id: v.id,
       name: v.name,
       description: v.description,
+      // Lo que decide que campos muestra el formulario cuando el visitante
+      // elige ESTE servicio. Va por servicio y no por taller para que uno que
+      // hace las dos cosas tenga las dos formas en la misma pagina.
+      category: v.category,
       priceFrom: v.priceFrom === null ? null : Number(v.priceFrom),
       currency: v.currency,
       durationMinutes: v.durationMinutes,
@@ -1229,8 +1248,12 @@ function newCancelToken(): string {
  * referenciarse: el taller puede renombrarlo o darlo de baja después, y el
  * pedido tiene que seguir diciendo qué se pidió ese día.
  *
- * Devuelve `null` si el taller no existe o no publicó su página — el que llama
- * lo traduce a 404, igual que la consulta pública.
+ * **Lo que se valida acá y no en el endpoint.** La forma del body la valida el
+ * endpoint con zod, pero *qué campos son obligatorios* depende del rubro del
+ * servicio elegido, y el rubro solo lo sabe la base. Un pedido de arquitectura
+ * sin dirección no es una visita: es un pedido que el taller no puede cumplir.
+ * Por eso devuelve un resultado discriminado, igual que `confirmBooking`, en
+ * vez de un `null` que confunde "no existe" con "faltan datos".
  */
 export async function createBooking(
   handle: string,
@@ -1239,8 +1262,17 @@ export async function createBooking(
     clientName: string;
     clientEmail?: string | null;
     clientPhone: string;
+    /** Automotriz. */
     vehicleType?: string | null;
     plate?: string | null;
+    /** Arquitectura. */
+    propertyType?: string | null;
+    glassCount?: number | null;
+    approxM2?: number | null;
+    goal?: string | null;
+    siteAddress?: string | null;
+    /** `MANANA` o `TARDE`, solo en las visitas de arquitectura. */
+    timeWindow?: string | null;
     notes?: string | null;
     alreadyTinted?: boolean | null;
     /** Base64 **sin** el prefijo `data:`. */
@@ -1248,23 +1280,55 @@ export async function createBooking(
     photoMimeType?: string | null;
     preferredAt: Date;
   }
-) {
+): Promise<
+  | { ok: true; booking: { id: string; cancelToken: string } }
+  | { ok: false; error: string; status: number }
+> {
   const taller = await prisma.workshopSettings.findUnique({
     where: { handle },
     select: { contactId: true, publicPageEnabled: true },
   });
-  if (!taller || !taller.publicPageEnabled) return null;
+  // Un taller que no publicó su página es indistinguible de uno que no existe.
+  if (!taller || !taller.publicPageEnabled) {
+    return { ok: false, error: "Taller no encontrado", status: 404 };
+  }
 
   // El servicio se busca ACOTADO al taller: un serviceId de otro taller no
   // puede colarse en este pedido.
   const servicio = datos.serviceId
     ? await prisma.workshopService.findFirst({
         where: { id: datos.serviceId, contactId: taller.contactId, active: true },
-        select: { id: true, name: true, durationMinutes: true },
+        select: { id: true, name: true, durationMinutes: true, category: true },
       })
     : null;
 
-  return prisma.workshopBooking.create({
+  // El rubro sale del servicio elegido, no del body: el que manda el pedido es
+  // un desconocido desde una pagina publica, y dejarlo declarar su propio rubro
+  // seria dejarlo elegir que validaciones se le aplican.
+  //
+  // Sin servicio queda automotriz, que es el default de la columna y lo que
+  // efectivamente pide la enorme mayoria.
+  const category: ServiceCategory = servicio?.category ?? "AUTOMOTIVE";
+  const esArquitectura = category === "ARCHITECTURAL";
+
+  if (esArquitectura) {
+    // Sin dirección no hay visita posible, y sin tipo de inmueble no se sabe
+    // qué se va a ver. Los dos son el mínimo para que el taller pueda decidir
+    // si va o no.
+    if (!datos.propertyType) {
+      return { ok: false, error: "Elegí qué tipo de inmueble es", status: 400 };
+    }
+    if (!datos.siteAddress?.trim()) {
+      return { ok: false, error: "Poné la dirección del inmueble", status: 400 };
+    }
+  } else if (!datos.vehicleType) {
+    // En automotriz el tipo de vehículo cambia el precio y el tiempo, y
+    // preguntarlo después por teléfono es justo la llamada que este formulario
+    // tendría que evitar.
+    return { ok: false, error: "Elegí el tipo de vehículo", status: 400 };
+  }
+
+  const booking = await prisma.workshopBooking.create({
     data: {
       contactId: taller.contactId,
       serviceId: servicio?.id ?? null,
@@ -1275,8 +1339,19 @@ export async function createBooking(
       clientName: datos.clientName.trim(),
       clientEmail: datos.clientEmail?.trim() || null,
       clientPhone: datos.clientPhone.trim(),
-      vehicleType: datos.vehicleType || null,
-      plate: datos.plate?.trim().toUpperCase() || null,
+      category,
+      // Cada rubro guarda lo suyo y **borra lo del otro**. Un pedido de
+      // arquitectura con una patente colgada de un intento anterior seria una
+      // ficha que se contradice a si misma, y la bandeja del taller decide que
+      // mostrar mirando `category`.
+      vehicleType: esArquitectura ? null : datos.vehicleType || null,
+      plate: esArquitectura ? null : datos.plate?.trim().toUpperCase() || null,
+      propertyType: esArquitectura ? datos.propertyType || null : null,
+      glassCount: esArquitectura ? (datos.glassCount ?? null) : null,
+      approxM2: esArquitectura ? (datos.approxM2 ?? null) : null,
+      goal: esArquitectura ? datos.goal || null : null,
+      siteAddress: esArquitectura ? datos.siteAddress?.trim() || null : null,
+      timeWindow: esArquitectura ? datos.timeWindow || null : null,
       notes: datos.notes?.trim() || null,
       alreadyTinted: datos.alreadyTinted ?? null,
       // La foto y su tipo van juntas: guardar los bytes sin saber que son deja
@@ -1286,8 +1361,10 @@ export async function createBooking(
       preferredAt: datos.preferredAt,
       cancelToken: newCancelToken(),
     },
-    select: { id: true, cancelToken: true, contactId: true, serviceName: true, preferredAt: true },
+    select: { id: true, cancelToken: true },
   });
+
+  return { ok: true, booking };
 }
 
 /** Los pedidos de turno del taller, los pendientes primero. */
@@ -1303,8 +1380,15 @@ export async function listBookings(contactId: string, soloPendientes = false) {
       clientName: true,
       clientEmail: true,
       clientPhone: true,
+      category: true,
       vehicleType: true,
       plate: true,
+      propertyType: true,
+      glassCount: true,
+      approxM2: true,
+      goal: true,
+      siteAddress: true,
+      timeWindow: true,
       notes: true,
       alreadyTinted: true,
       // La foto NO viaja en el listado: son cientos de KB por pedido. Solo si
@@ -1365,20 +1449,38 @@ export async function confirmBooking(
         select: { id: true },
       }));
 
-    // El vehículo solo si sabemos algo de él. Un asset vacío es ruido en la
-    // ficha del cliente.
-    const asset =
-      booking.plate || booking.vehicleType
-        ? await tx.workshopAsset.create({
-            data: {
-              workshopClientId: cliente.id,
-              type: "VEHICLE",
-              identifier: booking.plate,
-              notes: booking.vehicleType ? `Tipo: ${booking.vehicleType}` : null,
-            },
-            select: { id: true },
-          })
-        : null;
+    // El bien sobre el que se va a trabajar, solo si sabemos algo de el: un
+    // asset vacio es ruido en la ficha del cliente.
+    //
+    // El `type` sale del rubro del pedido, y no es cosmetico: `AssetType` viaja
+    // tal cual a `WarrantyInstallation.assetType` cuando la orden pasa a
+    // TERMINADA. Crear un `VEHICLE` para un trabajo en una casa haria que la
+    // garantia de esa lamina naciera diciendo que es de un auto.
+    const asset = await (async () => {
+      if (booking.category === "ARCHITECTURAL") {
+        if (!booking.siteAddress && !booking.propertyType) return null;
+        return tx.workshopAsset.create({
+          data: {
+            workshopClientId: cliente.id,
+            type: "BUILDING",
+            // La direccion ES como el taller lo va a reconocer en su lista.
+            identifier: booking.siteAddress,
+            notes: descripcionDelInmueble(booking),
+          },
+          select: { id: true },
+        });
+      }
+      if (!booking.plate && !booking.vehicleType) return null;
+      return tx.workshopAsset.create({
+        data: {
+          workshopClientId: cliente.id,
+          type: "VEHICLE",
+          identifier: booking.plate,
+          notes: booking.vehicleType ? `Tipo: ${booking.vehicleType}` : null,
+        },
+        select: { id: true },
+      });
+    })();
 
     await tx.workshopSettings.upsert({
       where: { contactId },
@@ -1414,6 +1516,27 @@ export async function confirmBooking(
   });
 
   return { ok: true, workOrderId };
+}
+
+/**
+ * Lo que se sabe del inmueble, en una linea, para las notas del asset.
+ *
+ * Se arma con lo que haya: el cliente contesta lo que sabe, y una ficha que
+ * dice "12 vidrios" sin metros es mas util que una que dice "12 vidrios, — m2".
+ */
+function descripcionDelInmueble(b: {
+  propertyType: string | null;
+  glassCount: number | null;
+  approxM2: Prisma.Decimal | null;
+  goal: string | null;
+}): string | null {
+  const partes = [
+    b.propertyType,
+    b.glassCount !== null ? `${b.glassCount} vidrios` : null,
+    b.approxM2 !== null ? `${Number(b.approxM2)} m2` : null,
+    b.goal,
+  ].filter(Boolean);
+  return partes.length > 0 ? partes.join(" · ") : null;
 }
 
 /** Rechazar. No borra: el instalador tiene que poder ver qué rechazó. */

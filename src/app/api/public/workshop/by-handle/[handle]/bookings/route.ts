@@ -7,6 +7,7 @@ import { validateBody } from "@/lib/api-validation";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { VEHICLE_TYPES } from "@/lib/vehicle-types";
+import { PROPERTY_TYPES, PROPERTY_GOALS, TIME_WINDOWS } from "@/lib/property-types";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/public/workshop/by-handle/[handle]/bookings");
@@ -31,8 +32,19 @@ const schema = z.object({
   clientName: z.string().trim().min(2, "Poné tu nombre").max(120),
   clientEmail: z.string().trim().email("Revisá el email").max(191).nullish(),
   clientPhone: z.string().trim().min(6, "Poné un teléfono").max(50),
+  // Automotriz. Cuál de los dos bloques es obligatorio lo decide el rubro del
+  // servicio elegido, y eso solo lo sabe la base: la regla vive en
+  // `createBooking`, no acá. Acá se valida la forma.
   vehicleType: z.enum(VEHICLE_TYPES).nullish(),
   plate: z.string().trim().max(20).nullish(),
+  // Arquitectura.
+  propertyType: z.enum(PROPERTY_TYPES).nullish(),
+  /** Cuántos vidrios, aproximado. Es lo que el cliente sabe contar. */
+  glassCount: z.number().int().min(1).max(10_000).nullish(),
+  approxM2: z.number().positive().max(100_000).nullish(),
+  goal: z.enum(PROPERTY_GOALS).nullish(),
+  siteAddress: z.string().trim().max(300).nullish(),
+  timeWindow: z.enum(TIME_WINDOWS).nullish(),
   notes: z.string().trim().max(1000).nullish(),
   alreadyTinted: z.boolean().nullish(),
   /**
@@ -91,16 +103,16 @@ export async function POST(
   }
 
   try {
-    const booking = await createBooking(handle.toLowerCase(), { ...d, preferredAt });
-    if (!booking) {
-      return NextResponse.json({ error: "Taller no encontrado" }, { status: 404 });
+    const r = await createBooking(handle.toLowerCase(), { ...d, preferredAt });
+    if (!r.ok) {
+      return NextResponse.json({ error: r.error }, { status: r.status });
     }
 
     // Los avisos NO se esperan: el pedido ya esta guardado, y colgar la
     // respuesta hasta que salga un mail hace que el cliente vea un formulario
     // trabado cuando en realidad su turno ya entro.
-    void avisarPedidoAlInstalador(booking.id);
-    void avisarPedidoAlCliente(booking.id);
+    void avisarPedidoAlInstalador(r.booking.id);
+    void avisarPedidoAlCliente(r.booking.id);
 
     // No se devuelve el id ni el cancelToken: el acuse va por mail. Lo unico
     // que necesita la pagina es saber que salio bien.

@@ -407,8 +407,17 @@ export interface DatosPrecargados {
   clientName?: string | null;
   clientEmail?: string | null;
   clientPhone?: string | null;
+  /** Automotriz. Se ignora si el rollo es de lamina de arquitectura. */
   vehicleType?: string | null;
   plate?: string | null;
+  /**
+   * Arquitectura: como reconocer el trabajo ("frente de la oficina, 8 panos").
+   *
+   * Ocupa el lugar que en automotriz ocupan tipo de vehiculo y patente. Es texto
+   * libre a proposito: un inmueble no tiene una chapa que lo identifique, y cada
+   * instalador lo nombra a su manera.
+   */
+  assetDescription?: string | null;
 }
 
 export async function createAdditionalInstallation(
@@ -428,7 +437,12 @@ export async function createAdditionalInstallation(
       where: { fullRollCode, saleItem: { sale: { contactId } } },
       include: {
         installations: { select: { id: true } },
-        product: { select: { warrantyConfig: { select: { maxInstallations: true } } } },
+        product: {
+          select: {
+            category: true,
+            warrantyConfig: { select: { maxInstallations: true } },
+          },
+        },
       },
     });
     if (!roll) {
@@ -440,6 +454,15 @@ export async function createAdditionalInstallation(
 
     const maxInstallations = roll.product.warrantyConfig?.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
     const nextNumber = roll.installations.length + 1;
+
+    // **El rubro no se pregunta: se deriva del producto del rollo.**
+    //
+    // Una lamina de arquitectura no se pone sobre un auto, asi que el sistema ya
+    // sabe que esta instalacion no tiene patente ni tipo de vehiculo — y el
+    // cliente final que la active no va a ver esos campos. Es el unico de los
+    // tres lugares donde se decide el rubro que no le cuesta una respuesta a
+    // nadie.
+    const esArquitectura = roll.product.category === "ARCHITECTURAL";
 
     if (roll.installations.length >= maxInstallations) {
       await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
@@ -456,13 +479,17 @@ export async function createAdditionalInstallation(
         clientName: limpiar(datos.clientName),
         clientEmail: limpiar(datos.clientEmail),
         clientPhone: limpiar(datos.clientPhone),
-        vehicleType: limpiar(datos.vehicleType),
+        // Cada rubro guarda lo suyo y descarta lo del otro: una instalacion de
+        // arquitectura con una patente colgada seria una ficha que se
+        // contradice a si misma.
+        vehicleType: esArquitectura ? null : limpiar(datos.vehicleType),
         // La patente en mayusculas: se escribe de las dos formas y despues no
         // matchea contra si misma cuando alguien la busca.
-        plate: limpiar(datos.plate)?.toUpperCase() ?? null,
-        // Si hay tipo de vehiculo, el tipo de instalacion ya esta decidido y no
-        // tiene sentido volver a preguntarlo.
-        assetType: datos.vehicleType ? "VEHICLE" : null,
+        plate: esArquitectura ? null : (limpiar(datos.plate)?.toUpperCase() ?? null),
+        assetDescription: esArquitectura ? limpiar(datos.assetDescription) : null,
+        // Si el rubro ya esta decidido, no tiene sentido volver a preguntarlo en
+        // la pantalla de activacion.
+        assetType: esArquitectura ? "BUILDING" : datos.vehicleType ? "VEHICLE" : null,
       },
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
     });
@@ -663,6 +690,9 @@ export async function verifyWarranty(activationToken: string) {
               id: true,
               name: true,
               brand: true,
+              // El rubro de la lamina. Es lo que le permite a la pantalla de
+              // activacion no pedirle la patente al dueno de una ventana.
+              category: true,
               warrantyConfig: { select: { installWarrantyMonths: true } },
             },
           },
@@ -791,6 +821,16 @@ export function pickPublicStatus(warranty: WarrantyStatus) {
     daysRemaining: warranty.daysRemaining,
     expiresAt: warranty.expiresAt,
     assetType: warranty.assetType,
+    /**
+     * El rubro de la lamina, `AUTOMOTIVE | ARCHITECTURAL | PPF`.
+     *
+     * No es dato personal ni identifica a nadie: es la categoria del producto,
+     * la misma que figura en el catalogo publico. Sale porque es lo que le
+     * permite a la pantalla de activacion preguntar lo que corresponde — a
+     * quien puso lamina en su casa, el tipo de inmueble; a quien la puso en su
+     * auto, el vehiculo. PPF cuenta como automotriz: va sobre autos.
+     */
+    productCategory: warranty.product.category,
     // Nombre y logo del taller que hizo el trabajo. Es marca comercial, no dato
     // personal — ver la nota en verifyWarranty. `logoPath` es relativo al CRM;
     // quien lo muestre tiene que anteponerle la base del CRM, no la suya.
