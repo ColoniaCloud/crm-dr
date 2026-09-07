@@ -2,7 +2,27 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import type { PortalApiClient } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+/**
+ * `prismaReal` y no `prisma`: las api keys viven SIEMPRE en la base real.
+ *
+ * Las rutas de demostración envuelven el handler entero, portero incluido.
+ * Con el cliente por contexto, el portero buscaría la key en la base de demo
+ * —donde no hay ninguna— y toda llamada del portal de demostración moriría
+ * con «API key inválida».
+ *
+ * Y es lo correcto aparte del bug: una api key es infraestructura, no dato de
+ * negocio. La base de demo no tiene credenciales propias ni tiene por qué
+ * tenerlas.
+ */
+import { prisma, prismaReal } from "@/lib/prisma";
+//
+// Los dos clientes, y la diferencia importa:
+//
+//   prismaReal -> las api keys. Son infraestructura y viven en la base real.
+//   prisma     -> las cuentas de portal. La cuenta de un clon de demostracion
+//                 vive en la base de demo, asi que tiene que seguir el
+//                 contexto del request. Si esta mirara la base real, el demo
+//                 no podria autenticarse nunca.
 import {
   getCachedClientId,
   cacheVerifiedKey,
@@ -37,14 +57,14 @@ export async function verifyPortalApiKey(request: Request) {
 
   const cachedId = getCachedClientId(key);
   if (cachedId) {
-    const client = await prisma.portalApiClient.findFirst({
+    const client = await prismaReal.portalApiClient.findFirst({
       where: { id: cachedId, active: true },
     });
     // Si mientras tanto lo desactivaron, se cae al camino largo (que tampoco lo
     // va a encontrar): la caché acelera, no autoriza.
     if (client) {
       if (shouldTouchLastUsed(key)) {
-        await prisma.portalApiClient.update({
+        await prismaReal.portalApiClient.update({
           where: { id: client.id },
           data: { lastUsedAt: new Date() },
         });
@@ -58,11 +78,11 @@ export async function verifyPortalApiKey(request: Request) {
   const ip = clientIp(request);
   if (!rateLimit(`apikey-verify:${ip}`, 30, 60_000).allowed) return null;
 
-  const clients = await prisma.portalApiClient.findMany({ where: { active: true } });
+  const clients = await prismaReal.portalApiClient.findMany({ where: { active: true } });
   for (const client of clients) {
     if (await bcrypt.compare(key, client.apiKeyHash)) {
       cacheVerifiedKey(key, client.id);
-      await prisma.portalApiClient.update({
+      await prismaReal.portalApiClient.update({
         where: { id: client.id },
         data: { lastUsedAt: new Date() },
       });

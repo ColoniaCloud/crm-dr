@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import { esDemo } from "@/lib/demo-context";
 
 const log = createLogger("lib/whatsapp");
 
@@ -40,12 +41,27 @@ export function isWhatsappConfigured(): boolean {
   return Boolean(process.env.WHATSAPP_SERVICE_URL && process.env.WHATSAPP_API_KEY);
 }
 
+/**
+ * Manda un WhatsApp. Nunca tira: siempre deja registro de lo que pasó.
+ *
+ * **En una sesión de demostración no manda nada.** Confirmar un pedido de turno
+ * le escribe al cliente, y en la demo ese "cliente" es un número que el
+ * prospecto inventó — que puede ser el de cualquiera.
+ */
 export async function sendWhatsapp(opciones: {
   to: string;
   message: string;
   /** Para poder ver el mensaje en la ficha del contacto. */
   contactId?: string | null;
 }): Promise<boolean> {
+  // Antes que nada: en la demo no sale nada, y ni siquiera se deja la fila del
+  // intento. Esa fila viviria en la base de demo y se borraria con el clon, pero
+  // registrar un envio que no ocurrio confunde a quien lea despues.
+  if (esDemo()) {
+    log.info({ to: opciones.to }, "Sesion de demostracion: el WhatsApp NO se envia");
+    return false;
+  }
+
   const baseUrl = process.env.WHATSAPP_SERVICE_URL;
   const apiKey = process.env.WHATSAPP_API_KEY;
   const number = normalizeWhatsappNumber(opciones.to);
