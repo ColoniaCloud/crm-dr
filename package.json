@@ -16,7 +16,9 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
     "demo:verificar": "npx tsx scripts/verificar-aislamiento-demo.ts",
-    "demo:deriva": "npx tsx scripts/verificar-deriva.ts"
+    "demo:deriva": "npx tsx scripts/verificar-deriva.ts",
+    "demo:espejos": "node scripts/espejos-demo.mjs",
+    "demo:espejos:verificar": "node scripts/espejos-demo.mjs --verificar"
   },
   "repository": {
     "type": "git",
