@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { transporter, FROM } from "@/lib/mailer";
 import { BRAND } from "@/lib/brand";
-import { esDemo } from "@/lib/demo-context";
 
 export function escapeHtml(str: string): string {
   return str
@@ -92,14 +91,7 @@ export interface NotifyPayload {
   baseUrl?: string;
 }
 
-/**
- * Aviso a los administradores del CRM: campanita, y opcionalmente correo.
- *
- * **No corre en una sesión de demostración.** Generar un sub-código de garantía
- * dispara este aviso, así que sin la guardia cada curioso que entre a la demo
- * le llenaría la campanita al equipo. Y no alcanzaría con que las filas
- * cayeran en la base de demo: el aviso de reclamos manda correo de verdad.
- */
+// Sends an in-app only notification to all admin users (no email)
 export async function notifyAdmins(payload: {
   type: string;
   title: string;
@@ -119,10 +111,6 @@ export async function notifyAdmins(payload: {
    */
   email?: boolean;
 }) {
-  // La campanita y los correos son del equipo real. Una sesion de demostracion
-  // no tiene por que aparecer ahi.
-  if (esDemo()) return;
-
   try {
     const admins = await prisma.user.findMany({
       where: { role: { in: ["ADMIN", "SUPERADMIN"] }, deletedAt: null },

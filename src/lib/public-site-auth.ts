@@ -2,8 +2,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import type { PublicSiteApiClient } from "@prisma/client";
-/** `prismaReal`: las api keys viven siempre en la base real. Ver portal-api-auth.ts. */
-import { prismaReal } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 
@@ -42,10 +41,10 @@ export async function verifyPublicSiteApiKey(request: Request) {
   const ip = clientIp(request);
   if (!rateLimit(`psite-verify:${ip}`, 30, 60_000).allowed) return null;
 
-  const clients = await prismaReal.publicSiteApiClient.findMany({ where: { active: true } });
+  const clients = await prisma.publicSiteApiClient.findMany({ where: { active: true } });
   for (const client of clients) {
     if (await bcrypt.compare(key, client.apiKeyHash)) {
-      await prismaReal.publicSiteApiClient.update({
+      await prisma.publicSiteApiClient.update({
         where: { id: client.id },
         data: { lastUsedAt: new Date() },
       });

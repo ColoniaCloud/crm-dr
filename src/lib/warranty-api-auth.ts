@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-/** `prismaReal`: las api keys viven siempre en la base real. Ver portal-api-auth.ts. */
-import { prismaReal } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import {
   getCachedClientId,
   cacheVerifiedKey,
@@ -31,12 +30,12 @@ export async function verifyWarrantyApiKey(request: Request) {
   // Mismo esquema que verifyPortalApiKey — ver lib/api-key-cache.ts.
   const cachedId = getCachedClientId(key);
   if (cachedId) {
-    const client = await prismaReal.warrantyApiClient.findFirst({
+    const client = await prisma.warrantyApiClient.findFirst({
       where: { id: cachedId, active: true },
     });
     if (client) {
       if (shouldTouchLastUsed(key)) {
-        await prismaReal.warrantyApiClient.update({
+        await prisma.warrantyApiClient.update({
           where: { id: client.id },
           data: { lastUsedAt: new Date() },
         });
@@ -48,11 +47,11 @@ export async function verifyWarrantyApiKey(request: Request) {
   const ip = clientIp(request);
   if (!rateLimit(`apikey-verify:${ip}`, 30, 60_000).allowed) return null;
 
-  const clients = await prismaReal.warrantyApiClient.findMany({ where: { active: true } });
+  const clients = await prisma.warrantyApiClient.findMany({ where: { active: true } });
   for (const client of clients) {
     if (await bcrypt.compare(key, client.apiKeyHash)) {
       cacheVerifiedKey(key, client.id);
-      await prismaReal.warrantyApiClient.update({
+      await prisma.warrantyApiClient.update({
         where: { id: client.id },
         data: { lastUsedAt: new Date() },
       });
