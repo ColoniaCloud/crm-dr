@@ -262,6 +262,27 @@ async function main() {
       String(ventasAntes._sum.total)
   );
 
+  // ─── 11. Las api keys viven en la base real ──────────────────────────────
+  //
+  // Esta la encontró la prueba de punta a punta y no las de arriba: las rutas
+  // espejo envuelven el handler ENTERO, portero incluido, así que el portero
+  // buscaba la api key en la base de demo —donde no hay ninguna— y toda
+  // llamada del portal de demostración moría con "API key inválida".
+  //
+  // La regla que quedó: las keys son infraestructura y salen siempre de la
+  // base real; las cuentas de portal siguen el contexto, porque la del clon
+  // vive en la de demo.
+  console.log("\n11. Las api keys se buscan siempre en la base real");
+  const keysReales = await prismaReal.portalApiClient.count();
+  await enModoDemo(async () => {
+    check("la base de demo no tiene keys propias", (await prisma.portalApiClient.count()) === 0);
+    check(
+      "y aun así el portero las encuentra, porque mira la real",
+      (await prismaReal.portalApiClient.count()) === keysReales && keysReales > 0,
+      keysReales
+    );
+  });
+
   console.log(`\n${ok} OK, ${fail} fallas`);
   if (fail > 0) process.exitCode = 1;
 }
