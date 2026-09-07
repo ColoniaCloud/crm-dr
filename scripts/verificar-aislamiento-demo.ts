@@ -18,6 +18,9 @@
  */
 import { prisma, prismaReal } from "@/lib/prisma";
 import { enModoDemo, enModoReal, modoActual, esDemo, exigirDemo } from "@/lib/demo-context";
+import { transporter } from "@/lib/mailer";
+import { sendWhatsapp } from "@/lib/whatsapp";
+import { notifyAdmins } from "@/lib/notifications";
 
 let ok = 0;
 let fail = 0;
@@ -184,6 +187,32 @@ async function main() {
       check(`${tabla} rechaza el contacto fantasma`, m.includes("foreign key"));
     }
   }
+
+  // ─── 9. Las guardias de efectos externos ─────────────────────────────────
+  //
+  // Lo que no vive en la base y hay que cortar igual: un prospecto no puede
+  // hacer que salga un correo, un WhatsApp o un aviso al equipo real.
+  console.log("\n9. Nada sale del sistema en una sesión de demostración");
+  await enModoDemo(async () => {
+    const r = (await transporter.sendMail({
+      to: "nadie@example.invalid",
+      subject: "no debería salir",
+      text: "no debería salir",
+    })) as unknown as { messageId?: string };
+    check("el correo no se envía", r?.messageId === "demo-no-enviado", r?.messageId);
+
+    const antesWa = await prisma.whatsAppMessage.count();
+    const mandado = await sendWhatsapp({ to: "1100000000", message: "no debería salir" });
+    check("el WhatsApp no se envía", mandado === false);
+    check("y no deja registro del intento", (await prisma.whatsAppMessage.count()) === antesWa);
+
+    const antesNotif = await prisma.notification.count();
+    await notifyAdmins({ type: "PRUEBA", title: "no debería llegar", message: "x", email: true });
+    check(
+      "el aviso a los administradores no se genera",
+      (await prisma.notification.count()) === antesNotif
+    );
+  });
 
   console.log(`\n${ok} OK, ${fail} fallas`);
   if (fail > 0) process.exitCode = 1;
