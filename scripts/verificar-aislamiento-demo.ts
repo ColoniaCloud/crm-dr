@@ -21,6 +21,7 @@ import { enModoDemo, enModoReal, modoActual, esDemo, exigirDemo } from "@/lib/de
 import { transporter } from "@/lib/mailer";
 import { sendWhatsapp } from "@/lib/whatsapp";
 import { notifyAdmins } from "@/lib/notifications";
+import { provisionarClonDemo, borrarClonesViejos, clonesVivos } from "@/lib/demo-plantilla";
 
 let ok = 0;
 let fail = 0;
@@ -213,6 +214,53 @@ async function main() {
       (await prisma.notification.count()) === antesNotif
     );
   });
+
+  // ─── 10. El ciclo completo de un clon ────────────────────────────────────
+  //
+  // Provisionar, comprobar que tiene con qué demostrar, y que al borrarlo no
+  // quede nada. Y sobre todo: que producción no se mueva ni un número.
+  console.log("\n10. Un clon de demostración, de punta a punta");
+  const contactosAntes = await prismaReal.contact.count();
+  const ventasAntes = await prismaReal.sale.aggregate({ _sum: { total: true } });
+
+  await enModoDemo(async () => {
+    const clon = await provisionarClonDemo();
+    const donde = { contactId: clon.contactId };
+
+    check("el clon tiene servicios de los dos rubros", (await prisma.workshopService.count({ where: donde })) === 4);
+    check("tiene órdenes en varios estados", (await prisma.workOrder.count({ where: donde })) === 5);
+    check("tiene pedidos de turno sin responder", (await prisma.workshopBooking.count({ where: donde })) === 2);
+    check("tiene clientes finales cargados", (await prisma.workshopClient.count({ where: donde })) === 3);
+
+    const cuenta = await prisma.clientPortalAccount.findUnique({
+      where: { contactId: clon.contactId },
+      select: { accessLevel: true, enabled: true, passwordHash: true },
+    });
+    check("la cuenta de portal es de instalador y está habilitada",
+      cuenta?.accessLevel === "INSTALLER" && cuenta.enabled === true);
+    check("con una contraseña que nadie conoce", (cuenta?.passwordHash?.length ?? 0) > 20);
+    check("la huella de credencial tiene el formato que espera el portero",
+      clon.credentialVersion.length === 16);
+
+    // Nace sin página publicada: elegir el nombre y publicar es el paso del
+    // recorrido que más convence, y dárselo hecho se lo saca.
+    const cfg = await prisma.workshopSettings.findUnique({
+      where: { contactId: clon.contactId },
+      select: { handle: true, publicPageEnabled: true },
+    });
+    check("nace sin handle y sin publicar", cfg?.handle === null && cfg?.publicPageEnabled === false);
+
+    const borrados = await borrarClonesViejos(0);
+    check("el borrado se lo lleva", borrados >= 1, borrados);
+    check("y no queda ningún clon vivo", (await clonesVivos()) === 0);
+  });
+
+  check("producción no cambió de contactos", (await prismaReal.contact.count()) === contactosAntes);
+  check(
+    "producción no cambió su suma de ventas",
+    String((await prismaReal.sale.aggregate({ _sum: { total: true } }))._sum.total) ===
+      String(ventasAntes._sum.total)
+  );
 
   console.log(`\n${ok} OK, ${fail} fallas`);
   if (fail > 0) process.exitCode = 1;
