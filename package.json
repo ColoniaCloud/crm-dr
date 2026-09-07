@@ -11,9 +11,12 @@
     "lint": "eslint",
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
+    "db:push:demo": "node scripts/db-demo.mjs",
+    "db:push:all": "npm run db:push && npm run db:push:demo",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
-    "demo:verificar": "npx tsx scripts/verificar-aislamiento-demo.ts"
+    "demo:verificar": "npx tsx scripts/verificar-aislamiento-demo.ts",
+    "demo:deriva": "npx tsx scripts/verificar-deriva.ts"
   },
   "repository": {
     "type": "git",
