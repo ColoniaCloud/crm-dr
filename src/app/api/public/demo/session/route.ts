@@ -9,6 +9,7 @@ import {
   borrarClonesViejos,
   MAX_CLONES_VIVOS,
 } from "@/lib/demo-plantilla";
+import { asegurarLimpiezaArrancada } from "@/lib/demo-cleanup";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/public/demo/session");
@@ -38,6 +39,11 @@ export async function POST(request: Request) {
       { status: 429 }
     );
   }
+
+  // Acá y no en `instrumentation.ts`: el watcher se arma en el primer uso real
+  // de la demo, para no abrir la conexión a su base durante el arranque del
+  // servidor. Es idempotente. Ver `demo-cleanup.ts`.
+  asegurarLimpiezaArrancada();
 
   try {
     return await enModoDemo(async () => {

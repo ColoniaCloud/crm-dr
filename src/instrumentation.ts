@@ -11,10 +11,7 @@ export async function register() {
     startOverdueWatcher();
   }
 
-  // Junta los talleres de demostración vencidos. No arranca si falta
-  // DATABASE_URL_DEMO: el portal de demostración es opcional.
-  if (process.env.DEMO_CLEANUP_DISABLED !== "true") {
-    const { startDemoCleanup } = await import("@/lib/demo-cleanup");
-    startDemoCleanup();
-  }
+  // La limpieza de demostraciones NO se arranca acá a propósito: hacerlo abre
+  // la conexión a la base de demo antes del primer request. Se arma sola en el
+  // primer uso real, desde el endpoint de sesión. Ver `demo-cleanup.ts`.
 }
