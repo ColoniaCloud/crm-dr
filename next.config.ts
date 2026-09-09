@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  // Acota los workers de generacion estatica del build. El default de Next sale
+  // de os.cpus(), y este hosting compartido reporta 64 nucleos que la cuenta no
+  // puede usar: el build levantaba 63 procesos en paralelo contra un techo de
+  // 200 para toda la cuenta —compartida con decenas de sitios—, y el 9/09/2026
+  // eso dejo el CRM caido media hora en bucle de reinicio. Ver
+  // docs/incidente-2026-09-09-crm-caido.md en la raiz del proyecto.
+  experimental: { cpus: 4 },
   serverExternalPackages: ["@prisma/client", "bcryptjs", "nodemailer", "pino", "pino-pretty", "imapflow", "mailparser"],
   poweredByHeader: false,
   turbopack: {

@@ -37,7 +37,13 @@ export async function GET(request: Request) {
     const sku = searchParams.get("sku")?.trim();
 
     if (sku) {
-      const product = await prisma.product.findUnique({ where: { sku }, select: SELECT });
+      // `active` tambien aca: el listado filtra los dados de baja, pero el
+      // lookup por SKU no lo hacia, y en la ruta el escaneo es la via
+      // principal — un producto discontinuado con stock remanente se vendia.
+      const product = await prisma.product.findFirst({
+        where: { sku, active: true },
+        select: SELECT,
+      });
       return withMobileCors(
         NextResponse.json({ products: product ? [serializeProduct(product)] : [] })
       );

@@ -19,6 +19,11 @@ const createPaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
+/** Compara importes en centavos: evita que el ruido del punto flotante deje pasar un centavo de más. */
+function cents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
 export function OPTIONS() {
   return mobileCorsPreflight();
 }
@@ -29,17 +34,32 @@ export async function GET(request: Request) {
   if (!gate.success) return withMobileCors(gate.response);
 
   try {
-    const sales = await prisma.sale.findMany({
-      include: {
-        contact: { select: { id: true, firstName: true, lastName: true, company: true } },
-        payments: { select: { amount: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // Una venta anulada conserva su total, así que su saldo sigue dando
+    // positivo y aparecía acá como cobrable. El vendedor en la ruta cobra
+    // contra esta lista sin manera de saber que la venta ya no existe.
+    const [sales, paidBySale] = await Promise.all([
+      prisma.sale.findMany({
+        where: { status: { not: "CANCELLED" } },
+        select: {
+          id: true,
+          number: true,
+          total: true,
+          status: true,
+          createdAt: true,
+          contact: { select: { id: true, firstName: true, lastName: true, company: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      // Un agregado en la base en vez de traer cada fila de pago de cada venta
+      // para sumarla en JavaScript.
+      prisma.payment.groupBy({ by: ["saleId"], _sum: { amount: true } }),
+    ]);
+
+    const paid = new Map(paidBySale.map((p) => [p.saleId, Number(p._sum.amount ?? 0)]));
 
     const pending = sales
       .map((sale) => {
-        const totalPaid = sale.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        const totalPaid = paid.get(sale.id) ?? 0;
         return {
           id: sale.id,
           number: sale.number,
@@ -48,10 +68,11 @@ export async function GET(request: Request) {
           total: Number(sale.total),
           totalPaid,
           remaining: Number(sale.total) - totalPaid,
+          status: sale.status,
           createdAt: sale.createdAt.toISOString(),
         };
       })
-      .filter((sale) => sale.remaining > 0);
+      .filter((sale) => cents(sale.remaining) > 0);
 
     return withMobileCors(NextResponse.json({ sales: pending }));
   } catch (error) {
@@ -70,9 +91,43 @@ export async function POST(request: Request) {
   const { saleId, amount, method, reference, notes } = validation.data;
 
   try {
-    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+    const sale = await prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { id: true, contactId: true, number: true, total: true, status: true },
+    });
     if (!sale) {
       return withMobileCors(NextResponse.json({ error: "Venta no encontrada" }, { status: 404 }));
+    }
+
+    // Una venta anulada ya devolvió su stock: cobrar contra ella deja plata
+    // imputada a algo que no existe.
+    if (sale.status === "CANCELLED") {
+      return withMobileCors(
+        NextResponse.json(
+          { error: `La venta #${sale.number} está anulada: no se le pueden registrar pagos.` },
+          { status: 409 }
+        )
+      );
+    }
+
+    // Ni el formulario ni el endpoint miraban el techo, así que un error de
+    // tipeo dejaba la venta con saldo negativo.
+    const agg = await prisma.payment.aggregate({ where: { saleId }, _sum: { amount: true } });
+    const totalPaid = Number(agg._sum.amount ?? 0);
+    const remaining = Number(sale.total) - totalPaid;
+
+    if (cents(amount) > cents(remaining)) {
+      return withMobileCors(
+        NextResponse.json(
+          {
+            error:
+              remaining > 0
+                ? `El saldo de la venta #${sale.number} es $${remaining.toLocaleString("es-AR")}. No se puede cobrar de más.`
+                : `La venta #${sale.number} ya está saldada.`,
+          },
+          { status: 409 }
+        )
+      );
     }
 
     const payment = await prisma.payment.create({

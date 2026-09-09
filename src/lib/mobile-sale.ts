@@ -17,6 +17,7 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
     id: sale.id,
     number: sale.number,
     contact: sale.contact,
+    status: sale.status,
     requiresFactura: sale.requiresFactura,
     notes: sale.notes,
     subtotal: Number(sale.subtotal),

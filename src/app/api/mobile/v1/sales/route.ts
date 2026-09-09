@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
@@ -44,6 +45,10 @@ export async function GET(request: Request) {
     const sales = await prisma.sale.findMany({
       where: contactId ? { contactId } : undefined,
       take: 50,
+      // `status` viaja para que la app pueda distinguir una venta anulada de
+      // una viva: antes el badge salia solo del saldo y una CANCELLED se
+      // mostraba como "Pendiente".
+
       include: {
         contact: { select: { id: true, firstName: true, lastName: true, company: true } },
         items: { select: { id: true, quantity: true } },
@@ -62,6 +67,7 @@ export async function GET(request: Request) {
         total: Number(sale.total),
         totalPaid,
         remaining: Number(sale.total) - totalPaid,
+        status: sale.status,
         itemsCount: sale.items.length,
         createdAt: sale.createdAt.toISOString(),
       };
@@ -85,6 +91,31 @@ export async function POST(request: Request) {
   const { contactId, items, discount, notes, requiresFactura, taxId } = validation.data;
 
   try {
+    // El carrito manda el precio que vio el vendedor al armarlo, y hasta ahora
+    // se aceptaba tal cual: un precio cacheado (o un 0 mandado a mano) entraba
+    // sin chistar. Se contrasta contra el precio real y se corta con un mensaje
+    // que nombra el producto, para que el vendedor lo vuelva a agregar en vez
+    // de cerrar la venta al precio viejo.
+    const productIds = [...new Set(items.map((i) => i.productId))];
+    const catalogo = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, price: true },
+    });
+    const precioReal = new Map(catalogo.map((p) => [p.id, Number(p.price)]));
+
+    for (const item of items) {
+      const esperado = precioReal.get(item.productId);
+      if (esperado === undefined) {
+        throw new Error("Uno de los productos del carrito ya no existe. Volvé a armarlo.");
+      }
+      if (Math.round(esperado * 100) !== Math.round(item.unitPrice * 100)) {
+        const nombre = catalogo.find((p) => p.id === item.productId)?.name ?? "un producto";
+        throw new Error(
+          `El precio de "${nombre}" cambió (ahora $${esperado.toLocaleString("es-AR")}). Volvé a agregarlo al carrito.`
+        );
+      }
+    }
+
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const tax = requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - discount + tax;
@@ -235,7 +266,16 @@ export async function POST(request: Request) {
     return withMobileCors(NextResponse.json({ sale: serializeSaleDetail(sale!) }, { status: 201 }));
   } catch (error) {
     log.error({ err: error }, "Error creating sale");
-    const message = error instanceof Error ? error.message : "Error al crear la venta";
+    // Los errores de negocio —"Stock insuficiente para X", el precio que
+    // cambió— son exactamente lo que el vendedor necesita leer. Los de Prisma
+    // no: llevan nombres de tabla y de columna adentro y no le dicen nada.
+    const esDePrisma =
+      error instanceof Prisma.PrismaClientKnownRequestError ||
+      error instanceof Prisma.PrismaClientUnknownRequestError ||
+      error instanceof Prisma.PrismaClientValidationError ||
+      error instanceof Prisma.PrismaClientInitializationError;
+    const message =
+      error instanceof Error && !esDePrisma ? error.message : "Error al crear la venta";
     return withMobileCors(NextResponse.json({ error: message }, { status: 400 }));
   }
 }
