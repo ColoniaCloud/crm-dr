@@ -60,12 +60,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.id = u.id;
       } else if (token.id) {
         // Re-validate user on every token refresh
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          select: { id: true, role: true, deletedAt: true },
-        });
-        if (!dbUser || dbUser.deletedAt !== null) return {} as typeof token;
-        token.role = dbUser.role;
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { id: true, role: true, deletedAt: true },
+          });
+          if (!dbUser || dbUser.deletedAt !== null) return {} as typeof token;
+          token.role = dbUser.role;
+        } catch (error) {
+          // Esta consulta corre desde `proxy.ts` en CADA request de página. Si
+          // se deja propagar la excepción, un hipo de MySQL (Hostinger caído,
+          // pool agotado) no degrada: tira la navegación entera y el navegador
+          // muestra su propia pantalla de error, con la app entera inaccesible.
+          //
+          // Ante un fallo de infraestructura conservamos el token como está. La
+          // sesión sigue viva con el rol que ya venía firmado y se revalida en
+          // el próximo refresh, cuando la base vuelva.
+          //
+          // El costo es acotado y consciente: mientras la base no responde, un
+          // usuario dado de baja mantiene el acceso que ya tenía, como mucho
+          // hasta que expire el JWT (8h). Cerrarle la sesión a todo el mundo en
+          // cada hipo de red no lo compensa, y con la base caída tampoco hay
+          // forma de comprobar nada.
+          console.error("[AUTH] Falló la revalidación de sesión", error);
+        }
       }
       return token;
     },
