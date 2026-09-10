@@ -10,31 +10,34 @@ import {
   storeRawMessage,
 } from "@/lib/mail-attachments";
 import { createLogger } from "@/lib/logger";
+import { conArriendo } from "@/lib/lock";
 
 const log = createLogger("mail-poller");
 
-const POLL_INTERVAL_MS = Number(process.env.MAIL_POLL_INTERVAL_MS || 120_000);
 const MAX_FAILURES_BEFORE_BACKOFF = 5;
 const BACKOFF_MS = 30 * 60_000;
 
-let running = false;
+/**
+ * Holgura del arriendo. Una ronda entera tarda segundos con las casillas sanas,
+ * pero una casilla que no responde se come el timeout de IMAP, así que el techo
+ * se pone en minutos y no en segundos.
+ */
+const TTL_ARRIENDO_MS = 10 * 60_000;
 
-export function startMailPoller() {
-  const g = globalThis as unknown as { __mailPollerStarted?: boolean };
-  if (g.__mailPollerStarted) return;
-  g.__mailPollerStarted = true;
-
-  log.info({ intervalMs: POLL_INTERVAL_MS }, "Mail poller starting");
-  pollAllMailboxes().catch((err) => log.error({ err }, "Initial mail poll failed"));
-  setInterval(() => {
-    pollAllMailboxes().catch((err) => log.error({ err }, "Mail poll cycle failed"));
-  }, POLL_INTERVAL_MS);
-}
-
-async function pollAllMailboxes() {
-  if (running) return;
-  running = true;
-  try {
+/**
+ * Revisa todas las casillas habilitadas. Lo dispara el cron del hosting contra
+ * `POST /api/internal/cron/mail`, no un `setInterval` en el arranque.
+ *
+ * Antes esto vivía dentro del proceso web, arrancado desde `instrumentation.ts`.
+ * Passenger levanta varios workers y cada uno arrancaba su propia ronda: el
+ * 2026-09-10 se midieron dos series de ciclos corriendo en paralelo, desfasadas
+ * 19 segundos, contra las mismas casillas. Desde afuera hay un solo disparador,
+ * y `conArriendo` cubre el caso de que una ronda lenta se pise con la siguiente.
+ *
+ * Devuelve `null` cuando otra ronda ya estaba en curso y esta se saltea.
+ */
+export async function pollAllMailboxes(): Promise<{ casillas: number } | null> {
+  return conArriendo("mail-poller", TTL_ARRIENDO_MS, async () => {
     const accounts = await prisma.mailAccount.findMany({
       where: {
         enabled: true,
@@ -48,9 +51,8 @@ async function pollAllMailboxes() {
         await handlePollFailure(account, err);
       }
     }
-  } finally {
-    running = false;
-  }
+    return { casillas: accounts.length };
+  });
 }
 
 async function pollOneMailbox(account: MailAccount) {

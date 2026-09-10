@@ -1,52 +1,40 @@
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { notifyAdmins } from "@/lib/notifications";
+import { conArriendo } from "@/lib/lock";
 
 const log = createLogger("overdue-installments");
 
 /**
- * Aviso diario de cuotas vencidas.
+ * Aviso de cuotas vencidas.
  *
- * Sigue el mismo patrón que el poller de mails (`lib/mail-poller.ts`): se
- * arranca desde `instrumentation.ts` y corre con un intervalo en proceso, no
- * con un cron externo.
+ * Sigue el mismo patrón que el poller de mails (`lib/mail-poller.ts`): lo
+ * dispara el cron del hosting contra `POST /api/internal/cron/overdue`, no un
+ * `setInterval` en el arranque del servidor.
  *
  * Las cuotas NO guardan su estado — "vencida" se calcula comparando el
  * vencimiento contra hoy y lo imputado contra el monto. Lo único que hace falta
  * recordar es a quién ya se le avisó, y eso se resuelve mirando si ya existe la
  * notificación con el link de esa cuota, sin agregar una columna.
+ *
+ * El dedupe de arriba lee y escribe en dos pasos, así que dos rondas simultáneas
+ * verían las dos la lista vacía y le mandarían el aviso duplicado al cliente. El
+ * arriendo es lo que garantiza que haya una sola.
  */
 
-const INTERVALO_MS = 6 * 60 * 60 * 1000; // cada 6 h; el dedupe evita repetir avisos
 const TIPO = "INSTALLMENT_OVERDUE";
-
-let corriendo = false;
-
-export function startOverdueWatcher() {
-  const g = globalThis as unknown as { __overdueWatcherStarted?: boolean };
-  if (g.__overdueWatcherStarted) return;
-  g.__overdueWatcherStarted = true;
-
-  log.info({ intervalMs: INTERVALO_MS }, "Overdue installment watcher starting");
-  notifyOverdueInstallments().catch((err) => log.error({ err }, "Initial overdue check failed"));
-  setInterval(() => {
-    notifyOverdueInstallments().catch((err) => log.error({ err }, "Overdue check cycle failed"));
-  }, INTERVALO_MS);
-}
+const TTL_ARRIENDO_MS = 5 * 60_000;
 
 /** Link canónico de una cuota. Sirve de destino y de clave para no repetir el aviso. */
 function linkCuota(installmentId: string): string {
   return `/cliente/cuenta#cuota-${installmentId}`;
 }
 
-export async function notifyOverdueInstallments(now: Date = new Date()): Promise<{
-  revisadas: number;
-  avisadas: number;
-}> {
-  if (corriendo) return { revisadas: 0, avisadas: 0 };
-  corriendo = true;
-
-  try {
+/** Devuelve `null` cuando otra ronda ya estaba en curso y esta se saltea. */
+export async function notifyOverdueInstallments(
+  now: Date = new Date()
+): Promise<{ revisadas: number; avisadas: number } | null> {
+  return conArriendo("overdue-installments", TTL_ARRIENDO_MS, async () => {
     const vencidas = await prisma.paymentInstallment.findMany({
       where: {
         dueDate: { lt: now },
@@ -108,7 +96,5 @@ export async function notifyOverdueInstallments(now: Date = new Date()): Promise
 
     log.info({ revisadas: vencidas.length, avisadas: nuevas.length }, "Overdue installments notified");
     return { revisadas: vencidas.length, avisadas: nuevas.length };
-  } finally {
-    corriendo = false;
-  }
+  });
 }
