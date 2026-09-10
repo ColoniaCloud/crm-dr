@@ -85,6 +85,33 @@ interface ClientDetail {
   consignmentBalance: number;
 }
 
+interface WarrantyInstallationSummary {
+  id: string;
+  installationNumber: number;
+  installationCode: string;
+  activationToken: string;
+  status: string;
+  clientName: string;
+  clientEmail: string;
+  clientPhone: string | null;
+  clientDni: string | null;
+  assetType: string;
+  assetDescription: string;
+  installerName: string | null;
+  activatedAt: string;
+  expiresAt: string;
+}
+
+interface WarrantyRollSummary {
+  id: string;
+  fullRollCode: string;
+  status: string;
+  product: { name: string };
+  saleItem: { sale: { createdAt: string } };
+  installations: WarrantyInstallationSummary[];
+  _count: { installations: number };
+}
+
 export default function ClientDetailPage() {
   const { format: formatCurrency } = useCurrency();
   const { data: session } = useSession();
@@ -111,9 +138,9 @@ export default function ClientDetailPage() {
   const [extraResult, setExtraResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Warranty
-  const [warrantyRolls, setWarrantyRolls] = useState<any[]>([])
-  const [selectedRoll, setSelectedRoll] = useState<any | null>(null)
-  const [selectedInstallation, setSelectedInstallation] = useState<any | null>(null)
+  const [warrantyRolls, setWarrantyRolls] = useState<WarrantyRollSummary[]>([])
+  const [selectedRoll, setSelectedRoll] = useState<WarrantyRollSummary | null>(null)
+  const [selectedInstallation, setSelectedInstallation] = useState<WarrantyInstallationSummary | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
 
   // Edit mode
@@ -810,7 +837,7 @@ export default function ClientDetailPage() {
           </DialogHeader>
 
           <div className="space-y-2 mt-2">
-            {selectedRoll?.installations.map((inst: any) => (
+            {selectedRoll?.installations.map((inst) => (
               <div
                 key={inst.id}
                 className="flex items-center justify-between p-3 border rounded-lg"

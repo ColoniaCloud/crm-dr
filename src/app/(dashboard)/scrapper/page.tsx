@@ -557,15 +557,10 @@ export default function ScrapperPage() {
   }
 
   // Filter results by selected business types + extra filters
-  const filteredResults = useMemo(() => {
-    if (!results) return null;
-    let filtered = bizTypes.includes("Todos")
-      ? results
-      : results.filter((b) => bizTypes.includes((b.type ?? "Todos") as BusinessType));
-    if (filterWhatsApp) filtered = filtered.filter((b) => !!b.whatsapp);
-    if (filterGMB) filtered = filtered.filter((b) => (b.userRatingsTotal ?? 0) > 0);
-    return filtered;
-  }, [results, bizTypes, filterWhatsApp, filterGMB]);
+  const filteredResults = !results ? null : results
+    .filter((b) => bizTypes.includes("Todos") || bizTypes.includes((b.type ?? "Todos") as BusinessType))
+    .filter((b) => !filterWhatsApp || !!b.whatsapp)
+    .filter((b) => !filterGMB || (b.userRatingsTotal ?? 0) > 0);
 
   const total = filteredResults?.length ?? 0;
   const alreadyIn = filteredResults?.filter((b) => b.isInLeads).length ?? 0;

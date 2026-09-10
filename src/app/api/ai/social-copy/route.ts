@@ -85,7 +85,10 @@ El campo "trends" debe contener entre 2 y 5 strings cortos describiendo las tend
     // Try with web_search tool first
     let response;
     try {
-      response = await (client.messages.create as Function)(
+      response = await (client.messages.create as unknown as (
+        params: Record<string, unknown>,
+        options?: Record<string, unknown>
+      ) => Promise<Anthropic.Message>)(
         {
           model: "claude-sonnet-4-20250514",
           max_tokens: 1024,

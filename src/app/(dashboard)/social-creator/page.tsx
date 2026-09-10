@@ -207,7 +207,7 @@ export default function SocialCreatorPage() {
               )}
               {!loading && !result && !error && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Completá el formulario y presioná "Generar Copy"
+                  Completá el formulario y presioná &ldquo;Generar Copy&rdquo;
                 </p>
               )}
             </CardContent>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logOperatorAction, notifyAdmins, escapeHtml } from "@/lib/notifications";
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
       ? undefined
       : Math.min(100, Math.max(1, parseInt(limitParam || "30", 10)));
 
-    const where: Record<string, any> = { type: "LEAD" as const };
+    const where: Prisma.ContactWhereInput = { type: "LEAD" as const };
 
     if (search) {
       where.OR = [

@@ -61,7 +61,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const userRole = (session.user as any).role as string;
+  const userRole = session.user.role;
   if (userRole !== "ADMIN" && userRole !== "SUPERADMIN") {
     return NextResponse.json({ error: "Sin permisos para eliminar" }, { status: 403 });
   }

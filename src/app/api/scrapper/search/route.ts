@@ -153,6 +153,11 @@ async function geocodeNominatim(city: string, province: string): Promise<{ lat: 
   }
 }
 
+interface GoogleGeocodeResult {
+  types: string[];
+  geometry: { location: { lat: number; lng: number } };
+}
+
 // Geocode city+province to lat/lng — tries Google first, falls back to Nominatim
 async function geocode(city: string, province: string): Promise<{ lat: number; lng: number } | null> {
   const query = `${city}, ${province}, Argentina`;
@@ -171,7 +176,7 @@ async function geocode(city: string, province: string): Promise<{ lat: number; l
     if (data.status === "OK" && data.results?.length) {
       // Filtrar resultados para evitar calles homónimas
       // Preferimos results que tengan types incluyendo 'locality', 'political', 'administrative_area_level_2', pero NO 'route'
-      const prefer = data.results.find((r: any) =>
+      const prefer = data.results.find((r: GoogleGeocodeResult) =>
         r.types.includes("locality") ||
         r.types.includes("administrative_area_level_2") ||
         (r.types.includes("political") && !r.types.includes("route"))
@@ -180,7 +185,7 @@ async function geocode(city: string, province: string): Promise<{ lat: number; l
         return prefer.geometry.location;
       }
       // Si no hay preferido, evitar results que sean solo 'route'
-      const notRoute = data.results.find((r: any) => !r.types.includes("route"));
+      const notRoute = data.results.find((r: GoogleGeocodeResult) => !r.types.includes("route"));
       if (notRoute) {
         return notRoute.geometry.location;
       }

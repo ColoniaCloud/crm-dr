@@ -86,7 +86,7 @@ function normalizeWhatsApp(raw: string): string {
 
 export default function InstallersPage() {
   const { data: session } = useSession();
-  const userRole = (session?.user as any)?.role as string || "OPERATOR";
+  const userRole = session?.user?.role || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
 
   const [installers, setInstallers] = useState<Installer[]>([]);

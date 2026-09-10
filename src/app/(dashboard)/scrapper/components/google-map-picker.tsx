@@ -109,7 +109,9 @@ export default function GoogleMapPicker({
   const resultMarkersRef = useRef<google.maps.Marker[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const onPickPointRef = useRef(onPickPoint);
-  onPickPointRef.current = onPickPoint;
+  useEffect(() => {
+    onPickPointRef.current = onPickPoint;
+  });
 
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);

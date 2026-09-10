@@ -252,13 +252,13 @@ export default function WarrantyDocsPage() {
             nunca queda expuesta en el cliente.
           </Step>
           <Step n={5} title="Ofrecé el formulario de reclamo">
-            Con la garantía activa, mostrá un botón/formulario de "reportar un problema" que pida los
+            Con la garantía activa, mostrá un botón/formulario de &ldquo;reportar un problema&rdquo; que pida los
             mismos datos de activación (email o DNI) más la descripción, y llame a{" "}
             <code className="rounded bg-muted px-1 text-xs">/api/public/warranty/claims</code> desde tu backend.
           </Step>
           <Step n={6} title="El reclamo aparece en el CRM">
             No hace falta ningún paso extra: el reclamo se guarda con{" "}
-            <code className="rounded bg-muted px-1 text-xs">channel: "PUBLIC_API"</code> y notifica a los
+            <code className="rounded bg-muted px-1 text-xs">channel: &quot;PUBLIC_API&quot;</code> y notifica a los
             administradores, apareciendo automáticamente en el Centro de Garantías.
           </Step>
 
