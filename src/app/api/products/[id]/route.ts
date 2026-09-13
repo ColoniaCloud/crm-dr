@@ -117,7 +117,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await logOperatorAction({ userId: session.user.id, action: "UPDATE_PRODUCT", entityType: "PRODUCT", entityId: id, description: `Actualizó producto "${product.name}"`, link: `/products/${id}` });
     return NextResponse.json(product);
-  } catch {
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code === "P2002")
+      return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });
     return NextResponse.json({ error: "Error al actualizar producto" }, { status: 500 });
   }
 }

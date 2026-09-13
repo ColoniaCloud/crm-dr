@@ -124,6 +124,7 @@ interface ProductDetail {
   category: string;
   subcategory: string | null;
   brand: string | null;
+  sku: string | null;
   factoryCode: string | null;
   shade: string | null;
   stock: number;
@@ -155,7 +156,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({
-    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "", factoryCode: "",
+    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "", sku: "", factoryCode: "",
     shade: "", stock: "0", minStock: "0", price: "", cost: "", description: "", imageUrl: "",
     warrantyEnabled: false, rollWarrantyMonths: "24", installWarrantyMonths: "12", maxInstallations: "15",
   });
@@ -194,6 +195,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       category: data.category,
       subcategory: data.subcategory ?? "",
       brand: data.brand ?? "",
+      sku: data.sku ?? "",
       factoryCode: data.factoryCode ?? "",
       shade: data.shade ?? "",
       stock: String(data.stock),
@@ -224,6 +226,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError("");
     try {
       const res = await fetch(`/api/products/${id}`, {
         method: "PATCH",
@@ -233,6 +236,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           category: form.category,
           subcategory: form.subcategory || null,
           brand: form.brand || null,
+          sku: form.sku.trim() || null,
           factoryCode: form.factoryCode || null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
@@ -252,7 +256,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             : null,
         }),
       });
-      if (!res.ok) throw new Error("Error al guardar");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Error al guardar");
+      }
       setSaveOk(true);
       setTimeout(() => { setSaveOk(false); setEditOpen(false); }, 1200);
       fetchProduct();
@@ -436,6 +443,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 )}
                 {product?.brand && (
                   <Badge variant="outline" className="text-xs text-white/80 border-white/30">{product.brand}</Badge>
+                )}
+                {product?.sku && (
+                  <Badge variant="outline" className="text-xs text-white/80 border-white/30">SKU: {product.sku}</Badge>
                 )}
                 {product?.factoryCode && (
                   <Badge variant="outline" className="text-xs text-white/80 border-white/30">Cód. fábrica: {product.factoryCode}</Badge>
@@ -878,9 +888,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label>Código de fábrica</Label>
-              <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>SKU</Label>
+                <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Código interno del rollo" />
+              </div>
+              <div className="space-y-1">
+                <Label>Código de fábrica</Label>
+                <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1052,6 +1068,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               ))}
             </div>
+
+            {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
             <DialogFooter className="pt-2">
               <Button variant="outline" type="button" onClick={() => setEditOpen(false)}>Cancelar</Button>

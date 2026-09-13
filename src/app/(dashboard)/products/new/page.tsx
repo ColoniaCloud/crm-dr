@@ -59,6 +59,7 @@ const EMPTY_FORM = {
   category: "AUTOMOTIVE",
   subcategory: "",
   brand: "",
+  sku: "",
   factoryCode: "",
   shade: "",
   stock: "0",
@@ -169,6 +170,7 @@ export default function NewProductPage() {
           category: form.category,
           subcategory: form.subcategory || null,
           brand: form.brand || null,
+          sku: form.sku.trim() || null,
           factoryCode: form.factoryCode || null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
@@ -187,7 +189,10 @@ export default function NewProductPage() {
             : null,
         }),
       });
-      if (!res.ok) throw new Error("Error al crear producto");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Error al crear producto");
+      }
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear producto");
@@ -283,9 +288,15 @@ export default function NewProductPage() {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <Label>Código de fábrica</Label>
-              <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>SKU</Label>
+                <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Código interno del rollo" />
+              </div>
+              <div className="space-y-1">
+                <Label>Código de fábrica</Label>
+                <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
+              </div>
             </div>
 
             {/* Stock + Min Stock */}

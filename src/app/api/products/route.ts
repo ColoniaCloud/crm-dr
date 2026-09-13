@@ -131,6 +131,8 @@ export async function POST(request: Request) {
     await logOperatorAction({ userId: session.user.id, action: "CREATE_PRODUCT", entityType: "PRODUCT", entityId: product?.id, description: `Creó producto "${productData.name}"`, link: `/products/${product?.id}` });
     return NextResponse.json(product, { status: 201 });
   } catch (error) {
+    if ((error as { code?: string }).code === "P2002")
+      return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });
     log.error({ err: error }, "Error creating product");
     return NextResponse.json({ error: "Error creating product" }, { status: 500 });
   }
