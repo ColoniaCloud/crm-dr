@@ -442,15 +442,13 @@ export async function POST(request: Request) {
     );
   }
 
-  // Check if all searches failed (likely API not enabled)
+  // Check if all searches failed (likely API restriction, disabled API, or invalid key)
   const allFailed = searches.every((s) => s.status === "rejected");
   if (allFailed) {
     const firstErr = searches[0].status === "rejected" ? (searches[0].reason as Error).message : "";
     log.error({ firstErr }, "All nearby searches failed");
     return NextResponse.json(
-      { error: firstErr.includes("REQUEST_DENIED")
-          ? "Google Places API no está habilitada. Habilitá 'Places API' en Google Cloud Console: https://console.cloud.google.com/apis/library/places-backend.googleapis.com"
-          : "Error al buscar negocios. Intentá de nuevo." },
+      { error: firstErr || "Error al buscar negocios en Google Places. Verificá la configuración de la API Key en Google Cloud Console." },
       { status: 502 }
     );
   }

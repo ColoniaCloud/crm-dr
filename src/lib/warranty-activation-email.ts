@@ -18,6 +18,17 @@ function crmBaseUrl(): string {
   return (process.env.NEXTAUTH_URL || "https://kri.kristallfilm.com").replace(/\/$/, "");
 }
 
+/** Lo que el mail necesita saber de la garantía. Nada de acá viene del request. */
+export interface DatosMailDeActivacion {
+  installationCode: string;
+  activationToken: string;
+  expiresAt: Date;
+  producto: string;
+  /** Meses de garantía de instalación del producto. */
+  meses: number;
+  taller: { nombre: string; logoUrl: string | null };
+}
+
 /**
  * El mail que recibe el usuario final **al activar** su garantía.
  *
@@ -35,66 +46,38 @@ function crmBaseUrl(): string {
  * respalda la garantía; el taller es a quien la persona le va a golpear la
  * puerta. Si el taller no cargó logo, va su nombre — nunca un hueco.
  *
- * Nunca tira: si el mail no sale, la garantía ya quedó activada igual.
+ * Es una función pura (datos → asunto + HTML) a propósito: así se puede ver
+ * con datos de ejemplo sin activar una garantía de verdad. Ver
+ * `scripts/preview-mail-garantia.ts`.
  */
-export async function enviarMailDeActivacion(installationId: string): Promise<void> {
-  try {
-    const inst = await prisma.warrantyInstallation.findUnique({
-      where: { id: installationId },
-      select: {
-        installationCode: true,
-        activationToken: true,
-        clientName: true,
-        clientEmail: true,
-        expiresAt: true,
-        activatedAt: true,
-        installerName: true,
-        roll: {
-          select: {
-            product: {
-              select: { name: true, warrantyConfig: { select: { installWarrantyMonths: true } } },
-            },
-            saleItem: { select: { sale: { select: { contactId: true } } } },
-          },
-        },
-      },
-    });
-    if (!inst?.clientEmail || !inst.expiresAt) return;
-    if (!isSmtpConfigured()) {
-      log.error({ installationId }, "SMTP not configured — no se manda el mail de activación");
-      return;
-    }
+export function renderMailDeActivacion(datos: DatosMailDeActivacion): {
+  subject: string;
+  html: string;
+} {
+  // Dos bases distintas, y confundirlas rompe el mail:
+  //   - las IMÁGENES (el logo de Kristall y el del taller) las sirve el CRM
+  //   - el LINK de reclamos vive en el portal público
+  const crm = crmBaseUrl();
+  const linkReclamos = `${portalBaseUrl()}/garantia/${encodeURIComponent(datos.activationToken)}/reclamo`;
+  const vence = datos.expiresAt.toLocaleDateString("es-AR");
 
-    const contactId = inst.roll.saleItem?.sale.contactId ?? null;
-    const taller = await nombreYLogoDelTaller(contactId, inst.installerName);
+  const filas: [string, string][] = [
+    ["Producto instalado", escapeHtml(datos.producto)],
+    ["Taller instalador", escapeHtml(datos.taller.nombre)],
+    ["Código de garantía", escapeHtml(datos.installationCode)],
+    ["Link para reclamos", `<a href="${linkReclamos}" style="color:#c62828;">Reportar un problema</a>`],
+    ["Garantía válida por", `${datos.meses} meses — hasta el ${escapeHtml(vence)}`],
+  ];
 
-    // Dos bases distintas, y confundirlas rompe el mail:
-    //   - las IMÁGENES (el logo de Kristall y el del taller) las sirve el CRM
-    //   - el LINK de reclamos vive en el portal público
-    const crm = crmBaseUrl();
-    const linkReclamos = `${portalBaseUrl()}/garantia/${encodeURIComponent(inst.activationToken)}/reclamo`;
-    const meses = inst.roll.product.warrantyConfig?.installWarrantyMonths ?? 12;
-    const vence = inst.expiresAt.toLocaleDateString("es-AR");
+  // El logo del taller entra por URL y no embebido: los clientes de correo
+  // bloquean las imágenes en data URI. Ver la nota en el endpoint público.
+  const logoTaller = datos.taller.logoUrl
+    ? `<img src="${datos.taller.logoUrl}" alt="${escapeHtml(datos.taller.nombre)}" style="max-height:44px;max-width:180px;display:block;">`
+    : `<span style="font-size:15px;font-weight:600;color:#111;">${escapeHtml(datos.taller.nombre)}</span>`;
 
-    const filas: [string, string][] = [
-      ["Producto instalado", inst.roll.product.name],
-      ["Taller instalador", taller.nombre],
-      ["Código de garantía", inst.installationCode],
-      ["Link para reclamos", `<a href="${linkReclamos}" style="color:#c62828;">Reportar un problema</a>`],
-      ["Garantía válida por", `${meses} meses — hasta el ${escapeHtml(vence)}`],
-    ];
-
-    // El logo del taller entra por URL y no embebido: los clientes de correo
-    // bloquean las imágenes en data URI. Ver la nota en el endpoint público.
-    const logoTaller = taller.logoUrl
-      ? `<img src="${taller.logoUrl}" alt="${escapeHtml(taller.nombre)}" style="max-height:44px;max-width:180px;display:block;">`
-      : `<span style="font-size:15px;font-weight:600;color:#111;">${escapeHtml(taller.nombre)}</span>`;
-
-    await transporter.sendMail({
-      from: FROM(),
-      to: inst.clientEmail,
-      subject: `Garantía activada — ${inst.installationCode}`,
-      html: `
+  return {
+    subject: `Garantía activada — ${datos.installationCode}`,
+    html: `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f4f4f5;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;">
 
@@ -152,7 +135,55 @@ export async function enviarMailDeActivacion(installationId: string): Promise<vo
     Mensaje automático de ${escapeHtml(BRAND.name)} · No respondas este correo.
   </p>
 </div>`,
+  };
+}
+
+/**
+ * Busca la instalación, arma el mail y lo manda al cliente final.
+ *
+ * Nunca tira: si el mail no sale, la garantía ya quedó activada igual.
+ */
+export async function enviarMailDeActivacion(installationId: string): Promise<void> {
+  try {
+    const inst = await prisma.warrantyInstallation.findUnique({
+      where: { id: installationId },
+      select: {
+        installationCode: true,
+        activationToken: true,
+        clientName: true,
+        clientEmail: true,
+        expiresAt: true,
+        activatedAt: true,
+        installerName: true,
+        roll: {
+          select: {
+            product: {
+              select: { name: true, warrantyConfig: { select: { installWarrantyMonths: true } } },
+            },
+            saleItem: { select: { sale: { select: { contactId: true } } } },
+          },
+        },
+      },
     });
+    if (!inst?.clientEmail || !inst.expiresAt) return;
+    if (!isSmtpConfigured()) {
+      log.error({ installationId }, "SMTP not configured — no se manda el mail de activación");
+      return;
+    }
+
+    const contactId = inst.roll.saleItem?.sale.contactId ?? null;
+    const taller = await nombreYLogoDelTaller(contactId, inst.installerName);
+
+    const { subject, html } = renderMailDeActivacion({
+      installationCode: inst.installationCode,
+      activationToken: inst.activationToken,
+      expiresAt: inst.expiresAt,
+      producto: inst.roll.product.name,
+      meses: inst.roll.product.warrantyConfig?.installWarrantyMonths ?? 12,
+      taller,
+    });
+
+    await transporter.sendMail({ from: FROM(), to: inst.clientEmail, subject, html });
   } catch (err) {
     // La garantía ya está activada: un mail que no sale no puede deshacerla.
     log.error({ err, installationId }, "No se pudo mandar el mail de activación de garantía");
