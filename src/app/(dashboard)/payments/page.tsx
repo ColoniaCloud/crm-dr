@@ -101,9 +101,12 @@ export default function PaymentsPageWrapper() {
 function PaymentsPage() {
   const searchParams = useSearchParams();
   const contactIdFilter = searchParams.get("contactId");
+  // Deep link del mail de "nuevo pago declarado": ?tab=declarations&declarationId=...
+  const tabFilter = searchParams.get("tab");
+  const declarationIdFilter = searchParams.get("declarationId");
   const { format: formatCurrency } = useCurrency();
   const [activeTab, setActiveTab] = useState<"payments" | "debts" | "declarations">(
-    contactIdFilter ? "debts" : "payments"
+    contactIdFilter ? "debts" : tabFilter === "declarations" || declarationIdFilter ? "declarations" : "payments"
   );
   const [payments, setPayments] = useState<Payment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -166,6 +169,13 @@ function PaymentsPage() {
     }
     loadData();
   }, []);
+
+  // Llegó por el link del mail a una declaración puntual: la enfoca en vez de
+  // dejar que se pierda en la lista.
+  useEffect(() => {
+    if (!declarationIdFilter || loading || activeTab !== "declarations") return;
+    document.getElementById(`declaration-${declarationIdFilter}`)?.scrollIntoView({ block: "center" });
+  }, [declarationIdFilter, loading, activeTab]);
 
   const pendingDeclarations = declarations.filter((d) => d.status === "PENDING");
 
@@ -566,7 +576,13 @@ function PaymentsPage() {
                 </p>
               )}
               {declarations.map((d) => (
-                <div key={d.id} className="rounded-lg border px-3 py-2.5 space-y-1">
+                <div
+                  key={d.id}
+                  id={`declaration-${d.id}`}
+                  className={`rounded-lg border px-3 py-2.5 space-y-1 ${
+                    d.id === declarationIdFilter ? "border-primary ring-2 ring-primary/40" : ""
+                  }`}
+                >
                   <div className="flex items-center justify-between">
                     <p className="font-medium text-sm truncate">{d.clientName}</p>
                     <span className="font-medium text-sm">{formatCurrency(d.amount)}</span>
@@ -632,7 +648,11 @@ function PaymentsPage() {
               </TableHeader>
               <TableBody>
                 {declarations.map((d) => (
-                  <TableRow key={d.id}>
+                  <TableRow
+                    key={d.id}
+                    id={`declaration-${d.id}`}
+                    className={d.id === declarationIdFilter ? "bg-primary/5 outline outline-2 outline-primary/40" : ""}
+                  >
                     <TableCell>{formatDate(d.date)}</TableCell>
                     <TableCell className="font-medium">{d.clientName}</TableCell>
                     <TableCell>{d.saleNumber}</TableCell>

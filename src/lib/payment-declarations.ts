@@ -26,6 +26,14 @@ function nombreDe(c: { firstName: string; lastName: string; company: string | nu
   return c.company || `${c.firstName} ${c.lastName}`.trim();
 }
 
+const METODO_LABEL: Record<string, string> = {
+  TRANSFER: "Transferencia",
+  CASH: "Efectivo",
+  CARD: "Tarjeta de crédito",
+  CHECK: "Cheque",
+  OTHER: "Otro",
+};
+
 type Resultado<T> = ({ ok: true } & T) | { ok: false; error: string; status: number };
 
 export interface ClientPaymentDeclaration {
@@ -152,14 +160,28 @@ export async function createPaymentDeclaration(
     },
   });
 
+  // El mail tiene que alcanzar para decidir sin ir a buscar nada más: todos
+  // los datos que tipeó el cliente en el formulario, en una sola línea (el
+  // template de notifyAdmins escapa el mensaje y lo mete en un <p>, así que un
+  // salto de línea no se ve — separamos con "·" como el resto del panel).
+  const detalle = [
+    `Monto: $${input.amount.toLocaleString("es-AR")}`,
+    `Método: ${METODO_LABEL[input.method] ?? input.method}`,
+    `Referencia: ${input.reference?.trim() || "sin referencia"}`,
+    `Notas: ${input.notes?.trim() || "sin notas"}`,
+    `Comprobante: ${tieneComprobante ? "sí" : "no"}`,
+  ].join(" · ");
+
   await notifyAdmins({
     type: "PAYMENT_DECLARED",
     // Alguien de afuera declaró plata que alguien de la empresa tiene que
     // verificar antes de que cuente: igual criterio que un reclamo de garantía.
     email: true,
     title: "Nuevo pago declarado (portal de clientes)",
-    message: `${nombreDe(sale.contact)} declaró un pago de $${input.amount.toLocaleString("es-AR")} para la venta #${sale.number}.`,
-    link: "/payments",
+    message: `${nombreDe(sale.contact)} declaró un pago para la venta #${sale.number}. ${detalle}`,
+    // Directo a la fila que hay que aprobar, no solo a la pantalla: ver el
+    // punto 5 de payments/page.tsx (lee ?tab= y ?declarationId= y hace scroll).
+    link: `/payments?tab=declarations&declarationId=${declaracion.id}`,
   });
 
   return {
