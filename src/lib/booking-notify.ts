@@ -95,7 +95,7 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
       ["Servicio", b.serviceName],
       ["Cuándo lo pidió", cuando],
       ["Cliente", b.clientName],
-      ["Teléfono", b.clientPhone],
+      ["WhatsApp", b.clientPhone],
     ];
     if (b.clientEmail) filas.push(["Email", b.clientEmail]);
 

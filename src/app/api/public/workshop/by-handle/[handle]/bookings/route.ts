@@ -31,7 +31,7 @@ const schema = z.object({
   serviceId: z.string().trim().max(64).nullish(),
   clientName: z.string().trim().min(2, "Poné tu nombre").max(120),
   clientEmail: z.string().trim().email("Revisá el email").max(191).nullish(),
-  clientPhone: z.string().trim().min(6, "Poné un teléfono").max(50),
+  clientPhone: z.string().trim().min(6, "Poné tu WhatsApp").max(50),
   // Automotriz. Cuál de los dos bloques es obligatorio lo decide el rubro del
   // servicio elegido, y eso solo lo sabe la base: la regla vive en
   // `createBooking`, no acá. Acá se valida la forma.
