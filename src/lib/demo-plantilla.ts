@@ -39,24 +39,42 @@ const log = createLogger("lib/demo-plantilla");
 /** El catálogo compartido: productos y el operador que "vendió" los rollos. */
 const MAIL_OPERADOR = "operador@demo.local";
 
+/**
+ * Dos productos del catálogo real de Kristall Film (mismos sku, nombre,
+ * categoría y meses de garantía que `prisma/seed-kristall.ts` y
+ * `kristall-web/data/catalogo.json`), no inventados para el demo.
+ *
+ * Viven igual en la base de demo — separada de la real (sección 3 de
+ * `DEMO-PORTAL.md`) — así que usar el sku y el nombre reales no pisa ni
+ * expone stock ni ventas de producción: el `Product` que se crea acá es una
+ * fila más de esa base aparte.
+ */
 const PRODUCTOS = [
   {
-    sku: "DEMO-AUTO-35",
-    name: "Kristall Nano Cerámica 35",
+    sku: "KNCE15",
+    name: "KERAMX 15",
     category: "AUTOMOTIVE" as const,
+    subcategory: "NANOCERAMIC",
+    shade: "15",
+    brand: "KRISTALL",
+    description: "Tecnología Nano Ceramic. 99% bloqueo UV, 95% rechazo IR. VLT 15%.",
     price: 145000,
     width: 1.52,
     length: 30,
-    meses: 60,
+    meses: 120,
   },
   {
-    sku: "DEMO-ARQ-SOLAR",
-    name: "Kristall Control Solar Plata 20",
+    sku: "KRF15S",
+    name: "KReflect Silver 15",
     category: "ARCHITECTURAL" as const,
+    subcategory: "SOLAR",
+    shade: "15",
+    brand: "KRISTALL",
+    description: "Tecnología Arquitectura Espejado. 99% bloqueo UV, 88% rechazo IR. VLT 15%.",
     price: 98000,
     width: 1.52,
     length: 30,
-    meses: 120,
+    meses: 72,
   },
 ];
 
@@ -108,6 +126,10 @@ async function asegurarCatalogo(): Promise<{
         sku: p.sku,
         name: p.name,
         category: p.category,
+        subcategory: p.subcategory,
+        shade: p.shade,
+        brand: p.brand,
+        description: p.description,
         price: p.price,
         width: p.width,
         length: p.length,
@@ -143,8 +165,8 @@ export async function provisionarClonDemo(): Promise<ClonDemo> {
   exigirDemo("provisionarClonDemo()");
 
   const { userId, productos } = await asegurarCatalogo();
-  const auto = productos.find((p) => p.sku === "DEMO-AUTO-35")!;
-  const arq = productos.find((p) => p.sku === "DEMO-ARQ-SOLAR")!;
+  const auto = productos.find((p) => p.sku === "KNCE15")!;
+  const arq = productos.find((p) => p.sku === "KRF15S")!;
 
   const marca = randomBytes(4).toString("hex");
   const clave = randomBytes(32).toString("hex");
