@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
@@ -74,8 +75,64 @@ function buildDiagnosticNote(data: CreateLeadInput): string | null {
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
+const LIST_SELECT = {
+  id: true,
+  leadNumber: true,
+  firstName: true,
+  lastName: true,
+  company: true,
+  sector: true,
+  phone: true,
+  whatsapp: true,
+  email: true,
+  city: true,
+  contacted: true,
+  createdAt: true,
+} as const;
+
 export function OPTIONS() {
   return mobileCorsPreflight();
+}
+
+// Buscador + filtros rápidos para la pantalla de "Leads" del POS móvil.
+// Mismas 3 dimensiones más usadas del filtro del CRM web (contactado, mis
+// leads, con dirección) — el resto (sector/ciudad/barrio/etiqueta) se dejó
+// afuera a propósito: no entra bien en una fila de iconos en el celular.
+export async function GET(request: Request) {
+  const gate = await requireMobileAuth(request);
+  if (!gate.success) return withMobileCors(gate.response);
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search")?.trim();
+    const contactedParam = searchParams.get("contacted");
+
+    const where: Prisma.ContactWhereInput = { type: "LEAD" };
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search } },
+        { lastName: { contains: search } },
+        { company: { contains: search } },
+        { phone: { contains: search } },
+        { email: { contains: search } },
+      ];
+    }
+    if (contactedParam !== null) where.contacted = contactedParam === "true";
+    if (searchParams.get("myLeads") === "1") where.assignedToId = gate.user.sub;
+    if (searchParams.get("hasAddress") === "1") where.address = { not: null };
+
+    const leads = await prisma.contact.findMany({
+      where,
+      select: LIST_SELECT,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    return withMobileCors(NextResponse.json({ leads }));
+  } catch (error) {
+    log.error({ err: error }, "Error searching leads");
+    return withMobileCors(NextResponse.json({ error: "Error al buscar leads" }, { status: 500 }));
+  }
 }
 
 // Alta de lead desde la ruta: mismas preguntas que el CRM guarda para
