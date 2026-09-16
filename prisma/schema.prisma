@@ -153,6 +153,12 @@ enum AccountAdjustmentType {
   WRITE_OFF // condonación
 }
 
+enum PaymentDeclarationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
 // ─── Portal de clientes: niveles de acceso y alta de cuenta ─────────────────
 
 enum PortalAccessLevel {
@@ -197,6 +203,7 @@ model User {
   accountAdjustments         AccountAdjustment[]         @relation("AccountAdjustmentCreatedBy")
   warrantyRollLocationEvents WarrantyRollLocationEvent[]
   messageTemplates           MessageTemplate[]
+  reviewedPaymentDeclarations PaymentDeclaration[]       @relation("PaymentDeclarationReviewedBy")
 
   @@map("users")
 }
@@ -316,6 +323,7 @@ model Contact {
   bizStatus      BusinessStatus?
   lastVerifiedAt DateTime?
   verifications  ContactVerification[]
+  paymentDeclarations PaymentDeclaration[]
 
   @@index([email])
   @@index([source])
@@ -540,11 +548,12 @@ model Sale {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  items            SaleItem[]
-  remito           Remito?
-  payments         Payment[]
-  paymentAuditLogs PaymentAuditLog[]
-  paymentPlan      PaymentPlan?
+  items               SaleItem[]
+  remito              Remito?
+  payments            Payment[]
+  paymentAuditLogs    PaymentAuditLog[]
+  paymentPlan         PaymentPlan?
+  paymentDeclarations PaymentDeclaration[]
 
   @@map("sales")
 }
@@ -602,8 +611,56 @@ model Payment {
   // este pago: el saldo del cliente NUNCA se calcula desde acá, siempre desde
   // total - pagos. Una imputación mal hecha no puede corromper el saldo.
   allocations PaymentAllocation[]
+  // Se completa solo si este Payment nació de confirmar una declaración del
+  // portal de clientes (ver PaymentDeclaration). Un Payment cargado a mano en
+  // el CRM o desde la app móvil no tiene una acá.
+  declaration PaymentDeclaration?
 
   @@map("payments")
+}
+
+/// Un Cliente del portal avisa "ya pagué esta cuota" desde /cliente/dashboard o
+/// /cliente/cuenta. Esto NUNCA mueve el saldo por sí solo — a propósito, para
+/// que declarar un pago no sea gratis: queda PENDING, notifica a los admins, y
+/// solo cuando un admin la confirma desde el CRM nace el `Payment` real (que
+/// recién ahí corre por `rebuildAllocations`). Rechazar deja constancia del
+/// motivo y avisa al cliente por PortalNotification, igual que confirmar.
+model PaymentDeclaration {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  amount    Decimal @db.Decimal(10, 2)
+  method    String
+  reference String?
+  notes     String? @db.Text
+
+  // Comprobante: base64 sin el prefijo `data:`, igual que WorkshopBooking.photo.
+  // Se guardan juntos o ninguno, y se excluyen de los listados — solo se piden
+  // por el endpoint dedicado que decodifica y sirve los bytes.
+  receipt         String? @db.LongText
+  receiptMimeType String?
+
+  status PaymentDeclarationStatus @default(PENDING)
+
+  // Se completa al confirmar: el Payment real que esta declaración generó.
+  paymentId String?  @unique
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  reviewedById    String?
+  reviewedBy      User?     @relation("PaymentDeclarationReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  rejectionReason String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([saleId])
+  @@index([status])
+  @@map("payment_declarations")
 }
 
 model PaymentAuditLog {

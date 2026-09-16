@@ -30,6 +30,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { DebtSearchSelect } from "@/components/contact-search-select";
@@ -55,12 +56,38 @@ interface Debt {
   remaining: number;
 }
 
+interface Declaration {
+  id: string;
+  date: string;
+  clientName: string;
+  saleNumber: number;
+  amount: number;
+  method: string;
+  reference: string | null;
+  notes: string | null;
+  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  hasReceipt: boolean;
+  rejectionReason: string | null;
+}
+
 const paymentMethodLabel: Record<string, string> = {
   CASH: "Efectivo",
   TRANSFER: "Transferencia",
   CHECK: "Cheque",
   CARD: "Tarjeta de Credito",
   OTHER: "Otro",
+};
+
+const declarationStatusLabel: Record<Declaration["status"], string> = {
+  PENDING: "Pendiente",
+  CONFIRMED: "Confirmado",
+  REJECTED: "Rechazado",
+};
+
+const declarationStatusVariant: Record<Declaration["status"], "default" | "secondary" | "destructive" | "outline"> = {
+  PENDING: "outline",
+  CONFIRMED: "default",
+  REJECTED: "destructive",
 };
 
 export default function PaymentsPageWrapper() {
@@ -75,16 +102,22 @@ function PaymentsPage() {
   const searchParams = useSearchParams();
   const contactIdFilter = searchParams.get("contactId");
   const { format: formatCurrency } = useCurrency();
-  const [activeTab, setActiveTab] = useState<"payments" | "debts">(
+  const [activeTab, setActiveTab] = useState<"payments" | "debts" | "declarations">(
     contactIdFilter ? "debts" : "payments"
   );
   const [payments, setPayments] = useState<Payment[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [declarations, setDeclarations] = useState<Declaration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState("");
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<Declaration | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
   const [form, setForm] = useState({
     saleId: "",
     amount: "",
@@ -115,13 +148,64 @@ function PaymentsPage() {
     }
   }
 
+  async function fetchDeclarations() {
+    try {
+      const res = await fetch("/api/payments/declarations");
+      if (!res.ok) throw new Error("Error al cargar los pagos declarados");
+      const json = await res.json();
+      setDeclarations(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    }
+  }
+
   useEffect(() => {
     async function loadData() {
-      await Promise.all([fetchPayments(), fetchDebts()]);
+      await Promise.all([fetchPayments(), fetchDebts(), fetchDeclarations()]);
       setLoading(false);
     }
     loadData();
   }, []);
+
+  const pendingDeclarations = declarations.filter((d) => d.status === "PENDING");
+
+  async function handleConfirmDeclaration(id: string) {
+    setActingId(id);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/payments/declarations/${id}/confirm`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "No se pudo confirmar el pago");
+      await Promise.all([fetchDeclarations(), fetchPayments(), fetchDebts()]);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo confirmar el pago");
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function handleRejectDeclaration(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rejectTarget) return;
+    setRejecting(true);
+    setActionError("");
+    try {
+      const res = await fetch(`/api/payments/declarations/${rejectTarget.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "No se pudo rechazar el pago");
+      setRejectTarget(null);
+      setRejectReason("");
+      await fetchDeclarations();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo rechazar el pago");
+    } finally {
+      setRejecting(false);
+    }
+  }
 
   const visibleDebts = contactIdFilter
     ? debts.filter((d) => d.contactId === contactIdFilter)
@@ -298,7 +382,26 @@ function PaymentsPage() {
         >
           Deudas Pendientes
         </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+            activeTab === "declarations"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveTab("declarations")}
+        >
+          Declaraciones del portal
+          {pendingDeclarations.length > 0 && (
+            <Badge variant="destructive" className="rounded-full px-1.5 py-0 text-[10px]">
+              {pendingDeclarations.length}
+            </Badge>
+          )}
+        </button>
       </div>
+
+      {actionError && activeTab === "declarations" && (
+        <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{actionError}</div>
+      )}
 
       {loading ? (
         <p className="text-center text-muted-foreground py-8">
@@ -370,7 +473,7 @@ function PaymentsPage() {
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : activeTab === "debts" ? (
         <Card>
           <CardContent className="pt-6">
             {/* ── Vista móvil deudas ── */}
@@ -452,7 +555,180 @@ function PaymentsPage() {
             </div>
           </CardContent>
         </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            {/* ── Vista móvil declaraciones ── */}
+            <div className="md:hidden space-y-2">
+              {declarations.length === 0 && (
+                <p className="text-center text-muted-foreground py-8 text-sm">
+                  Todavía no hay pagos declarados desde el portal
+                </p>
+              )}
+              {declarations.map((d) => (
+                <div key={d.id} className="rounded-lg border px-3 py-2.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm truncate">{d.clientName}</p>
+                    <span className="font-medium text-sm">{formatCurrency(d.amount)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>Venta {d.saleNumber}</span>
+                    <span>{paymentMethodLabel[d.method] || d.method}</span>
+                    <span>{formatDate(d.date)}</span>
+                    <Badge variant={declarationStatusVariant[d.status]}>{declarationStatusLabel[d.status]}</Badge>
+                  </div>
+                  {d.hasReceipt && (
+                    <a
+                      href={`/api/payments/declarations/${d.id}/receipt`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-primary underline"
+                    >
+                      Ver comprobante
+                    </a>
+                  )}
+                  {d.status === "PENDING" && (
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs flex-1"
+                        disabled={actingId === d.id}
+                        onClick={() => handleConfirmDeclaration(d.id)}
+                      >
+                        Confirmar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs flex-1"
+                        disabled={actingId === d.id}
+                        onClick={() => setRejectTarget(d)}
+                      >
+                        Rechazar
+                      </Button>
+                    </div>
+                  )}
+                  {d.status === "REJECTED" && d.rejectionReason && (
+                    <p className="text-xs text-muted-foreground">Motivo: {d.rejectionReason}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* ── Vista desktop declaraciones ── */}
+            <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Venta</TableHead>
+                  <TableHead>Monto</TableHead>
+                  <TableHead>Metodo</TableHead>
+                  <TableHead>Referencia</TableHead>
+                  <TableHead>Comprobante</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {declarations.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell>{formatDate(d.date)}</TableCell>
+                    <TableCell className="font-medium">{d.clientName}</TableCell>
+                    <TableCell>{d.saleNumber}</TableCell>
+                    <TableCell>{formatCurrency(d.amount)}</TableCell>
+                    <TableCell>{paymentMethodLabel[d.method] || d.method}</TableCell>
+                    <TableCell>{d.reference || "—"}</TableCell>
+                    <TableCell>
+                      {d.hasReceipt ? (
+                        <a
+                          href={`/api/payments/declarations/${d.id}/receipt`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline"
+                        >
+                          Ver
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={declarationStatusVariant[d.status]}>{declarationStatusLabel[d.status]}</Badge>
+                      {d.status === "REJECTED" && d.rejectionReason && (
+                        <p className="mt-1 text-xs text-muted-foreground">{d.rejectionReason}</p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {d.status === "PENDING" && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            disabled={actingId === d.id}
+                            onClick={() => handleConfirmDeclaration(d.id)}
+                          >
+                            Confirmar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={actingId === d.id}
+                            onClick={() => setRejectTarget(d)}
+                          >
+                            Rechazar
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {declarations.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                      Todavía no hay pagos declarados desde el portal
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
+
+      <Dialog open={rejectTarget !== null} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rechazar pago declarado</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRejectDeclaration} className="space-y-4">
+            {rejectTarget && (
+              <p className="text-sm text-muted-foreground">
+                {rejectTarget.clientName} · Venta {rejectTarget.saleNumber} ·{" "}
+                {formatCurrency(rejectTarget.amount)}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label>Motivo *</Label>
+              <Textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej: no encontramos la transferencia en el resumen bancario"
+                required
+                minLength={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRejectTarget(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="destructive" disabled={rejecting || rejectReason.trim().length < 3}>
+                {rejecting ? "Rechazando..." : "Rechazar pago"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
