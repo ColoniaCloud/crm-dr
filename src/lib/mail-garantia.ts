@@ -125,8 +125,12 @@ function banda(o: { eyebrow: string; titulo: string; bajada: string; boton?: { t
 }
 
 function firmaTaller(taller: FirmaDelTaller, derecha?: string): string {
+  // Los logos de los talleres tienen cualquier proporción (los hay de 400×52).
+  // `max-height` + `max-width` con `auto` deja que el navegador conserve la
+  // proporción sea cual sea el lado que tope; el atributo `height` es para
+  // Outlook de escritorio, que ignora los max-* y escala el ancho solo.
   const logo = taller.logoUrl
-    ? `<img src="${taller.logoUrl}" alt="${escapeHtml(taller.nombre)}" height="30" style="display:block;height:30px;max-width:180px;border:0;">`
+    ? `<img src="${taller.logoUrl}" alt="${escapeHtml(taller.nombre)}" height="30" style="display:block;height:auto;max-height:30px;width:auto;max-width:220px;border:0;">`
     : `<span style="font-family:${F};font-size:14px;font-weight:600;color:${C.ink};">${escapeHtml(taller.nombre)}</span>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;border-bottom:1px solid ${C.hair};">
   <tr><td class="px" style="padding:16px 40px;">
