@@ -1,189 +1,102 @@
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
-import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
-import { portalBaseUrl } from "@/lib/portal-tokens";
-import { BRAND } from "@/lib/brand";
 import { workshopLogoPath } from "@/lib/workshop-logo";
+import { crmBaseUrl, renderCertificado, type DatosCertificado, type FirmaDelTaller } from "@/lib/mail-garantia";
 
 const log = createLogger("lib/warranty-activation-email");
 
 /**
- * Base pública del propio CRM. Es de donde salen las imágenes del mail: el logo
- * de Kristall vive en `public/` de este proyecto y el del taller lo sirve un
- * endpoint de acá. `portalBaseUrl()` apunta a kristallfilm.com, que es otro
- * sitio — usarlo para una imagen del CRM da un 404 y un mail sin logos.
+ * Junta todo lo que el certificado de garantía necesita de una instalación:
+ * la garantía en sí, el producto y su configuración, y con qué nombre y logo
+ * firma el taller. Lo usan los dos envíos del certificado —el de la activación
+ * y el del cierre de orden en Mi Taller—, que solo se diferencian en quién lo
+ * dispara y qué botón lleva.
+ *
+ * `null` si la instalación no existe o todavía no tiene vencimiento (no está
+ * activada): sin eso no hay certificado que mandar.
  */
-function crmBaseUrl(): string {
-  return (process.env.NEXTAUTH_URL || "https://kri.kristallfilm.com").replace(/\/$/, "");
-}
+export async function cargarDatosCertificado(
+  installationId: string
+): Promise<(DatosCertificado & { destinatario: string | null }) | null> {
+  const inst = await prisma.warrantyInstallation.findUnique({
+    where: { id: installationId },
+    select: {
+      installationCode: true,
+      activationToken: true,
+      clientName: true,
+      clientEmail: true,
+      assetType: true,
+      assetDescription: true,
+      plate: true,
+      installedAt: true,
+      activatedAt: true,
+      expiresAt: true,
+      installerName: true,
+      roll: {
+        select: {
+          product: {
+            select: {
+              name: true,
+              sku: true,
+              factoryCode: true,
+              category: true,
+              warrantyConfig: { select: { installWarrantyMonths: true } },
+            },
+          },
+          saleItem: { select: { sale: { select: { contactId: true } } } },
+        },
+      },
+    },
+  });
+  if (!inst?.expiresAt) return null;
 
-/** Lo que el mail necesita saber de la garantía. Nada de acá viene del request. */
-export interface DatosMailDeActivacion {
-  installationCode: string;
-  activationToken: string;
-  expiresAt: Date;
-  producto: string;
-  /** Meses de garantía de instalación del producto. */
-  meses: number;
-  taller: { nombre: string; logoUrl: string | null };
-}
-
-/**
- * El mail que recibe el usuario final **al activar** su garantía.
- *
- * Es distinto del que le manda el taller al terminar una orden
- * (`workshop-warranty.ts`): aquel dice «te dejamos la garantía activada», y
- * sale del lado del instalador. Este sale cuando la persona completa sus datos
- * en `/garantia/<token>` y aprieta activar — es su comprobante, y es el que va
- * a buscar el día que tenga un problema.
- *
- * Por eso lleva el link de reclamos bien visible: sin él, la única forma de
- * reclamar es acordarse del código y de la contraseña, y a los dos años nadie
- * se acuerda.
- *
- * Va **firmado por los dos**: el logo de Kristall y el del taller. Kristall
- * respalda la garantía; el taller es a quien la persona le va a golpear la
- * puerta. Si el taller no cargó logo, va su nombre — nunca un hueco.
- *
- * Es una función pura (datos → asunto + HTML) a propósito: así se puede ver
- * con datos de ejemplo sin activar una garantía de verdad. Ver
- * `scripts/preview-mail-garantia.ts`.
- */
-export function renderMailDeActivacion(datos: DatosMailDeActivacion): {
-  subject: string;
-  html: string;
-} {
-  // Dos bases distintas, y confundirlas rompe el mail:
-  //   - las IMÁGENES (el logo de Kristall y el del taller) las sirve el CRM
-  //   - el LINK de reclamos vive en el portal público
-  const crm = crmBaseUrl();
-  const linkReclamos = `${portalBaseUrl()}/garantia/${encodeURIComponent(datos.activationToken)}/reclamo`;
-  const vence = datos.expiresAt.toLocaleDateString("es-AR");
-
-  const filas: [string, string][] = [
-    ["Producto instalado", escapeHtml(datos.producto)],
-    ["Taller instalador", escapeHtml(datos.taller.nombre)],
-    ["Código de garantía", escapeHtml(datos.installationCode)],
-    ["Link para reclamos", `<a href="${linkReclamos}" style="color:#c62828;">Reportar un problema</a>`],
-    ["Garantía válida por", `${datos.meses} meses — hasta el ${escapeHtml(vence)}`],
-  ];
-
-  // El logo del taller entra por URL y no embebido: los clientes de correo
-  // bloquean las imágenes en data URI. Ver la nota en el endpoint público.
-  const logoTaller = datos.taller.logoUrl
-    ? `<img src="${datos.taller.logoUrl}" alt="${escapeHtml(datos.taller.nombre)}" style="max-height:44px;max-width:180px;display:block;">`
-    : `<span style="font-size:15px;font-weight:600;color:#111;">${escapeHtml(datos.taller.nombre)}</span>`;
+  const contactId = inst.roll.saleItem?.sale.contactId ?? null;
+  const taller = await nombreYLogoDelTaller(contactId, inst.installerName);
 
   return {
-    subject: `Garantía activada — ${datos.installationCode}`,
-    html: `
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f4f4f5;padding:24px;">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;">
-
-    <!-- Cabecera: Kristall y el taller, uno al lado del otro -->
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e4e4e7;">
-      <tr>
-        <td style="padding:20px 24px;vertical-align:middle;">
-          <img src="${crm}${BRAND.emailLogo}" alt="${escapeHtml(BRAND.name)}" style="max-height:44px;display:block;">
-        </td>
-        <td style="padding:20px 24px;vertical-align:middle;text-align:right;border-left:1px solid #e4e4e7;">
-          ${logoTaller}
-        </td>
-      </tr>
-    </table>
-
-    <div style="padding:28px 24px;">
-      <h1 style="margin:0 0 14px 0;font-size:24px;line-height:1.2;color:#111;">Garantía activada</h1>
-
-      <p style="margin:0 0 24px 0;color:#3f3f46;font-size:15px;line-height:1.6;">
-        Tu garantía Kristall protege tu instalación contra defectos de fábrica y/o calidad,
-        asegurando una vida útil en óptimas condiciones.
-      </p>
-
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-        ${filas
-          .map(
-            ([etiqueta, valor], i) => `
-        <tr>
-          <td style="padding:10px 0;color:#71717a;width:44%;${i > 0 ? "border-top:1px solid #f4f4f5;" : ""}">${etiqueta}</td>
-          <td style="padding:10px 0;color:#111;font-weight:600;${i > 0 ? "border-top:1px solid #f4f4f5;" : ""}">${valor}</td>
-        </tr>`
-          )
-          .join("")}
-      </table>
-
-      <p style="margin:24px 0 0 0;color:#71717a;font-size:13px;line-height:1.6;">
-        Guardá este mail. El link de arriba es el que vas a necesitar si algún día tenés un problema
-        con tu instalación.
-      </p>
-    </div>
-
-    <div style="background:#fafafa;border-top:1px solid #e4e4e7;padding:20px 24px;">
-      <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;letter-spacing:.06em;color:#111;">
-        ${escapeHtml(BRAND.name.toUpperCase())}
-      </p>
-      <p style="margin:0;color:#71717a;font-size:13px;line-height:1.7;">
-        ${escapeHtml(BRAND.tagline)}<br>
-        <a href="${BRAND.website}" style="color:#71717a;">${escapeHtml(BRAND.websiteLabel)}</a><br>
-        <a href="mailto:${BRAND.salesEmail}" style="color:#71717a;">${escapeHtml(BRAND.salesEmail)}</a>
-      </p>
-    </div>
-  </div>
-
-  <p style="max-width:560px;margin:14px auto 0;text-align:center;color:#a1a1aa;font-size:11px;">
-    Mensaje automático de ${escapeHtml(BRAND.name)} · No respondas este correo.
-  </p>
-</div>`,
+    destinatario: inst.clientEmail,
+    nombreCliente: inst.clientName,
+    installationCode: inst.installationCode,
+    activationToken: inst.activationToken,
+    producto: inst.roll.product.name,
+    sku: inst.roll.product.sku ?? inst.roll.product.factoryCode ?? null,
+    categoria: inst.roll.product.category,
+    assetType: inst.assetType,
+    assetDescription: inst.assetDescription,
+    plate: inst.plate,
+    installedAt: inst.installedAt,
+    activatedAt: inst.activatedAt,
+    expiresAt: inst.expiresAt,
+    meses: inst.roll.product.warrantyConfig?.installWarrantyMonths ?? 12,
+    taller,
   };
 }
 
 /**
- * Busca la instalación, arma el mail y lo manda al cliente final.
+ * El certificado que recibe el usuario final **al activar** su garantía.
+ *
+ * Es distinto del que le manda el taller al terminar una orden
+ * (`workshop-warranty.ts`): aquel llega sin que la persona haya hecho nada.
+ * Este sale cuando ella completa sus datos en `/garantia/<token>` y aprieta
+ * activar — es su comprobante, y es el que va a buscar el día que tenga un
+ * problema. Por eso el botón grande es el de reclamos: sin él, la única forma
+ * de reclamar es acordarse del código y de la contraseña, y a los dos años
+ * nadie se acuerda.
  *
  * Nunca tira: si el mail no sale, la garantía ya quedó activada igual.
  */
 export async function enviarMailDeActivacion(installationId: string): Promise<void> {
   try {
-    const inst = await prisma.warrantyInstallation.findUnique({
-      where: { id: installationId },
-      select: {
-        installationCode: true,
-        activationToken: true,
-        clientName: true,
-        clientEmail: true,
-        expiresAt: true,
-        activatedAt: true,
-        installerName: true,
-        roll: {
-          select: {
-            product: {
-              select: { name: true, warrantyConfig: { select: { installWarrantyMonths: true } } },
-            },
-            saleItem: { select: { sale: { select: { contactId: true } } } },
-          },
-        },
-      },
-    });
-    if (!inst?.clientEmail || !inst.expiresAt) return;
+    const datos = await cargarDatosCertificado(installationId);
+    if (!datos?.destinatario) return;
     if (!isSmtpConfigured()) {
       log.error({ installationId }, "SMTP not configured — no se manda el mail de activación");
       return;
     }
 
-    const contactId = inst.roll.saleItem?.sale.contactId ?? null;
-    const taller = await nombreYLogoDelTaller(contactId, inst.installerName);
-
-    const { subject, html } = renderMailDeActivacion({
-      installationCode: inst.installationCode,
-      activationToken: inst.activationToken,
-      expiresAt: inst.expiresAt,
-      producto: inst.roll.product.name,
-      meses: inst.roll.product.warrantyConfig?.installWarrantyMonths ?? 12,
-      taller,
-    });
-
-    await transporter.sendMail({ from: FROM(), to: inst.clientEmail, subject, html });
+    const { subject, html } = renderCertificado(datos, "activacion");
+    await transporter.sendMail({ from: FROM(), to: datos.destinatario, subject, html });
   } catch (err) {
     // La garantía ya está activada: un mail que no sale no puede deshacerla.
     log.error({ err, installationId }, "No se pudo mandar el mail de activación de garantía");
@@ -197,11 +110,14 @@ export async function enviarMailDeActivacion(installationId: string): Promise<vo
  * el flujo de Mi Taller— y manda sobre la config actual, porque la garantía
  * dice quién hizo ese trabajo, no cómo se llama el taller hoy. Si no hay, se
  * cae a la razón social del contacto.
+ *
+ * El logo entra por URL y no embebido: los clientes de correo bloquean las
+ * imágenes en data URI. Ver la nota en el endpoint público del logo.
  */
 async function nombreYLogoDelTaller(
   contactId: string | null,
   installerName: string | null
-): Promise<{ nombre: string; logoUrl: string | null }> {
+): Promise<FirmaDelTaller> {
   if (!contactId) {
     return { nombre: installerName?.trim() || "Instalador autorizado", logoUrl: null };
   }

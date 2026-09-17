@@ -20,4 +20,6 @@ export const BRAND = {
   salesEmail: "ventas@kristallfilm.com",
   /** Logo para el encabezado de los correos. Servido desde `public/`. */
   emailLogo: "/LogoPlano.png",
+  /** El mismo logo en blanco, para los correos con cabecera negra (garantías). */
+  emailLogoOnDark: "/logo-blanco.png",
 } as const;

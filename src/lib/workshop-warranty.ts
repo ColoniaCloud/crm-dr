@@ -1,10 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
-import { notifyAdmins, escapeHtml } from "@/lib/notifications";
+import { notifyAdmins } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
-import { portalBaseUrl } from "@/lib/portal-tokens";
 import { activateInstallationWarrantyTx, allocateInstallationTx } from "@/lib/warranty";
+import { renderCertificado, type DatosCertificado } from "@/lib/mail-garantia";
+import { cargarDatosCertificado } from "@/lib/warranty-activation-email";
 
 const log = createLogger("lib/workshop-warranty");
 
@@ -202,15 +203,9 @@ export interface ResultadoMail {
  * mano y no una cola en segundo plano, a propósito — es un mail por trabajo, y
  * una cola que nadie mira es peor que un botón que alguien aprieta.
  */
-export async function enviarMailDeGarantia(params: {
-  destinatario: string | null;
-  nombreCliente: string;
-  nombreTaller: string;
-  producto: string;
-  installationCode: string;
-  activationToken: string;
-  expiresAt: Date;
-}): Promise<ResultadoMail> {
+export async function enviarMailDeGarantia(
+  params: DatosCertificado & { destinatario: string | null }
+): Promise<ResultadoMail> {
   if (!params.destinatario) {
     return { enviado: false, motivo: "El cliente no tiene email cargado" };
   }
@@ -219,25 +214,14 @@ export async function enviarMailDeGarantia(params: {
     return { enviado: false, motivo: "El servidor de mail no está configurado" };
   }
 
-  const link = `${portalBaseUrl()}/garantia/${encodeURIComponent(params.activationToken)}`;
-  const vence = params.expiresAt.toLocaleDateString("es-AR");
+  // El certificado completo, igual al que sale al activar desde el portal,
+  // pero con «Ver mi garantía» como botón grande: la garantía ya está activa
+  // —la activó el taller con los datos de la orden— y este es el primer
+  // contacto de la persona con ella. Reclamar va segundo.
+  const { subject, html } = renderCertificado(params, "taller");
 
   try {
-    await transporter.sendMail({
-      from: FROM(),
-      to: params.destinatario,
-      subject: `Tu garantía Kristall Film — ${params.installationCode}`,
-      html: `
-        <p>Hola ${escapeHtml(params.nombreCliente)},</p>
-        <p><strong>${escapeHtml(params.nombreTaller)}</strong> terminó de instalar tu
-        ${escapeHtml(params.producto)} y te dejó la garantía activada.</p>
-        <p>Guardá este link — es el que vas a necesitar si alguna vez tenés un problema:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>Código: <strong>${escapeHtml(params.installationCode)}</strong><br>
-        Vence el ${escapeHtml(vence)}.</p>
-        <p>— Equipo Kristall Film</p>
-      `,
-    });
+    await transporter.sendMail({ from: FROM(), to: params.destinatario, subject, html });
     return { enviado: true };
   } catch (error: unknown) {
     // El detalle del error SMTP va al log, no a la respuesta. Es la lección de
@@ -283,36 +267,24 @@ export async function avisarGarantiasGeneradas(
   }
 }
 
-/** Datos del mail para una instalación recién generada. */
+/**
+ * Datos del certificado para una instalación recién generada.
+ *
+ * El destinatario sale de la propia instalación: `generarGarantiasDeOrden` la
+ * activó con el email del cliente de la orden, así que es el mismo dato. Quien
+ * reenvía a mano desde la ficha de la orden lo pisa con el que escribió.
+ */
 export async function datosParaMail(orderId: string, installationId: string) {
-  const [order, installation] = await Promise.all([
-    prisma.workOrder.findUnique({
-      where: { id: orderId },
-      select: {
-        contactId: true,
-        workshopClient: { select: { name: true, email: true } },
-      },
-    }),
-    prisma.warrantyInstallation.findUnique({
-      where: { id: installationId },
-      select: {
-        installationCode: true,
-        activationToken: true,
-        expiresAt: true,
-        installerName: true,
-        roll: { select: { product: { select: { name: true } } } },
-      },
-    }),
-  ]);
-  if (!order || !installation || !installation.expiresAt) return null;
+  const order = await prisma.workOrder.findUnique({
+    where: { id: orderId },
+    select: { workshopClient: { select: { name: true, email: true } } },
+  });
+  const datos = await cargarDatosCertificado(installationId);
+  if (!order || !datos) return null;
 
   return {
-    destinatario: order.workshopClient.email,
-    nombreCliente: order.workshopClient.name,
-    nombreTaller: installation.installerName ?? "Tu instalador",
-    producto: installation.roll.product.name,
-    installationCode: installation.installationCode,
-    activationToken: installation.activationToken,
-    expiresAt: installation.expiresAt,
+    ...datos,
+    destinatario: datos.destinatario ?? order.workshopClient.email,
+    nombreCliente: datos.nombreCliente ?? order.workshopClient.name,
   };
 }

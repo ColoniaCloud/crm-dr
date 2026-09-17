@@ -1,8 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
-import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
-import { BRAND } from "@/lib/brand";
+import { renderNovedadDeReclamo } from "@/lib/mail-garantia";
 import type { WarrantyClaimStatus } from "@prisma/client";
 
 const log = createLogger("lib/warranty-claim-notify");
@@ -62,6 +61,8 @@ export async function notifyClaimStatusChanged(
         installation: {
           select: {
             installationCode: true,
+            activationToken: true,
+            installerName: true,
             clientEmail: true,
             clientName: true,
             roll: {
@@ -99,38 +100,18 @@ export async function notifyClaimStatusChanged(
     const destinatario = claim.reporterEmail || claim.installation.clientEmail;
     if (!destinatario || !isSmtpConfigured()) return;
 
-    const nombre = claim.reporterName || claim.installation.clientName || "";
-    const nota = claim.resolutionNotes?.trim();
-
-    await transporter.sendMail({
-      from: FROM(),
-      to: destinatario,
-      subject: `${texto.titulo} — ${claim.installation.installationCode}`,
-      html: `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:540px;margin:0 auto;padding:24px;background:#f9fafb;">
-          <div style="background:#fff;border-radius:10px;padding:28px;border:1px solid #e5e7eb;">
-            <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;letter-spacing:.08em;color:#6b7280;text-transform:uppercase;">${BRAND.name}</p>
-            <h2 style="color:#111;margin:0 0 20px 0;font-size:20px;">${escapeHtml(texto.titulo)}</h2>
-            <p style="color:#444;margin:0 0 16px 0;">Hola ${escapeHtml(nombre)},</p>
-            <p style="color:#444;margin:0 0 16px 0;">${escapeHtml(texto.cuerpo)}</p>
-            ${
-              nota
-                ? `<div style="background:#f9fafb;border-left:3px solid #d1d5db;padding:12px 16px;margin:0 0 16px 0;">
-                     <p style="margin:0;color:#444;white-space:pre-line;">${escapeHtml(nota)}</p>
-                   </div>`
-                : ""
-            }
-            <p style="color:#6b7280;font-size:13px;margin:0;">
-              Garantía <strong>${escapeHtml(claim.installation.installationCode)}</strong> ·
-              ${escapeHtml(claim.installation.roll.product.name)}
-            </p>
-          </div>
-          <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">
-            Mensaje automático de ${BRAND.name} · No respondas este correo.
-          </p>
-        </div>
-      `,
+    const { subject, html } = renderNovedadDeReclamo({
+      nombre: claim.reporterName || claim.installation.clientName,
+      installationCode: claim.installation.installationCode,
+      activationToken: claim.installation.activationToken,
+      producto: claim.installation.roll.product.name,
+      nombreTaller: claim.installation.installerName?.trim() || "Instalador autorizado",
+      etiquetaEstado: ESTADO_LABEL[nuevoEstado],
+      titulo: texto.titulo,
+      cuerpo: texto.cuerpo,
+      nota: claim.resolutionNotes,
     });
+    await transporter.sendMail({ from: FROM(), to: destinatario, subject, html });
   } catch (err) {
     // Se loguea y se sigue: el cambio de estado ya está guardado.
     log.error({ err, claimId, nuevoEstado }, "No se pudo avisar el cambio de estado del reclamo");
