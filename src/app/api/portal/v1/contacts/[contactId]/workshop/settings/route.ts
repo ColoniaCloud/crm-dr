@@ -5,6 +5,7 @@ import { requireWorkshopAccess } from "@/lib/workshop-auth";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { newLogoSlug, workshopLogoPath } from "@/lib/workshop-logo";
+import { newHeroSlug, workshopHeroPath } from "@/lib/workshop-hero";
 import { validarHandle, MENSAJE_HANDLE } from "@/lib/workshop-handle";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/workshop/settings");
@@ -29,6 +30,13 @@ const MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
  * recortar mensajes cerca de los 100 KB de HTML, así que conviene ser duro acá.
  */
 const MAX_BASE64 = 300 * 1024;
+/**
+ * El hero nunca viaja por mail — es solo la foto de fondo de la página
+ * pública — así que el tope es mucho más generoso que el del logo: 2 MB de
+ * base64 ≈ 1.5 MB de imagen, suficiente para una foto de 1600px ya
+ * recomprimida por el navegador (ver `PublicPageForm.tsx`).
+ */
+const MAX_HERO_BASE64 = 2 * 1024 * 1024;
 
 export async function GET(request: Request, { params }: Params) {
   const { contactId } = await params;
@@ -50,6 +58,9 @@ export async function GET(request: Request, { params }: Params) {
         logo: true,
         logoBackground: true,
         logoSlug: true,
+        heroImage: true,
+        heroImageMimeType: true,
+        heroSlug: true,
         handle: true,
         publicPageEnabled: true,
         publicAddress: true,
@@ -62,6 +73,12 @@ export async function GET(request: Request, { params }: Params) {
         worksForDealers: true,
         doesAutomotive: true,
         doesArchitectural: true,
+        description: true,
+        pageTheme: true,
+        socialInstagram: true,
+        socialFacebook: true,
+        socialTiktok: true,
+        socialGoogle: true,
       },
     });
 
@@ -80,6 +97,8 @@ export async function GET(request: Request, { params }: Params) {
         tieneLogo: false,
         logoUrl: null,
         logoBackground: "CLARO" as const,
+        tieneHero: false,
+        heroUrl: null,
         handle: null,
         publicPageEnabled: false,
         publicAddress: null,
@@ -92,14 +111,22 @@ export async function GET(request: Request, { params }: Params) {
         worksForDealers: false,
         doesAutomotive: true,
         doesArchitectural: false,
+        description: null,
+        pageTheme: "BLANCO" as const,
+        socialInstagram: null,
+        socialFacebook: null,
+        socialTiktok: null,
+        socialGoogle: null,
       });
     }
 
-    const { logo, logoSlug, ...resto } = s;
+    const { logo, logoSlug, heroImage, heroSlug, ...resto } = s;
     return NextResponse.json({
       ...resto,
       tieneLogo: Boolean(logo),
       logoUrl: logo && logoSlug ? workshopLogoPath(logoSlug) : null,
+      tieneHero: Boolean(heroImage),
+      heroUrl: heroImage && heroSlug ? workshopHeroPath(heroSlug) : null,
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching workshop settings");
@@ -119,6 +146,10 @@ const schema = z
     logoMimeType: z.enum(MIMES).nullable(),
     /** Sobre que fondo se ve bien el logo. Define la cabecera de la pagina. */
     logoBackground: z.enum(["CLARO", "OSCURO"]),
+
+    /** Foto de fondo del hero. Base64 sin el prefijo `data:`. `null` la borra. */
+    heroImage: z.string().max(MAX_HERO_BASE64, "La imagen es muy pesada").nullable(),
+    heroImageMimeType: z.enum(MIMES).nullable(),
 
     /** El nombre de usuario publico. La forma la valida `workshop-handle.ts`. */
     handle: z.string().trim().toLowerCase().nullable(),
@@ -143,6 +174,16 @@ const schema = z
      */
     doesAutomotive: z.boolean(),
     doesArchitectural: z.boolean(),
+
+    /** Bajada corta para la página pública. Nada que ver con el subtítulo generado. */
+    description: z.string().trim().max(280, "Máximo 280 caracteres").nullable(),
+    /** Preset de color de la página pública. Las paletas viven en polarizar. */
+    pageTheme: z.enum(["BLANCO", "GRIS_CLARO", "GRIS_OSCURO", "NEGRO"]),
+    /** Redes sociales. Vacío o `null` = no se muestra en la página. */
+    socialInstagram: z.string().trim().max(300).nullable(),
+    socialFacebook: z.string().trim().max(300).nullable(),
+    socialTiktok: z.string().trim().max(300).nullable(),
+    socialGoogle: z.string().trim().max(300).nullable(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "No hay nada que actualizar" });
@@ -160,6 +201,12 @@ export async function PATCH(request: Request, { params }: Params) {
   // El logo y su tipo van juntos: guardar los bytes sin saber qué son deja una
   // imagen que después no se puede servir con el Content-Type correcto.
   if (data.logo && !data.logoMimeType) {
+    return NextResponse.json(
+      { error: "Falta el tipo de imagen. Subí un PNG, JPG o WEBP." },
+      { status: 400 }
+    );
+  }
+  if (data.heroImage && !data.heroImageMimeType) {
     return NextResponse.json(
       { error: "Falta el tipo de imagen. Subí un PNG, JPG o WEBP." },
       { status: 400 }
@@ -229,17 +276,44 @@ export async function PATCH(request: Request, { params }: Params) {
       slug = actual?.logoSlug ?? newLogoSlug();
     }
 
+    // Mismo mecanismo que el logo, pero con su propio slug: un taller puede
+    // tener hero sin logo o viceversa.
+    let heroSlug: string | null | undefined;
+    if (data.heroImage === null) {
+      heroSlug = null;
+    } else if (data.heroImage) {
+      const actual = await prisma.workshopSettings.findUnique({
+        where: { contactId: gate.contactId },
+        select: { heroSlug: true },
+      });
+      heroSlug = actual?.heroSlug ?? newHeroSlug();
+    }
+
     const guardado = await prisma.workshopSettings.upsert({
       where: { contactId: gate.contactId },
-      create: { contactId: gate.contactId, ...data, ...(slug ? { logoSlug: slug } : {}) },
+      create: {
+        contactId: gate.contactId,
+        ...data,
+        ...(slug ? { logoSlug: slug } : {}),
+        ...(heroSlug ? { heroSlug } : {}),
+      },
       update: {
         ...data,
         // Borrar el logo limpia también su tipo y su slug: quedarse con el mime
         // y la URL de una imagen que ya no está es basura que confunde.
         ...(data.logo === null ? { logoMimeType: null } : {}),
         ...(slug !== undefined ? { logoSlug: slug } : {}),
+        ...(data.heroImage === null ? { heroImageMimeType: null } : {}),
+        ...(heroSlug !== undefined ? { heroSlug } : {}),
       },
-      select: { logo: true, logoSlug: true, handle: true, publicPageEnabled: true },
+      select: {
+        logo: true,
+        logoSlug: true,
+        heroImage: true,
+        heroSlug: true,
+        handle: true,
+        publicPageEnabled: true,
+      },
     });
 
     return NextResponse.json({
@@ -247,6 +321,9 @@ export async function PATCH(request: Request, { params }: Params) {
       tieneLogo: Boolean(guardado.logo),
       logoUrl:
         guardado.logo && guardado.logoSlug ? workshopLogoPath(guardado.logoSlug) : null,
+      tieneHero: Boolean(guardado.heroImage),
+      heroUrl:
+        guardado.heroImage && guardado.heroSlug ? workshopHeroPath(guardado.heroSlug) : null,
       handle: guardado.handle,
       publicPageEnabled: guardado.publicPageEnabled,
     });

@@ -312,6 +312,7 @@ model Contact {
   workshopSettings    WorkshopSettings?
   workshopServices    WorkshopService[]
   workshopBookings    WorkshopBooking[]
+  workshopPhotos      WorkshopPhoto[]
 
   source         LeadSource            @default(MANUAL)
   placeId        String?               @unique
@@ -1950,6 +1951,17 @@ model WorkshopSettings {
   /// `image/png`, `image/jpeg`, `image/webp`. Hace falta para servirlo bien.
   logoMimeType String?
 
+  /// Foto de fondo del hero de la página pública, en base64 sin el prefijo
+  /// `data:`. Mismo criterio que `logo`: se sirve por slug propio y nunca
+  /// como data URI — ver `GET /api/public/workshop/hero/[slug]`.
+  heroImage         String? @db.LongText
+  heroImageMimeType String?
+  /// Clave opaca con la que se sirve el hero. Propia y no `logoSlug`: un
+  /// taller puede tener hero sin logo o viceversa, y compartir la clave haría
+  /// que borrar uno rompiera la URL pública del otro. Ver la nota larga en
+  /// `logoSlug` sobre por qué es un slug aleatorio y no el `contactId`.
+  heroSlug          String? @unique
+
   /// Sobre que fondo se ve bien el logo del taller.
   ///
   /// Existe porque un logo no es una imagen cualquiera: muchos son de trazo
@@ -2039,8 +2051,62 @@ model WorkshopSettings {
   /// usuario. Este lo elige el, y suele ser el de atencion al publico.
   publicEmail String?
 
+  /// Bajada corta para la página pública. Nada que ver con el nombre del
+  /// taller ni con el subtítulo generado — es texto libre que escribe el
+  /// instalador.
+  description String? @db.Text
+
+  /// Preset de color de la página pública. Acá solo se guarda cuál eligió;
+  /// las paletas completas (fondo/superficie/línea/texto) viven del lado de
+  /// polarizar, no en el CRM.
+  pageTheme PageTheme @default(BLANCO)
+
+  /// Redes sociales del taller. Cuatro campos simples y no una tabla: es un
+  /// set fijo y chico que no va a crecer, y "activa" en la página pública
+  /// simplemente quiere decir "el campo no está vacío" — no hace falta un
+  /// booleano aparte por red.
+  socialInstagram String?
+  socialFacebook  String?
+  socialTiktok    String?
+  socialGoogle    String?
+
+  /// Clave opaca con la que se sirve el álbum de fotos. Propia y no
+  /// `logoSlug`/`heroSlug`: ver la nota larga en `logoSlug` sobre por qué es
+  /// aleatoria y no el `contactId`.
+  gallerySlug String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("workshop_settings")
+}
+
+enum PageTheme {
+  BLANCO
+  GRIS_CLARO
+  GRIS_OSCURO
+  NEGRO
+}
+
+/// Una foto del álbum de la página pública. A diferencia de `WorkshopService`
+/// no tiene `active`: una foto sin uso no queda "apagada", se borra de
+/// verdad, porque nada río abajo depende de ella (a diferencia de un
+/// servicio, que un `WorkshopBooking` puede seguir referenciando).
+model WorkshopPhoto {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  image         String @db.LongText
+  imageMimeType String
+
+  /// Orden de aparición en el álbum. Se calcula en el servidor al crear
+  /// (nunca confiar en el que manda el cliente) — mismo criterio que
+  /// `WorkshopService.sortOrder`.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([contactId, sortOrder])
+  @@map("workshop_photos")
 }

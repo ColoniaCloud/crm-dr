@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
 import { workshopLogoPath } from "@/lib/workshop-logo";
+import { workshopHeroPath } from "@/lib/workshop-hero";
+import { workshopGalleryPhotoPath, newGallerySlug } from "@/lib/workshop-gallery";
 import {
   generarGarantiasDeOrden,
   enviarMailDeGarantia,
@@ -1088,6 +1090,127 @@ export async function deactivateWorkshopService(contactId: string, serviceId: st
   return updateWorkshopService(contactId, serviceId, { active: false });
 }
 
+// ─── Álbum de fotos ──────────────────────────────────────────────────────────
+
+/** Tope duro: 12 fotos alcanzan para mostrar variedad sin que el álbum pese demasiado. */
+const MAX_FOTOS_ALBUM = 12;
+
+/**
+ * El álbum del taller, con la URL pública de cada foto — la misma que va a
+ * ver cualquier visitante. No hay nada privado en estas fotos (a diferencia
+ * de la de un pedido de turno, que sí es de una persona concreta), así que
+ * mostrarle al instalador esa misma URL en su Configuración no es un
+ * problema, y evita tener dos caminos para lo mismo.
+ */
+export async function getWorkshopPhotos(contactId: string) {
+  const settings = await prisma.workshopSettings.findUnique({
+    where: { contactId },
+    select: { gallerySlug: true },
+  });
+  if (!settings?.gallerySlug) return [];
+
+  const fotos = await prisma.workshopPhoto.findMany({
+    where: { contactId },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+  return fotos.map((f) => ({ id: f.id, url: workshopGalleryPhotoPath(settings.gallerySlug!, f.id) }));
+}
+
+/**
+ * Una foto nueva va al final del álbum. Mismo criterio que
+ * `createWorkshopService`: el `sortOrder` se calcula acá, nunca se confía en
+ * el que manda el cliente.
+ *
+ * El `gallerySlug` se crea perezosamente en la primera foto — no hace falta
+ * pedirlo por separado, y así un taller que nunca sube fotos no tiene un slug
+ * dando vueltas sin usar.
+ */
+export async function createWorkshopPhoto(
+  contactId: string,
+  datos: { image: string; imageMimeType: string }
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const [cantidad, ultima] = await Promise.all([
+    prisma.workshopPhoto.count({ where: { contactId } }),
+    prisma.workshopPhoto.findFirst({
+      where: { contactId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    }),
+  ]);
+  if (cantidad >= MAX_FOTOS_ALBUM) {
+    return { ok: false, error: `Máximo ${MAX_FOTOS_ALBUM} fotos. Borrá alguna para subir otra.` };
+  }
+
+  const actual = await prisma.workshopSettings.findUnique({
+    where: { contactId },
+    select: { gallerySlug: true },
+  });
+  const gallerySlug = actual?.gallerySlug ?? newGallerySlug();
+  if (!actual?.gallerySlug) {
+    await prisma.workshopSettings.upsert({
+      where: { contactId },
+      create: { contactId, gallerySlug },
+      update: { gallerySlug },
+    });
+  }
+
+  const foto = await prisma.workshopPhoto.create({
+    data: {
+      contactId,
+      image: datos.image,
+      imageMimeType: datos.imageMimeType,
+      sortOrder: (ultima?.sortOrder ?? -1) + 1,
+    },
+    select: { id: true },
+  });
+  return { ok: true, id: foto.id };
+}
+
+/**
+ * Mueve una foto un lugar hacia arriba o hacia abajo, intercambiando su
+ * `sortOrder` con el del vecino — no hay drag-and-drop en esta pantalla, así
+ * que "reordenar" son dos botones y un intercambio de a uno.
+ */
+export async function reorderWorkshopPhoto(
+  contactId: string,
+  photoId: string,
+  direccion: "arriba" | "abajo"
+): Promise<boolean> {
+  const fotos = await prisma.workshopPhoto.findMany({
+    where: { contactId },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, sortOrder: true },
+  });
+  const i = fotos.findIndex((f) => f.id === photoId);
+  if (i === -1) return false;
+
+  const j = direccion === "arriba" ? i - 1 : i + 1;
+  if (j < 0 || j >= fotos.length) return true; // ya está en la punta: no hay nada que hacer.
+
+  await prisma.$transaction([
+    prisma.workshopPhoto.update({
+      where: { id: fotos[i].id },
+      data: { sortOrder: fotos[j].sortOrder },
+    }),
+    prisma.workshopPhoto.update({
+      where: { id: fotos[j].id },
+      data: { sortOrder: fotos[i].sortOrder },
+    }),
+  ]);
+  return true;
+}
+
+/**
+ * Borra de verdad y no desactiva, a diferencia de un servicio: nada río abajo
+ * referencia una foto del álbum, así que no hay nada que se quedaría
+ * huérfano.
+ */
+export async function deleteWorkshopPhoto(contactId: string, photoId: string): Promise<boolean> {
+  const r = await prisma.workshopPhoto.deleteMany({ where: { id: photoId, contactId } });
+  return r.count > 0;
+}
+
 /**
  * De una lista de candidatos, cuáles están libres.
  *
@@ -1134,6 +1257,15 @@ export async function getPublicWorkshop(handle: string) {
       logoSlug: true,
       logo: true,
       logoBackground: true,
+      heroSlug: true,
+      heroImage: true,
+      gallerySlug: true,
+      description: true,
+      pageTheme: true,
+      socialInstagram: true,
+      socialFacebook: true,
+      socialTiktok: true,
+      socialGoogle: true,
       openingTime: true,
       closingTime: true,
       workingDays: true,
@@ -1170,6 +1302,17 @@ export async function getPublicWorkshop(handle: string) {
     },
   });
 
+  // Igual patrón que los servicios: una segunda consulta, ordenada, mapeada a
+  // URLs ya armadas. Sin `gallerySlug` no hay dónde servirlas, así que en ese
+  // caso ni se pregunta.
+  const fotos = s.gallerySlug
+    ? await prisma.workshopPhoto.findMany({
+        where: { contactId: s.contactId },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true },
+      })
+    : [];
+
   return {
     // El nombre de fantasía manda sobre la razón social: es con el que el
     // taller se presenta. Nunca queda vacío.
@@ -1182,6 +1325,27 @@ export async function getPublicWorkshop(handle: string) {
     logoPath: s.logo && s.logoSlug ? workshopLogoPath(s.logoSlug) : null,
     /// Sobre que fondo dibujar la cabecera para que el logo se vea.
     logoBackground: s.logoBackground,
+    /// Foto de fondo del hero. `null` = todavía no subió ninguna, y la
+    /// landing dibuja el layout de siempre sin sección de hero.
+    heroPath: s.heroImage && s.heroSlug ? workshopHeroPath(s.heroSlug) : null,
+    /// Bajada corta que escribió el instalador. `null` = no completó nada.
+    description: s.description,
+    /// Preset de color elegido. La paleta completa la resuelve quien
+    /// consuma esto (polarizar), acá solo viaja cuál es.
+    pageTheme: s.pageTheme,
+    /// Cada campo es `null` si no lo completó — así se sabe cuál mostrar
+    /// activo sin inventar un booleano aparte por red.
+    social: {
+      instagram: s.socialInstagram,
+      facebook: s.socialFacebook,
+      tiktok: s.socialTiktok,
+      google: s.socialGoogle,
+    },
+    /// URLs ya armadas, en el orden del álbum. Vacío = todavía no subió
+    /// ninguna foto.
+    photos: s.gallerySlug
+      ? fotos.map((f) => workshopGalleryPhotoPath(s.gallerySlug!, f.id))
+      : [],
     address: s.publicAddress,
     // Las coordenadas van juntas o no van: una sola no ubica nada.
     lat: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLat) : null,
