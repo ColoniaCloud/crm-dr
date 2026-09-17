@@ -2061,6 +2061,13 @@ model WorkshopSettings {
   /// polarizar, no en el CRM.
   pageTheme PageTheme @default(BLANCO)
 
+  /// Color de acento de la página pública (botones, links, íconos activos).
+  /// Igual que `pageTheme`: acá solo se guarda cuál eligió, el valor hex real
+  /// vive del lado de polarizar. Un set curado y no un color picker libre —
+  /// el acento siempre lleva texto blanco encima en los botones sólidos, y un
+  /// color libre podría quedar ilegible.
+  accentColor AccentColor @default(AZUL)
+
   /// Redes sociales del taller. Cuatro campos simples y no una tabla: es un
   /// set fijo y chico que no va a crecer, y "activa" en la página pública
   /// simplemente quiere decir "el campo no está vacío" — no hace falta un
@@ -2086,6 +2093,15 @@ enum PageTheme {
   GRIS_CLARO
   GRIS_OSCURO
   NEGRO
+}
+
+enum AccentColor {
+  AZUL
+  VERDE
+  VIOLETA
+  ROJO
+  NARANJA
+  ROSA
 }
 
 /// Una foto del álbum de la página pública. A diferencia de `WorkshopService`

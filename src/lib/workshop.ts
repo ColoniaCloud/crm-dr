@@ -1262,6 +1262,7 @@ export async function getPublicWorkshop(handle: string) {
       gallerySlug: true,
       description: true,
       pageTheme: true,
+      accentColor: true,
       socialInstagram: true,
       socialFacebook: true,
       socialTiktok: true,
@@ -1333,6 +1334,9 @@ export async function getPublicWorkshop(handle: string) {
     /// Preset de color elegido. La paleta completa la resuelve quien
     /// consuma esto (polarizar), acá solo viaja cuál es.
     pageTheme: s.pageTheme,
+    /// Preset de color de acento elegido. El valor hex real, igual que con
+    /// `pageTheme`, lo resuelve polarizar.
+    accentColor: s.accentColor,
     /// Cada campo es `null` si no lo completó — así se sabe cuál mostrar
     /// activo sin inventar un booleano aparte por red.
     social: {

@@ -75,6 +75,7 @@ export async function GET(request: Request, { params }: Params) {
         doesArchitectural: true,
         description: true,
         pageTheme: true,
+        accentColor: true,
         socialInstagram: true,
         socialFacebook: true,
         socialTiktok: true,
@@ -113,6 +114,7 @@ export async function GET(request: Request, { params }: Params) {
         doesArchitectural: false,
         description: null,
         pageTheme: "BLANCO" as const,
+        accentColor: "AZUL" as const,
         socialInstagram: null,
         socialFacebook: null,
         socialTiktok: null,
@@ -179,6 +181,8 @@ const schema = z
     description: z.string().trim().max(280, "Máximo 280 caracteres").nullable(),
     /** Preset de color de la página pública. Las paletas viven en polarizar. */
     pageTheme: z.enum(["BLANCO", "GRIS_CLARO", "GRIS_OSCURO", "NEGRO"]),
+    /** Preset de color de acento. Los valores hex viven en polarizar. */
+    accentColor: z.enum(["AZUL", "VERDE", "VIOLETA", "ROJO", "NARANJA", "ROSA"]),
     /** Redes sociales. Vacío o `null` = no se muestra en la página. */
     socialInstagram: z.string().trim().max(300).nullable(),
     socialFacebook: z.string().trim().max(300).nullable(),
