@@ -95,10 +95,28 @@ export interface AccountSummary {
   nextDueDate: string | null;
 }
 
+export interface PendingSalePlan {
+  nextDue: AccountInstallment | null;
+  overdueCount: number;
+}
+
+export interface PendingSale {
+  saleId: string;
+  saleNumber: number;
+  total: number;
+  remaining: number;
+  createdAt: string;
+  /** Si esta venta tiene un plan de cuotas activo, el detalle de la próxima
+   *  cuota. `null` = saldo simple, sin plan — se paga el total pendiente. */
+  plan: PendingSalePlan | null;
+}
+
 export interface ClientAccount {
   summary: AccountSummary;
   entries: AccountEntry[];
   plans: AccountPlan[];
+  /** Ventas REGULAR con saldo, tengan o no plan — ver `getPendingSales`. */
+  pendingSales: PendingSale[];
 }
 
 /**
@@ -175,6 +193,7 @@ export async function getClientAccount(
   });
 
   const plans = await getClientPlans(contactId, now);
+  const pendingSales = await getPendingSales(contactId, plans);
 
   const overdueAmount = round2(
     plans
@@ -199,7 +218,54 @@ export async function getClientAccount(
     },
     entries,
     plans,
+    pendingSales,
   };
+}
+
+/**
+ * Ventas REGULAR con saldo pendiente, tengan o no un plan de cuotas armado —
+ * es el universo que puede recibir una declaración de pago desde el portal
+ * (ver `createPaymentDeclaration` en `payment-declarations.ts`).
+ *
+ * Consignación queda afuera a propósito: se liquida distinto, y no es el
+ * caso que motivó esto — una venta de mostrador que tarda en cobrarse.
+ */
+export async function getPendingSales(
+  contactId: string,
+  planes: AccountPlan[]
+): Promise<PendingSale[]> {
+  const sales = await prisma.sale.findMany({
+    where: { contactId, type: "REGULAR", ...DEUDA_EXCLUIDA },
+    select: {
+      id: true,
+      number: true,
+      total: true,
+      createdAt: true,
+      payments: { select: { amount: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const planPorVenta = new Map(
+    planes.filter((p) => p.status === "ACTIVE").map((p) => [p.saleId, p])
+  );
+
+  return sales
+    .map((s) => {
+      const paid = round2(s.payments.reduce((sum, p) => sum + Number(p.amount), 0));
+      const remaining = round2(Math.max(0, Number(s.total) - paid));
+      const plan = planPorVenta.get(s.id);
+      const pendiente: PendingSale = {
+        saleId: s.id,
+        saleNumber: s.number,
+        total: Number(s.total),
+        remaining,
+        createdAt: s.createdAt.toISOString(),
+        plan: plan ? { nextDue: plan.nextDue, overdueCount: plan.overdueCount } : null,
+      };
+      return pendiente;
+    })
+    .filter((s) => s.remaining > 0);
 }
 
 /** Saldo pendiente de un contacto. Atajo para cuando no hace falta el extracto entero. */

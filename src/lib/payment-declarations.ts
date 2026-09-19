@@ -118,18 +118,13 @@ export async function createPaymentDeclaration(
     return { ok: false, error: `La venta #${sale.number} está anulada.`, status: 409 };
   }
 
-  const plan = await prisma.paymentPlan.findUnique({
-    where: { saleId: sale.id },
-    select: { status: true },
-  });
-  if (!plan || plan.status === "CANCELLED") {
-    return {
-      ok: false,
-      error: `La venta #${sale.number} no tiene un plan de cuotas vigente.`,
-      status: 400,
-    };
-  }
-
+  // Antes exigía un plan de cuotas vigente — pensado para "factura del día,
+  // se cobra en el acto" (ver la nota larga en `credit.ts`), pero una venta
+  // REGULAR sin plan también puede tardar en cobrarse (alguien que dice "te
+  // transfiero más tarde"), y ahí no había ningún camino de autoservicio para
+  // avisarlo. El chequeo de saldo de abajo ya es el que de verdad importa —no
+  // deja declarar de más ni contra una venta saldada— y es agnóstico de si
+  // hay plan o no, así que alcanza solo con él.
   const agg = await prisma.payment.aggregate({ where: { saleId: sale.id }, _sum: { amount: true } });
   const remaining = Number(sale.total) - Number(agg._sum.amount ?? 0);
   if (cents(input.amount) > cents(remaining)) {
