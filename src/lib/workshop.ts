@@ -1310,7 +1310,7 @@ export async function getPublicWorkshop(handle: string) {
       publicPageEnabled: true,
       // Se necesita para traer los servicios, pero **no sale en la respuesta**.
       contactId: true,
-      contact: { select: { company: true, firstName: true, lastName: true } },
+      contact: { select: { company: true, firstName: true, lastName: true, createdAt: true } },
     },
   });
 
@@ -1333,6 +1333,26 @@ export async function getPublicWorkshop(handle: string) {
   // Igual patrón que los servicios: una segunda consulta, ordenada, mapeada a
   // URLs ya armadas. Sin `gallerySlug` no hay dónde servirlas, así que en ese
   // caso ni se pregunta.
+  /**
+   * Respaldo real para la página: desde cuándo está en la red y cuántas
+   * garantías se activaron con lámina que le vendimos.
+   *
+   * Es un `count` y no un `findMany` a propósito — la página pública no
+   * revalida (`revalidate = 0`), así que esto corre en cada visita y lo único
+   * que se necesita es el número. "De quién es un rollo" se responde por
+   * `saleItem.sale.contactId`, igual que en el Portal de Clientes.
+   *
+   * Solo cuenta las ACTIVE: una garantía pendiente es una lámina que todavía
+   * no se instaló, y contarla sería inflar el número con trabajo que no
+   * existe.
+   */
+  const garantiasRegistradas = await prisma.warrantyInstallation.count({
+    where: {
+      status: "ACTIVE",
+      roll: { saleItem: { sale: { contactId: s.contactId } } },
+    },
+  });
+
   const fotos = s.gallerySlug
     ? await prisma.workshopPhoto.findMany({
         where: { contactId: s.contactId },
@@ -1384,6 +1404,14 @@ export async function getPublicWorkshop(handle: string) {
           description: f.description ?? null,
         }))
       : [],
+    /// El año en que el taller entró a la red, para "Instalador autorizado
+    /// desde 2019". Sale del alta del contacto, que es el dato más cercano
+    /// que tenemos a "desde cuándo trabaja con nosotros".
+    instaladorDesde: s.contact?.createdAt ? s.contact.createdAt.getFullYear() : null,
+    /// Cuántas garantías activadas tiene. Quién la muestra decide a partir de
+    /// qué número vale la pena: dos garantías dichas en voz alta convencen
+    /// menos que no decir nada.
+    garantiasRegistradas,
     address: s.publicAddress,
     // Las coordenadas van juntas o no van: una sola no ubica nada.
     lat: s.publicLat !== null && s.publicLng !== null ? Number(s.publicLat) : null,
