@@ -6,6 +6,7 @@ import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { newLogoSlug, workshopLogoPath } from "@/lib/workshop-logo";
 import { newHeroSlug, workshopHeroPath } from "@/lib/workshop-hero";
+import { newTeamSlug, workshopTeamPath } from "@/lib/workshop-team";
 import { validarHandle, MENSAJE_HANDLE } from "@/lib/workshop-handle";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/workshop/settings");
@@ -61,6 +62,11 @@ export async function GET(request: Request, { params }: Params) {
         heroImage: true,
         heroImageMimeType: true,
         heroSlug: true,
+        teamImage: true,
+        teamSlug: true,
+        teamName: true,
+        teamRole: true,
+        installerSince: true,
         handle: true,
         publicPageEnabled: true,
         publicAddress: true,
@@ -122,13 +128,15 @@ export async function GET(request: Request, { params }: Params) {
       });
     }
 
-    const { logo, logoSlug, heroImage, heroSlug, ...resto } = s;
+    const { logo, logoSlug, heroImage, heroSlug, teamImage, teamSlug, ...resto } = s;
     return NextResponse.json({
       ...resto,
       tieneLogo: Boolean(logo),
       logoUrl: logo && logoSlug ? workshopLogoPath(logoSlug) : null,
       tieneHero: Boolean(heroImage),
       heroUrl: heroImage && heroSlug ? workshopHeroPath(heroSlug) : null,
+      tieneTeam: Boolean(teamImage),
+      teamUrl: teamImage && teamSlug ? workshopTeamPath(teamSlug) : null,
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching workshop settings");
@@ -152,6 +160,27 @@ const schema = z
     /** Foto de fondo del hero. Base64 sin el prefijo `data:`. `null` la borra. */
     heroImage: z.string().max(MAX_HERO_BASE64, "La imagen es muy pesada").nullable(),
     heroImageMimeType: z.enum(MIMES).nullable(),
+
+    /**
+     * La cara de quien atiende, su nombre, su rol y desde cuándo trabaja.
+     *
+     * **Opcionales y no solo nullables**, a diferencia de todo lo de arriba.
+     * El resto del objeto exige que el cliente mande cada clave, así que si
+     * estos fueran obligatorios, el kristall-web que todavía no los manda
+     * quedaría sin poder guardar **ninguna** configuración hasta desplegar.
+     * Ausente = "no lo toques"; `null` = "borralo".
+     */
+    teamImage: z.string().max(MAX_HERO_BASE64, "La imagen es muy pesada").nullable().optional(),
+    teamImageMimeType: z.enum(MIMES).nullable().optional(),
+    teamName: z.string().trim().max(80).nullable().optional(),
+    teamRole: z.string().trim().max(80).nullable().optional(),
+    installerSince: z
+      .number()
+      .int()
+      .min(1950)
+      .max(new Date().getFullYear())
+      .nullable()
+      .optional(),
 
     /** El nombre de usuario publico. La forma la valida `workshop-handle.ts`. */
     handle: z.string().trim().toLowerCase().nullable(),
@@ -205,6 +234,12 @@ export async function PATCH(request: Request, { params }: Params) {
   // El logo y su tipo van juntos: guardar los bytes sin saber qué son deja una
   // imagen que después no se puede servir con el Content-Type correcto.
   if (data.logo && !data.logoMimeType) {
+    return NextResponse.json(
+      { error: "Falta el tipo de imagen. Subí un PNG, JPG o WEBP." },
+      { status: 400 }
+    );
+  }
+  if (data.teamImage && !data.teamImageMimeType) {
     return NextResponse.json(
       { error: "Falta el tipo de imagen. Subí un PNG, JPG o WEBP." },
       { status: 400 }
@@ -293,6 +328,18 @@ export async function PATCH(request: Request, { params }: Params) {
       heroSlug = actual?.heroSlug ?? newHeroSlug();
     }
 
+    // Igual que el hero, con su propio slug. Ausente no la toca.
+    let teamSlug: string | null | undefined;
+    if (data.teamImage === null) {
+      teamSlug = null;
+    } else if (data.teamImage) {
+      const actual = await prisma.workshopSettings.findUnique({
+        where: { contactId: gate.contactId },
+        select: { teamSlug: true },
+      });
+      teamSlug = actual?.teamSlug ?? newTeamSlug();
+    }
+
     const guardado = await prisma.workshopSettings.upsert({
       where: { contactId: gate.contactId },
       create: {
@@ -300,6 +347,7 @@ export async function PATCH(request: Request, { params }: Params) {
         ...data,
         ...(slug ? { logoSlug: slug } : {}),
         ...(heroSlug ? { heroSlug } : {}),
+        ...(teamSlug ? { teamSlug } : {}),
       },
       update: {
         ...data,
@@ -309,6 +357,8 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(slug !== undefined ? { logoSlug: slug } : {}),
         ...(data.heroImage === null ? { heroImageMimeType: null } : {}),
         ...(heroSlug !== undefined ? { heroSlug } : {}),
+        ...(data.teamImage === null ? { teamImageMimeType: null } : {}),
+        ...(teamSlug !== undefined ? { teamSlug } : {}),
       },
       select: {
         logo: true,

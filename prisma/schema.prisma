@@ -1962,6 +1962,30 @@ model WorkshopSettings {
   /// `logoSlug` sobre por qué es un slug aleatorio y no el `contactId`.
   heroSlug          String? @unique
 
+  /// La foto de la persona (o del equipo) que atiende, para la sección
+  /// "Nosotros" de la página pública. Mismo criterio que `logo` y `heroImage`:
+  /// base64 sin el prefijo `data:`, servida por slug propio desde
+  /// `GET /api/public/workshop/team/[slug]`.
+  ///
+  /// Es una cara en una página pública, así que el taller tiene que poder
+  /// sacarla sin pedirle permiso a nadie: mandar `null` la borra junto con su
+  /// tipo y su slug, igual que el logo.
+  teamImage         String? @db.LongText
+  teamImageMimeType String?
+  teamSlug          String? @unique
+  /// Quién es. Una cara con nombre convence; una cara sola es un desconocido.
+  teamName String? @db.VarChar(80)
+  /// Qué hace — "instalador", "dueño", "el equipo".
+  teamRole String? @db.VarChar(80)
+
+  /// Desde qué año trabaja con lámina Kristall, cargado por el taller.
+  ///
+  /// **No se deduce del alta del contacto.** Se intentó con `contact.createdAt`
+  /// y salió mal: eso es cuándo lo cargamos nosotros al CRM, no desde cuándo
+  /// trabaja, así que un taller con diez años de oficio anunciaba "desde 2026"
+  /// en su propia página. El único que sabe el año es él.
+  installerSince Int?
+
   /// Sobre que fondo se ve bien el logo del taller.
   ///
   /// Existe porque un logo no es una imagen cualquiera: muchos son de trazo

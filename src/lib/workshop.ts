@@ -4,6 +4,7 @@ import type { Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
 import { createLogger } from "@/lib/logger";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { workshopHeroPath } from "@/lib/workshop-hero";
+import { workshopTeamPath } from "@/lib/workshop-team";
 import { workshopGalleryPhotoPath, newGallerySlug } from "@/lib/workshop-gallery";
 import {
   generarGarantiasDeOrden,
@@ -1286,6 +1287,11 @@ export async function getPublicWorkshop(handle: string) {
       logoBackground: true,
       heroSlug: true,
       heroImage: true,
+      teamSlug: true,
+      teamImage: true,
+      teamName: true,
+      teamRole: true,
+      installerSince: true,
       gallerySlug: true,
       description: true,
       pageTheme: true,
@@ -1310,7 +1316,7 @@ export async function getPublicWorkshop(handle: string) {
       publicPageEnabled: true,
       // Se necesita para traer los servicios, pero **no sale en la respuesta**.
       contactId: true,
-      contact: { select: { company: true, firstName: true, lastName: true, createdAt: true } },
+      contact: { select: { company: true, firstName: true, lastName: true } },
     },
   });
 
@@ -1373,6 +1379,12 @@ export async function getPublicWorkshop(handle: string) {
     logoPath: s.logo && s.logoSlug ? workshopLogoPath(s.logoSlug) : null,
     /// Sobre que fondo dibujar la cabecera para que el logo se vea.
     logoBackground: s.logoBackground,
+    /// La cara de quien atiende, para la sección "Nosotros". `null` = no
+    /// subió ninguna, y ahí la sección queda solo con texto — nunca con un
+    /// avatar genérico, que anuncia que no hay nadie.
+    teamPath: s.teamImage && s.teamSlug ? workshopTeamPath(s.teamSlug) : null,
+    teamName: s.teamName,
+    teamRole: s.teamRole,
     /// Foto de fondo del hero. `null` = todavía no subió ninguna, y la
     /// landing dibuja el layout de siempre sin sección de hero.
     heroPath: s.heroImage && s.heroSlug ? workshopHeroPath(s.heroSlug) : null,
@@ -1404,10 +1416,13 @@ export async function getPublicWorkshop(handle: string) {
           description: f.description ?? null,
         }))
       : [],
-    /// El año en que el taller entró a la red, para "Instalador autorizado
-    /// desde 2019". Sale del alta del contacto, que es el dato más cercano
-    /// que tenemos a "desde cuándo trabaja con nosotros".
-    instaladorDesde: s.contact?.createdAt ? s.contact.createdAt.getFullYear() : null,
+    /// El año desde el que trabaja con lámina Kristall, cargado por el taller.
+    /// `null` = no lo completó, y entonces la landing no dibuja la línea.
+    ///
+    /// Antes se deducía del alta del contacto y era un dato equivocado: eso es
+    /// cuándo lo cargamos al CRM. En producción salió "Instalador autorizado
+    /// Kristall desde 2026" en talleres con años de oficio.
+    instaladorDesde: s.installerSince,
     /// Cuántas garantías activadas tiene. Quién la muestra decide a partir de
     /// qué número vale la pena: dos garantías dichas en voz alta convencen
     /// menos que no decir nada.
