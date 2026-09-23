@@ -1112,9 +1112,13 @@ export async function getWorkshopPhotos(contactId: string) {
   const fotos = await prisma.workshopPhoto.findMany({
     where: { contactId },
     orderBy: { sortOrder: "asc" },
-    select: { id: true },
+    select: { id: true, description: true },
   });
-  return fotos.map((f) => ({ id: f.id, url: workshopGalleryPhotoPath(settings.gallerySlug!, f.id) }));
+  return fotos.map((f) => ({
+    id: f.id,
+    url: workshopGalleryPhotoPath(settings.gallerySlug!, f.id),
+    description: f.description,
+  }));
 }
 
 /**
@@ -1172,6 +1176,29 @@ export async function createWorkshopPhoto(
  * `sortOrder` con el del vecino — no hay drag-and-drop en esta pantalla, así
  * que "reordenar" son dos botones y un intercambio de a uno.
  */
+/**
+ * Guarda lo que el taller escribió sobre una foto.
+ *
+ * Vacío se guarda como `null` y no como cadena vacía: en la página pública
+ * las dos cosas terminan en un `alt` vacío, pero `null` dice "no escribió
+ * nada" y `""` dice "escribió nada", y esa diferencia importa el día que se
+ * quiera avisarle a quiénes les falta completarlo.
+ *
+ * Devuelve `false` si la foto no es de este taller — mismo criterio que
+ * reordenar: una foto ajena no existe para este contacto.
+ */
+export async function setWorkshopPhotoDescription(
+  contactId: string,
+  photoId: string,
+  description: string | null
+): Promise<boolean> {
+  const { count } = await prisma.workshopPhoto.updateMany({
+    where: { id: photoId, contactId },
+    data: { description: description?.trim() || null },
+  });
+  return count > 0;
+}
+
 export async function reorderWorkshopPhoto(
   contactId: string,
   photoId: string,
@@ -1310,7 +1337,7 @@ export async function getPublicWorkshop(handle: string) {
     ? await prisma.workshopPhoto.findMany({
         where: { contactId: s.contactId },
         orderBy: { sortOrder: "asc" },
-        select: { id: true },
+        select: { id: true, description: true },
       })
     : [];
 
@@ -1345,10 +1372,17 @@ export async function getPublicWorkshop(handle: string) {
       tiktok: s.socialTiktok,
       google: s.socialGoogle,
     },
-    /// URLs ya armadas, en el orden del álbum. Vacío = todavía no subió
-    /// ninguna foto.
+    /// Cada foto con su ruta ya armada y la descripción que escribió el
+    /// taller, en el orden del álbum. Vacío = todavía no subió ninguna.
+    ///
+    /// Antes esto era una lista de rutas sueltas. `polarizar` —el único
+    /// consumidor— acepta las dos formas desde su versión anterior a este
+    /// cambio, así que la ventana entre los dos despliegues no rompe nada.
     photos: s.gallerySlug
-      ? fotos.map((f) => workshopGalleryPhotoPath(s.gallerySlug!, f.id))
+      ? fotos.map((f) => ({
+          path: workshopGalleryPhotoPath(s.gallerySlug!, f.id),
+          description: f.description ?? null,
+        }))
       : [],
     address: s.publicAddress,
     // Las coordenadas van juntas o no van: una sola no ubica nada.

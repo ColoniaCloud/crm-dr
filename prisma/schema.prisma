@@ -2116,6 +2116,13 @@ model WorkshopPhoto {
   image         String @db.LongText
   imageMimeType String
 
+  /// Qué se ve en la foto, escrito por el taller desde Mi Taller. Va al `alt`
+  /// de la imagen en la página pública: sin esto, el álbum —que es la prueba
+  /// del trabajo— es invisible para un lector de pantalla y para la búsqueda
+  /// de imágenes. `null` = no escribió nada, y entonces el `alt` va vacío:
+  /// mejor el silencio que un texto inventado sobre una foto que no vimos.
+  description String? @db.VarChar(160)
+
   /// Orden de aparición en el álbum. Se calcula en el servidor al crear
   /// (nunca confiar en el que manda el cliente) — mismo criterio que
   /// `WorkshopService.sortOrder`.
