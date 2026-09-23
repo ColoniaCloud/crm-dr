@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import PaymentPlanCard from "@/components/sales/payment-plan-card";
+import SaleReturnsCard from "@/components/sales/sale-returns-card";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
@@ -651,6 +652,9 @@ export default function SaleDetailPage() {
         isAdmin={isAdmin}
         onChanged={fetchSale}
       />
+
+      {/* Devoluciones — se esconde sola si no hay ninguna y la venta no admite */}
+      <SaleReturnsCard saleId={saleId} isAdmin={isAdmin} onChanged={fetchSale} />
 
       {/* Payments */}
       <Card>

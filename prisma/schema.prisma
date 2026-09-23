@@ -151,6 +151,15 @@ enum AccountAdjustmentType {
   CREDIT_NOTE // nota de crédito / devolución
   DEBIT_NOTE // interés por mora, gasto reclamado
   WRITE_OFF // condonación
+  // Va al final, y no al lado de CREDIT_NOTE donde "corresponde" por tema.
+  // MySQL guarda un ENUM como el índice de su posición: meter un valor en el
+  // medio corre a los de abajo y obliga a reescribir la tabla entera
+  // remapeando cada fila. Esta tabla tiene notas de crédito, saldos iniciales
+  // y condonaciones — si ese remapeo sale mal, un DEBIT_NOTE se vuelve un
+  // WRITE_OFF y nadie se entera hasta que un saldo no cierra. Agregado al
+  // final es un append y MySQL ni toca las filas.
+  // **Los valores nuevos van siempre acá abajo.**
+  REFUND // efectivo devuelto al cliente por una devolución de mercadería
 }
 
 enum PaymentDeclarationStatus {
@@ -182,28 +191,29 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  assignedLeads              Contact[]                   @relation("AssignedTo")
-  scheduledVisits            Visit[]                     @relation("VisitAssignedTo")
-  createdVisits              Visit[]                     @relation("VisitCreatedBy")
-  scheduledCalls             Call[]                      @relation("CallAssignedTo")
-  createdCalls               Call[]                      @relation("CallCreatedBy")
-  sales                      Sale[]
-  quotes                     Quote[]
-  assignedUnits              ProductUnit[]               @relation("UnitAssignedTo")
-  notifications              Notification[]
-  stockMovements             StockMovement[]
-  activities                 ActivityLog[]               @relation("UserActivities")
-  leadActivities             LeadActivity[]              @relation("LeadActivityUser")
-  paymentAuditLogs           PaymentAuditLog[]           @relation("PaymentAuditUser")
-  operatorAuditLogs          OperatorAuditLog[]
-  assignedWarrantyClaims     WarrantyClaim[]
-  mailAccount                MailAccount?
-  mailboxEmails              Email[]                     @relation("MailboxOwner")
-  paymentPlans               PaymentPlan[]               @relation("PaymentPlanCreatedBy")
-  accountAdjustments         AccountAdjustment[]         @relation("AccountAdjustmentCreatedBy")
-  warrantyRollLocationEvents WarrantyRollLocationEvent[]
-  messageTemplates           MessageTemplate[]
-  reviewedPaymentDeclarations PaymentDeclaration[]       @relation("PaymentDeclarationReviewedBy")
+  assignedLeads               Contact[]                   @relation("AssignedTo")
+  scheduledVisits             Visit[]                     @relation("VisitAssignedTo")
+  createdVisits               Visit[]                     @relation("VisitCreatedBy")
+  scheduledCalls              Call[]                      @relation("CallAssignedTo")
+  createdCalls                Call[]                      @relation("CallCreatedBy")
+  sales                       Sale[]
+  quotes                      Quote[]
+  assignedUnits               ProductUnit[]               @relation("UnitAssignedTo")
+  notifications               Notification[]
+  stockMovements              StockMovement[]
+  activities                  ActivityLog[]               @relation("UserActivities")
+  leadActivities              LeadActivity[]              @relation("LeadActivityUser")
+  paymentAuditLogs            PaymentAuditLog[]           @relation("PaymentAuditUser")
+  operatorAuditLogs           OperatorAuditLog[]
+  assignedWarrantyClaims      WarrantyClaim[]
+  mailAccount                 MailAccount?
+  mailboxEmails               Email[]                     @relation("MailboxOwner")
+  paymentPlans                PaymentPlan[]               @relation("PaymentPlanCreatedBy")
+  accountAdjustments          AccountAdjustment[]         @relation("AccountAdjustmentCreatedBy")
+  warrantyRollLocationEvents  WarrantyRollLocationEvent[]
+  messageTemplates            MessageTemplate[]
+  reviewedPaymentDeclarations PaymentDeclaration[]        @relation("PaymentDeclarationReviewedBy")
+  saleReturns                 SaleReturn[]                @relation("SaleReturnCreatedBy")
 
   @@map("users")
 }
@@ -314,17 +324,18 @@ model Contact {
   workshopBookings    WorkshopBooking[]
   workshopPhotos      WorkshopPhoto[]
 
-  source         LeadSource            @default(MANUAL)
-  placeId        String?               @unique
-  lat            Decimal?              @db.Decimal(10, 7)
-  lng            Decimal?              @db.Decimal(10, 7)
-  phoneE164      String?
-  phoneStatus    ContactPointStatus    @default(UNVERIFIED)
-  whatsappStatus ContactPointStatus    @default(UNVERIFIED)
-  bizStatus      BusinessStatus?
-  lastVerifiedAt DateTime?
-  verifications  ContactVerification[]
+  source              LeadSource            @default(MANUAL)
+  placeId             String?               @unique
+  lat                 Decimal?              @db.Decimal(10, 7)
+  lng                 Decimal?              @db.Decimal(10, 7)
+  phoneE164           String?
+  phoneStatus         ContactPointStatus    @default(UNVERIFIED)
+  whatsappStatus      ContactPointStatus    @default(UNVERIFIED)
+  bizStatus           BusinessStatus?
+  lastVerifiedAt      DateTime?
+  verifications       ContactVerification[]
   paymentDeclarations PaymentDeclaration[]
+  saleReturns         SaleReturn[]
 
   @@index([email])
   @@index([source])
@@ -442,6 +453,7 @@ model Product {
   warrantyLots       WarrantyLot[]
   warrantyRolls      WarrantyRoll[]
   workOrderItems     WorkOrderItem[]
+  saleReturnItems    SaleReturnItem[]
 
   @@map("products")
 }
@@ -555,22 +567,24 @@ model Sale {
   paymentAuditLogs    PaymentAuditLog[]
   paymentPlan         PaymentPlan?
   paymentDeclarations PaymentDeclaration[]
+  returns             SaleReturn[]
 
   @@map("sales")
 }
 
 model SaleItem {
-  id            String        @id @default(cuid())
+  id            String           @id @default(cuid())
   saleId        String
-  sale          Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale          Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
   productId     String
-  product       Product       @relation(fields: [productId], references: [id])
+  product       Product          @relation(fields: [productId], references: [id])
   quantity      Int
-  unitPrice     Decimal       @db.Decimal(10, 2)
-  total         Decimal       @db.Decimal(10, 2)
-  productUnitId String?       @unique
-  productUnit   ProductUnit?  @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
+  unitPrice     Decimal          @db.Decimal(10, 2)
+  total         Decimal          @db.Decimal(10, 2)
+  productUnitId String?          @unique
+  productUnit   ProductUnit?     @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
   warrantyRoll  WarrantyRoll?
+  returnItems   SaleReturnItem[]
 
   @@map("sale_items")
 }
@@ -1829,7 +1843,7 @@ model WorkshopBooking {
   /// taller, no al reves.
   siteAddress  String?  @db.Text
 
-  notes       String? @db.Text
+  notes String? @db.Text
 
   /// Si el vehiculo ya tiene lamina puesta.
   ///
@@ -1974,9 +1988,9 @@ model WorkshopSettings {
   teamImageMimeType String?
   teamSlug          String? @unique
   /// Quién es. Una cara con nombre convence; una cara sola es un desconocido.
-  teamName String? @db.VarChar(80)
+  teamName          String? @db.VarChar(80)
   /// Qué hace — "instalador", "dueño", "el equipo".
-  teamRole String? @db.VarChar(80)
+  teamRole          String? @db.VarChar(80)
 
   /// Desde qué año trabaja con lámina Kristall, cargado por el taller.
   ///
@@ -2156,4 +2170,91 @@ model WorkshopPhoto {
 
   @@index([contactId, sortOrder])
   @@map("workshop_photos")
+}
+
+// ─── Devoluciones de mercadería ─────────────────────────────────────────────
+
+/// Qué pasa con la plata cuando vuelve la mercadería.
+///
+/// `CREDIT_NOTE` es el caso normal: la deuda del cliente baja por el importe
+/// devuelto y, si ya había pagado todo, le queda saldo a favor para la próxima
+/// compra. `CASH` es cuando además se le devuelve la plata en el momento —
+/// típico del vendedor en ruta que cambia mercadería en el taller.
+enum SaleReturnRefund {
+  CREDIT_NOTE
+  CASH
+}
+
+/// Una devolución (total o parcial) sobre una venta ya entregada.
+///
+/// Es un registro nuevo, no una edición de la venta: la venta original queda
+/// intacta con su total y su remito, y la devolución vive al lado. Anular la
+/// venta sigue siendo otra cosa —eso es "esto nunca pasó"—, y por eso solo se
+/// puede devolver sobre ventas CONFIRMED o DELIVERED: una PENDING nunca movió
+/// stock y una CANCELLED ya se revirtió entera.
+///
+/// **El efecto en la cuenta corriente son SIEMPRE ajustes, nunca un cambio en
+/// el total de la venta.** Toda devolución emite una nota de crédito
+/// (`AccountAdjustment.CREDIT_NOTE`, importe negativo) porque la mercadería
+/// volvió; si además se devolvió efectivo, emite un segundo ajuste
+/// (`AccountAdjustment.REFUND`, importe positivo) que representa la plata que
+/// salió de la caja. Los dos juntos dejan el saldo donde tiene que quedar sin
+/// tocar `Sale.total` ni inventar pagos negativos — que romperían el estado de
+/// cobro de la venta, que se deriva de `total - pagos`.
+model SaleReturn {
+  id                     String           @id @default(cuid())
+  number                 Int              @unique @default(autoincrement())
+  saleId                 String
+  sale                   Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  // Redundante con sale.contactId, pero la cuenta corriente y los listados
+  // filtran por cliente sin pasar por la venta.
+  contactId              String
+  contact                Contact          @relation(fields: [contactId], references: [id])
+  userId                 String
+  user                   User             @relation("SaleReturnCreatedBy", fields: [userId], references: [id])
+  refund                 SaleReturnRefund @default(CREDIT_NOTE)
+  /// Suma de los ítems devueltos a precio de venta, sin IVA ni descuento.
+  subtotal               Decimal          @db.Decimal(10, 2)
+  /// Lo que efectivamente se acredita, siempre positivo: el `subtotal` llevado
+  /// a la misma proporción que `Sale.total` sobre `Sale.subtotal`, para que
+  /// arrastre el IVA y el descuento de la venta original. Sin esto, devolver
+  /// entera una venta con factura dejaba al cliente debiendo el 21%.
+  total                  Decimal          @db.Decimal(10, 2)
+  currency               Currency         @default(ARS)
+  reason                 String?          @db.Text
+  /// Dónde quedó registrado el efecto en la cuenta corriente. Strings sueltos y
+  /// no relaciones, igual que `StockMovement.referenceId`: sirven para auditar
+  /// de la devolución al ajuste, no para que la base los exija.
+  creditNoteAdjustmentId String?
+  refundAdjustmentId     String?
+  /// Rollos de garantía que NO se pudieron liberar porque el cliente final ya
+  /// activó la garantía. La mercadería volvió igual; esto queda escrito para
+  /// que alguien lo resuelva a mano y no se entere recién con un reclamo.
+  retainedRolls          String?          @db.Text
+  createdAt              DateTime         @default(now())
+
+  items SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([contactId, createdAt])
+  @@map("sale_returns")
+}
+
+model SaleReturnItem {
+  id         String     @id @default(cuid())
+  returnId   String
+  saleReturn SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleItemId String
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id])
+  productId  String
+  product    Product    @relation(fields: [productId], references: [id])
+  quantity   Int
+  /// Copia del precio al que se vendió. Si mañana cambia el precio de lista,
+  /// la nota de crédito emitida no se mueve.
+  unitPrice  Decimal    @db.Decimal(10, 2)
+  total      Decimal    @db.Decimal(10, 2)
+
+  @@index([returnId])
+  @@index([saleItemId])
+  @@map("sale_return_items")
 }
