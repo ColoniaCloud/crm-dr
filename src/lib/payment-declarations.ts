@@ -22,6 +22,14 @@ function cents(amount: number): number {
   return Math.round(amount * 100);
 }
 
+/** Los cuatro tipos que acepta el portal al subir un comprobante. */
+function extensionDe(mimeType: string): string {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
 function nombreDe(c: { firstName: string; lastName: string; company: string | null }): string {
   return c.company || `${c.firstName} ${c.lastName}`.trim();
 }
@@ -167,6 +175,20 @@ export async function createPaymentDeclaration(
     `Comprobante: ${tieneComprobante ? "sí" : "no"}`,
   ].join(" · ");
 
+  // El comprobante viaja con el aviso. Es el dato que decide la aprobación, y
+  // sin él el mail obliga a entrar al CRM a buscarlo (o directamente no se
+  // puede resolver desde el celular).
+  const comprobante =
+    tieneComprobante && input.receipt && input.receiptMimeType
+      ? [
+          {
+            filename: `comprobante-venta-${sale.number}.${extensionDe(input.receiptMimeType)}`,
+            base64: input.receipt,
+            contentType: input.receiptMimeType,
+          },
+        ]
+      : undefined;
+
   await notifyAdmins({
     type: "PAYMENT_DECLARED",
     // Alguien de afuera declaró plata que alguien de la empresa tiene que
@@ -177,6 +199,7 @@ export async function createPaymentDeclaration(
     // Directo a la fila que hay que aprobar, no solo a la pantalla: ver el
     // punto 5 de payments/page.tsx (lee ?tab= y ?declarationId= y hace scroll).
     link: `/payments?tab=declarations&declarationId=${declaracion.id}`,
+    adjuntos: comprobante,
   });
 
   return {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  ImageOff, Code2, FileText, Maximize2, Minimize2, Paperclip, Download,
+  ImageOff, Code2, FileText, Maximize2, Minimize2, Paperclip, Download, Eye,
   File as FileIcon, FileImage, FileArchive, FileSpreadsheet, AlignLeft,
 } from "lucide-react";
 
@@ -33,6 +33,13 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * Tipos que el navegador muestra como imagen sin ayuda de nadie. Se usa para
+ * decidir la miniatura: un `image/svg+xml` queda afuera a propósito, aunque un
+ * <img> no ejecute su script.
+ */
+const PREVIEWABLE_IMAGE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i;
 
 function attachmentIcon(contentType: string) {
   if (contentType.startsWith("image/")) return FileImage;
@@ -181,27 +188,54 @@ export function EmailBodyView({ emailId }: { emailId: string }) {
         <ul className="space-y-1">
           {detail.attachments.map((a) => {
             const Icon = attachmentIcon(a.contentType);
+            const url = `/api/mail/${emailId}/attachments/${a.id}`;
+            // La miniatura sale del mismo endpoint de descarga, que ya sirve la
+            // imagen con `Content-Disposition: inline`. Va acá afuera y no
+            // adentro del iframe: este <img> es del CRM, mismo origen, así que
+            // la cookie de sesión viaja y no hace falta embeber nada en base64.
+            const preview = a.available && PREVIEWABLE_IMAGE.test(a.contentType);
             return (
-              <li
-                key={a.id}
-                className="flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs"
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{a.filename}</span>
-                  <span className="shrink-0 text-muted-foreground">({formatBytes(a.sizeBytes)})</span>
-                </span>
-                {a.available ? (
-                  <a
-                    href={`/api/mail/${emailId}/attachments/${a.id}`}
-                    download={a.filename}
-                    className="flex shrink-0 items-center gap-1 text-primary hover:underline"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Descargar
+              <li key={a.id} className="rounded-md border px-2.5 py-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{a.filename}</span>
+                    <span className="shrink-0 text-muted-foreground">({formatBytes(a.sizeBytes)})</span>
+                  </span>
+                  {a.available ? (
+                    <span className="flex shrink-0 items-center gap-2.5">
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-primary hover:underline"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver
+                      </a>
+                      <a
+                        href={url}
+                        download={a.filename}
+                        className="flex items-center gap-1 text-primary hover:underline"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Descargar
+                      </a>
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-muted-foreground">eliminado por retención</span>
+                  )}
+                </div>
+                {preview && (
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="mt-1.5 block">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={a.filename}
+                      loading="lazy"
+                      className="max-h-64 w-auto max-w-full rounded border bg-white object-contain"
+                    />
                   </a>
-                ) : (
-                  <span className="shrink-0 text-muted-foreground">eliminado por retención</span>
                 )}
               </li>
             );

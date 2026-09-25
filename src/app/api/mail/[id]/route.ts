@@ -10,13 +10,14 @@ const log = createLogger("api/mail/[id]");
 /**
  * Tope de lo que se embebe como data: en el documento del iframe.
  *
- * Las imágenes incrustadas suelen ser logos y firmas de pocos KB. El tope evita
- * que un mail con una foto de 8MB incrustada infle el JSON del detalle — en
- * base64 crecería un tercio más y el navegador tendría que tragarlo entero
- * antes de mostrar nada.
+ * Es el camino de respaldo: `simpleParser` ya resuelve la mayoría de las
+ * imágenes incrustadas al ingresar el mail, y esto cubre las `cid:` que quedaron
+ * sin resolver. Subido de 512KB a 2MB porque lo que llega incrustado no son
+ * solo logos de firma — una foto de comprobante ronda el MB — y lo que no entra
+ * igual se ve: queda listada abajo como adjunto, con miniatura.
  */
-const MAX_INLINE_IMAGE_BYTES = 512 * 1024;
-const MAX_TOTAL_INLINE_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_TOTAL_INLINE_BYTES = 6 * 1024 * 1024;
 
 const INLINE_IMAGE_TYPES = /^image\/(png|jpe?g|gif|webp|bmp|x-icon|avif)$/i;
 
@@ -79,6 +80,26 @@ export async function GET(
       ? sanitizeEmailHtml(bodyHtml, { allowRemoteImages, inlineImages })
       : null;
 
+    // Qué adjuntos se listan abajo del cuerpo: todo lo que no se esté viendo ya
+    // dentro del mensaje. `isInline` lo decide el poller mirando el cuerpo
+    // parseado (ver `yaSeVeEnElCuerpo`), y el set de abajo cubre el otro camino
+    // —las `cid:` que resolvemos acá desde disco— para no mostrar dos veces el
+    // logo de una firma.
+    //
+    // La regla vieja escondía todo lo que el mail marcara `inline`, y eso es
+    // exactamente lo que hacía desaparecer la foto de un comprobante sacada con
+    // el celular: marcada `inline` por el cliente de correo, pero nunca visible
+    // en el cuerpo.
+    const shownInBody = new Set(sanitized?.embeddedContentIds ?? []);
+    const listed = attachments.filter(
+      (a) => !a.isInline && !(a.contentId && shownInBody.has(a.contentId))
+    );
+
+    // Una `cid:` que no se pudo embeber pero cuyo archivo sí está se ve igual:
+    // queda listada abajo, con miniatura. El cartel de "no se pudo mostrar" se
+    // reserva para las que de verdad faltan.
+    const recuperadas = listed.filter((a) => a.contentId && a.storageKey && !a.purgedAt).length;
+
     return NextResponse.json({
       ...rest,
       hasHtml: Boolean(bodyHtml),
@@ -86,17 +107,15 @@ export async function GET(
         ? buildEmailFrameDocument(sanitized.html, { allowRemoteImages })
         : null,
       blockedImages: sanitized?.blockedImages ?? 0,
-      unresolvedInlineImages: sanitized?.unresolvedInlineImages ?? 0,
+      unresolvedInlineImages: Math.max(
+        0,
+        (sanitized?.unresolvedInlineImages ?? 0) - recuperadas
+      ),
       remoteImagesAllowed: allowRemoteImages,
-      // Las inline no se listan como adjuntos: ya se ven dentro del cuerpo y
-      // repetirlas abajo como "archivo adjunto" confunde (son el logo de la
-      // firma, no algo que el remitente quiso mandar).
-      attachments: attachments
-        .filter((a) => !a.isInline)
-        .map(({ storageKey, purgedAt, ...a }) => ({
-          ...a,
-          available: Boolean(storageKey) && !purgedAt,
-        })),
+      attachments: listed.map(({ storageKey, purgedAt, ...a }) => ({
+        ...a,
+        available: Boolean(storageKey) && !purgedAt,
+      })),
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching email detail");

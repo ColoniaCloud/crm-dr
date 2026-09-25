@@ -187,7 +187,7 @@ async function persistInboundEmail(account: MailAccount, uid: number, source: Bu
   // Los adjuntos y el .eml se guardan después de crear la fila porque el
   // storageKey se arma con el id del email. Si esto falla, el mail ya quedó
   // persistido: se pierde el adjunto, nunca el mensaje.
-  await persistAttachments(email.id, parsed, source);
+  await persistAttachments(email.id, parsed, source, htmlContent);
 
   if (contact) {
     await prisma.leadActivity.create({
@@ -221,7 +221,8 @@ async function persistInboundEmail(account: MailAccount, uid: number, source: Bu
 async function persistAttachments(
   emailId: string,
   parsed: Awaited<ReturnType<typeof simpleParser>>,
-  source: Buffer
+  source: Buffer,
+  htmlContent: string | null
 ) {
   try {
     const rawStorageKey = await storeRawMessage(emailId, source);
@@ -232,7 +233,16 @@ async function persistAttachments(
       contentType: a.contentType || "application/octet-stream",
       // mailparser devuelve el cid con los <> ya sacados en `cid`.
       contentId: a.cid || null,
-      isInline: a.contentDisposition === "inline" || Boolean(a.cid),
+      // `inline` acá significa una sola cosa: "esto ya se ve dentro del cuerpo,
+      // no hace falta listarlo abajo como archivo adjunto".
+      //
+      // Antes se deducía del `Content-Disposition: inline` del mail, y eso es
+      // justo lo que rompía la foto de un comprobante: los clientes de celular
+      // marcan `inline` cualquier imagen adjunta, aunque el cuerpo no la
+      // muestre. El CRM la escondía por esa marca y la foto no aparecía en
+      // ningún lado. Ahora se mira el cuerpo ya parseado, que es donde está la
+      // respuesta de verdad.
+      isInline: yaSeVeEnElCuerpo(htmlContent, a.content),
       content: a.content,
     }));
 
@@ -273,6 +283,23 @@ async function persistAttachments(
   } catch (err) {
     log.error({ err, emailId }, "No se pudieron guardar los adjuntos del email");
   }
+}
+
+/**
+ * ¿Esta imagen ya quedó dentro del cuerpo del mensaje?
+ *
+ * `simpleParser` resuelve las imágenes incrustadas por su cuenta: reemplaza
+ * cada `src="cid:..."` por un `data:` URI con los mismos bytes, así que en el
+ * HTML que guardamos ya no queda ningún `cid:` que buscar. Lo que sí queda es
+ * el base64 de la imagen, y eso es lo que se busca acá.
+ *
+ * Alcanza con los primeros 48 bytes: 48 es múltiplo de 3, así que su base64 es
+ * exactamente el arranque del base64 completo — y no hay que codificar una
+ * foto entera solo para preguntar si está.
+ */
+function yaSeVeEnElCuerpo(htmlContent: string | null, content: Buffer | undefined): boolean {
+  if (!htmlContent || !content || content.byteLength < 48) return false;
+  return htmlContent.includes(content.subarray(0, 48).toString("base64"));
 }
 
 async function handlePollFailure(account: MailAccount, err: unknown) {

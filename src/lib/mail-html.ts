@@ -62,6 +62,14 @@ export interface SanitizeEmailHtmlResult {
    * `blockedImages` porque "Mostrar imágenes" no las va a arreglar.
    */
   unresolvedInlineImages: number;
+  /**
+   * Los `contentId` que efectivamente quedaron embebidos en el cuerpo. Es lo
+   * que le permite al detalle del mail decidir qué adjunto ya se está viendo y
+   * cuál hay que listar abajo: un adjunto marcado `inline` que no llegó a
+   * embeberse (pesaba de más, o el cuerpo nunca lo referenció) no aparece en
+   * ningún lado si se lo esconde por el solo hecho de estar marcado así.
+   */
+  embeddedContentIds: string[];
 }
 
 export interface SanitizeEmailHtmlOptions {
@@ -126,6 +134,7 @@ export function sanitizeEmailHtml(
   const inlineImages = options.inlineImages ?? {};
   let blockedImages = 0;
   let unresolvedInlineImages = 0;
+  const embeddedContentIds = new Set<string>();
 
   const body = sanitizeHtml(rawHtml, {
     allowedTags: ALLOWED_TAGS,
@@ -164,8 +173,10 @@ export function sanitizeEmailHtml(
         // servidor (ver inlineImages en las opciones).
         const cidMatch = /^cid:(.+)$/i.exec(src);
         if (cidMatch) {
-          const resolved = inlineImages[cidMatch[1].trim()];
+          const cid = cidMatch[1].trim();
+          const resolved = inlineImages[cid];
           if (resolved && RASTER_DATA_URI.test(resolved)) {
+            embeddedContentIds.add(cid);
             return { tagName, attribs: { ...attribs, src: resolved } };
           }
         }
@@ -185,6 +196,7 @@ export function sanitizeEmailHtml(
     html: extractStyleBlocks(rawHtml, allowRemoteImages) + body,
     blockedImages,
     unresolvedInlineImages,
+    embeddedContentIds: [...embeddedContentIds],
   };
 }
 

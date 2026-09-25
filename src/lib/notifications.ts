@@ -3,6 +3,19 @@ import { transporter, FROM } from "@/lib/mailer";
 import { BRAND } from "@/lib/brand";
 import { esDemo } from "@/lib/demo-context";
 
+/**
+ * Tope de lo que se manda adjunto en un aviso. El portal ya recomprime las
+ * fotos antes de subirlas, así que esto es el backstop: un adjunto de más
+ * rebota el mail entero en el servidor SMTP y el admin se queda sin el aviso.
+ * Mejor el aviso sin la foto que ningún aviso.
+ */
+const MAX_ADJUNTO_BYTES = 4 * 1024 * 1024;
+
+function cabeEnUnMail(base64: string): boolean {
+  // 3 bytes reales por cada 4 caracteres de base64.
+  return Math.floor((base64.length * 3) / 4) <= MAX_ADJUNTO_BYTES;
+}
+
 export function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -118,6 +131,17 @@ export async function notifyAdmins(payload: {
    * afuera está esperando una respuesta. Hoy: los reclamos de garantía.
    */
   email?: boolean;
+  /**
+   * Archivos que viajan con el correo. Existen para que el aviso se pueda
+   * resolver leyéndolo: el comprobante de un pago declarado desde el portal
+   * vivía solo en la base, y el operador que abría el mail veía "Comprobante:
+   * sí" y ninguna imagen — tenía que entrar al CRM a buscarla.
+   *
+   * Las imágenes van incrustadas en el cuerpo (`cid:`), así que se ven sin
+   * abrir nada, también desde el celular. Lo que no es imagen va como adjunto
+   * común.
+   */
+  adjuntos?: Array<{ filename: string; base64: string; contentType: string }>;
 }) {
   // La campanita y los correos son del equipo real. Una sesion de demostracion
   // no tiene por que aparecer ahi.
@@ -143,6 +167,31 @@ export async function notifyAdmins(payload: {
     if (!payload.email || !process.env.SMTP_USER) return;
 
     const origin = process.env.NEXTAUTH_URL || "";
+
+    // Nodemailer arma el MIME: los adjuntos con `cid` quedan como
+    // multipart/related y el <img src="cid:..."> de abajo los resuelve.
+    const adjuntos = (payload.adjuntos ?? []).filter((a) => {
+      if (cabeEnUnMail(a.base64)) return true;
+      console.warn("[notifyAdmins] adjunto descartado por tamaño:", a.filename);
+      return false;
+    });
+    const piezas = adjuntos.map((a, i) => {
+      const esImagen = a.contentType.startsWith("image/");
+      return {
+        filename: a.filename,
+        content: a.base64,
+        encoding: "base64" as const,
+        contentType: a.contentType,
+        ...(esImagen ? { cid: `adjunto${i}@crm.kristallfilm.com` } : {}),
+      };
+    });
+    const imagenesEnElCuerpo = piezas
+      .filter((p) => "cid" in p)
+      .map(
+        (p) =>
+          `<img src="cid:${(p as { cid: string }).cid}" alt="${escapeHtml(p.filename)}" style="display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:0 0 16px 0;">`
+      )
+      .join("");
     const boton = payload.link
       ? `<a href="${origin}${escapeHtml(payload.link)}" style="display:inline-block;padding:10px 20px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Ver en el CRM</a>`
       : "";
@@ -164,6 +213,7 @@ export async function notifyAdmins(payload: {
                 <h2 style="color:#111;margin:0 0 20px 0;font-size:20px;">${escapeHtml(payload.title)}</h2>
                 <p style="color:#444;margin:0 0 20px 0;">Hola <strong>${escapeHtml(admin.name ?? "")}</strong>,</p>
                 <p style="color:#444;margin:0 0 20px 0;">${escapeHtml(payload.message)}</p>
+                ${imagenesEnElCuerpo}
                 ${boton ? `<div style="margin-top:20px;">${boton}</div>` : ""}
               </div>
               <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">
@@ -171,6 +221,7 @@ export async function notifyAdmins(payload: {
               </p>
             </div>
           `,
+          ...(piezas.length ? { attachments: piezas } : {}),
         });
       } catch (err) {
         console.error("[notifyAdmins] no se pudo mandar el mail a", admin.email, err);
