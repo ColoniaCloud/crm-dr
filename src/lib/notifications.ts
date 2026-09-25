@@ -192,6 +192,25 @@ export async function notifyAdmins(payload: {
           `<img src="cid:${(p as { cid: string }).cid}" alt="${escapeHtml(p.filename)}" style="display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:0 0 16px 0;">`
       )
       .join("");
+
+    // Los dos casos en que el archivo existe pero no se puede mostrar acá
+    // adentro. Sin esta línea el mail se ve igual que uno sin comprobante, y el
+    // operador no tiene forma de saber que hay algo para mirar.
+    const nota = (() => {
+      if (adjuntos.length < (payload.adjuntos ?? []).length) {
+        return "El archivo adjunto era demasiado pesado para el correo. Está en el CRM.";
+      }
+      const noImagen = piezas.filter((p) => !("cid" in p)).length;
+      if (noImagen > 0) {
+        return noImagen === 1
+          ? "El archivo va adjunto a este correo."
+          : "Los archivos van adjuntos a este correo.";
+      }
+      return "";
+    })();
+    const notaHtml = nota
+      ? `<p style="color:#6b7280;font-size:13px;margin:0 0 20px 0;">${escapeHtml(nota)}</p>`
+      : "";
     const boton = payload.link
       ? `<a href="${origin}${escapeHtml(payload.link)}" style="display:inline-block;padding:10px 20px;background:#18181b;color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Ver en el CRM</a>`
       : "";
@@ -214,6 +233,7 @@ export async function notifyAdmins(payload: {
                 <p style="color:#444;margin:0 0 20px 0;">Hola <strong>${escapeHtml(admin.name ?? "")}</strong>,</p>
                 <p style="color:#444;margin:0 0 20px 0;">${escapeHtml(payload.message)}</p>
                 ${imagenesEnElCuerpo}
+                ${notaHtml}
                 ${boton ? `<div style="margin-top:20px;">${boton}</div>` : ""}
               </div>
               <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">

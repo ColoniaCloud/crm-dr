@@ -14,7 +14,7 @@ import { RichTextEditor } from "@/components/mail/rich-text-editor";
 import { EmailBodyView } from "@/components/mail/email-body-view";
 import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
 import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
-import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon } from "lucide-react";
+import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon, ArrowLeft } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
 // Espeja el `select` de GET /api/mail: solo metadata. El cuerpo se pide
@@ -70,6 +70,8 @@ function MailPageInner() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Dónde estaba la bandeja cuando se abrió el mail, para volver al mismo lugar. */
+  const scrollBandeja = useRef(0);
 
   const fetchEmails = useCallback(async () => {
     setLoading(true);
@@ -102,7 +104,28 @@ function MailPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Abajo de `lg` la lista y el mail no conviven: uno reemplaza al otro (ver el
+   * comentario de la grilla). Eso cambia qué significa abrir un mail, así que
+   * el scroll se maneja a mano: al abrir hay que arrancar arriba del mensaje, y
+   * al volver, donde estaba la lista.
+   */
+  function enUnaSolaColumna() {
+    return typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
+  }
+
+  function volverALaBandeja() {
+    const y = scrollBandeja.current;
+    setSelected(null);
+    // Después del render: recién ahí la lista volvió a existir y hay adónde ir.
+    requestAnimationFrame(() => window.scrollTo({ top: y }));
+  }
+
   async function openEmail(email: EmailItem) {
+    if (enUnaSolaColumna()) {
+      scrollBandeja.current = window.scrollY;
+      window.scrollTo({ top: 0 });
+    }
     setSelected(email);
     if (!email.read) {
       await fetch(`/api/mail/${email.id}/read`, {
@@ -238,7 +261,13 @@ function MailPageInner() {
 
         <TabsContent value="bandeja" className="space-y-6 mt-4">
 
-      <Tabs value={filter} onValueChange={(v) => { setFilter(v as Filter); setSelected(null); }}>
+      {/* Los filtros son de la bandeja: con un mail abierto en el celular no
+          tienen nada que filtrar, y sacarlos deja el mensaje arriba de todo. */}
+      <Tabs
+        value={filter}
+        onValueChange={(v) => { setFilter(v as Filter); setSelected(null); }}
+        className={selected ? "hidden lg:block" : ""}
+      >
         <TabsList>
           <TabsTrigger value="all">Todos</TabsTrigger>
           <TabsTrigger value="unread">No leídos</TabsTrigger>
@@ -247,9 +276,20 @@ function MailPageInner() {
         </TabsList>
       </Tabs>
 
+      {/*
+        En escritorio son dos columnas y se ven juntas. En el celular no entran:
+        antes la lista se quedaba arriba con su propio scroll y el mail se
+        abría abajo, fuera de pantalla — el operador tocaba un correo, no veía
+        moverse nada y creía que no se había abierto. Ahora uno reemplaza al
+        otro, como en cualquier app de correo del celular, y se vuelve con el
+        botón de abajo.
+      */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <Card className="lg:col-span-2">
-          <CardContent className="p-0 divide-y max-h-[65vh] overflow-y-auto">
+        <Card className={`lg:col-span-2 ${selected ? "hidden lg:block" : ""}`}>
+          {/* El scroll propio de la lista es para la columna angosta del
+              escritorio. En el celular la lista es la pantalla entera: que
+              scrollee la página, y no una caja adentro de otra. */}
+          <CardContent className="p-0 divide-y max-h-none overflow-y-visible lg:max-h-[65vh] lg:overflow-y-auto">
             {loading ? (
               <p className="p-4 text-sm text-muted-foreground">Cargando...</p>
             ) : emails.length === 0 ? (
@@ -288,12 +328,20 @@ function MailPageInner() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card className={`lg:col-span-3 ${selected ? "" : "hidden lg:block"}`}>
           <CardContent className="p-5">
             {!selected ? (
               <p className="text-sm text-muted-foreground">Seleccioná un correo para verlo.</p>
             ) : (
               <div className="space-y-3">
+                {/* Pegado abajo del header de la app (h-14), que también es
+                    sticky: sin el top-14 el botón se esconde atrás. */}
+                <div className="lg:hidden sticky top-14 z-10 -mx-5 -mt-5 mb-1 border-b bg-card px-2 py-1.5">
+                  <Button variant="ghost" size="sm" className="gap-1.5 px-2" onClick={volverALaBandeja}>
+                    <ArrowLeft className="h-4 w-4" />
+                    Volver a la bandeja
+                  </Button>
+                </div>
                 <h2 className="text-lg font-semibold">{selected.subject || "(sin asunto)"}</h2>
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <p><strong>De:</strong> {selected.fromAddress}</p>

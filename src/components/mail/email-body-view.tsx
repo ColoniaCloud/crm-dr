@@ -252,8 +252,11 @@ export function EmailBodyView({ emailId }: { emailId: string }) {
           srcDoc={detail.frameDocument ?? ""}
           sandbox="allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer"
+          // En el celular el mensaje ocupa la pantalla entera (la lista se
+          // esconde mientras tanto), así que el alto de 380px —pensado para la
+          // columna del escritorio— desperdicia media pantalla.
           className={`w-full rounded-md border bg-white transition-[height] dark:bg-neutral-950 ${
-            expanded ? "h-[70vh]" : "h-[380px]"
+            expanded ? "h-[70vh]" : "h-[65vh] lg:h-[380px]"
           }`}
         />
       ) : (
