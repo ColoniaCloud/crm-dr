@@ -115,7 +115,7 @@ export interface ClientAccount {
   summary: AccountSummary;
   entries: AccountEntry[];
   plans: AccountPlan[];
-  /** Ventas REGULAR con saldo, tengan o no plan — ver `getPendingSales`. */
+  /** Ventas con saldo, de cualquier tipo y tengan o no plan — ver `getPendingSales`. */
   pendingSales: PendingSale[];
 }
 
@@ -223,19 +223,31 @@ export async function getClientAccount(
 }
 
 /**
- * Ventas REGULAR con saldo pendiente, tengan o no un plan de cuotas armado —
- * es el universo que puede recibir una declaración de pago desde el portal
- * (ver `createPaymentDeclaration` en `payment-declarations.ts`).
+ * Toda venta no anulada con saldo pendiente — es el universo que puede recibir
+ * una declaración de pago desde el portal (ver `createPaymentDeclaration` en
+ * `payment-declarations.ts`).
  *
- * Consignación queda afuera a propósito: se liquida distinto, y no es el
- * caso que motivó esto — una venta de mostrador que tarda en cobrarse.
+ * Hasta setiembre de 2026 esto filtraba `type: "REGULAR"`, dejando afuera las
+ * consignaciones con el argumento de que "se liquidan distinto". El resultado
+ * en el Panel de Cliente era el peor de los dos mundos: a una consignación con
+ * plan de cuotas el panel le mostraba la deuda, las cuotas y la fecha del
+ * próximo vencimiento, y no le ofrecía ningún modo de avisar el pago. El
+ * Cliente veía que debía y no tenía dónde decir que pagó.
+ *
+ * La regla ahora es la del extracto: si figura como deuda, se puede declarar un
+ * pago contra ella. Es el mismo criterio que ya se había corregido en
+ * `credit.ts` por un agujero hermano — ahí también se miraba un solo tipo de
+ * venta y se colaba todo lo demás.
+ *
+ * Declarar no es cobrar: el pago queda pendiente hasta que alguien de Kristall
+ * lo confirma, así que ampliar esto no mueve ningún saldo por sí solo.
  */
 export async function getPendingSales(
   contactId: string,
   planes: AccountPlan[]
 ): Promise<PendingSale[]> {
   const sales = await prisma.sale.findMany({
-    where: { contactId, type: "REGULAR", ...DEUDA_EXCLUIDA },
+    where: { contactId, ...DEUDA_EXCLUIDA },
     select: {
       id: true,
       number: true,
