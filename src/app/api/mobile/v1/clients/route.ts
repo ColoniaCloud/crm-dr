@@ -45,7 +45,28 @@ const SELECT = {
   email: true,
   cuit: true,
   type: true,
+  // La etiqueta de descuento viaja con el contacto para que el POS pueda
+  // mostrar "20% por etiqueta A" mientras se arma el carrito. Es informativa:
+  // el descuento que vale es el que calcula el servidor al crear la venta
+  // (resolveSaleDiscount), no el que el POS dibuje.
+  discountTag: { select: { id: true, code: true, name: true, type: true, value: true, active: true } },
 } as const;
+
+/**
+ * `DiscountTag.value` es un Decimal de Prisma y `JSON.stringify` lo manda como
+ * string. La app espera numeros en todo lo que sea plata (misma razon que
+ * serializeSaleDetail), asi que se normaliza antes de salir. Una etiqueta
+ * desactivada viaja como `null`: el POS no tiene que saber la regla.
+ */
+type ClientRow = { discountTag: { value: unknown; active: boolean } | null };
+
+function serializeClient<T extends ClientRow>(client: T) {
+  const tag = client.discountTag;
+  return {
+    ...client,
+    discountTag: tag && tag.active ? { ...tag, value: Number(tag.value) } : null,
+  };
+}
 
 export function OPTIONS() {
   return mobileCorsPreflight();
@@ -79,7 +100,7 @@ export async function GET(request: Request) {
       take: 20,
     });
 
-    return withMobileCors(NextResponse.json({ clients }));
+    return withMobileCors(NextResponse.json({ clients: clients.map(serializeClient) }));
   } catch (error) {
     log.error({ err: error }, "Error searching clients");
     return withMobileCors(NextResponse.json({ error: "Error al buscar clientes" }, { status: 500 }));
@@ -121,7 +142,7 @@ export async function POST(request: Request) {
                 duplicates.length === 1
                   ? "Ya existe un contacto que coincide. Revisá si es el mismo."
                   : `Ya existen ${duplicates.length} contactos que coinciden. Revisá si alguno es el mismo.`,
-              duplicates,
+              duplicates: duplicates.map(serializeClient),
             },
             { status: 409 }
           )
@@ -148,7 +169,7 @@ export async function POST(request: Request) {
       link: "/clients",
     });
 
-    return withMobileCors(NextResponse.json({ client }, { status: 201 }));
+    return withMobileCors(NextResponse.json({ client: serializeClient(client) }, { status: 201 }));
   } catch (error) {
     log.error({ err: error }, "Error creating client");
     return withMobileCors(NextResponse.json({ error: "Error al crear cliente" }, { status: 500 }));

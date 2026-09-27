@@ -253,28 +253,33 @@ model ContactTag {
 }
 
 model Contact {
-  id           String      @id @default(cuid())
-  leadNumber   Int         @unique @default(autoincrement())
-  type         ContactType @default(LEAD)
-  firstName    String
-  lastName     String
-  company      String?
-  sector       String? // AUTO_TALLER | AUTO_CONCESIONARIO | AUTO_MAYORISTA | ARQUITECTURA_CONSTRUCTORA | ARQUITECTURA_VIDRIERIA | ARQUITECTURA_MAYORISTA
-  email        String?
-  phone        String?
-  whatsapp     String?
-  address      String?
-  neighborhood String?
-  city         String?
-  state        String?
-  cuit         String?
-  website      String?
-  notes        String?     @db.Text
+  id            String       @id @default(cuid())
+  leadNumber    Int          @unique @default(autoincrement())
+  type          ContactType  @default(LEAD)
+  firstName     String
+  lastName      String
+  company       String?
+  sector        String? // AUTO_TALLER | AUTO_CONCESIONARIO | AUTO_MAYORISTA | ARQUITECTURA_CONSTRUCTORA | ARQUITECTURA_VIDRIERIA | ARQUITECTURA_MAYORISTA
+  email         String?
+  phone         String?
+  whatsapp      String?
+  address       String?
+  neighborhood  String?
+  city          String?
+  state         String?
+  cuit          String?
+  website       String?
+  notes         String?      @db.Text
   // Límite de crédito para ventas a consignación (libres o en cuotas). Sin
   // esto asignado, el CRM no deja crear una venta CONSIGNMENT para este
   // contacto — ver checkConsignmentCredit() en src/lib/credit.ts.
-  creditTierId String?
-  creditTier   CreditTier? @relation(fields: [creditTierId], references: [id])
+  creditTierId  String?
+  creditTier    CreditTier?  @relation(fields: [creditTierId], references: [id])
+  // Etiqueta de descuento: el descuento que este contacto tiene pactado y que
+  // se aplica solo al crear una venta. Sin etiqueta no hay descuento
+  // automatico y la venta va a precio de lista — ver src/lib/discount-tags.ts.
+  discountTagId String?
+  discountTag   DiscountTag? @relation(fields: [discountTagId], references: [id])
 
   // Installer-specific fields
   hasLocalStore       Boolean @default(false)
@@ -380,6 +385,39 @@ model CreditTier {
   contacts Contact[]
 
   @@map("credit_tiers")
+}
+
+/// Etiqueta de descuento de un contacto: el descuento pactado que se le aplica
+/// automaticamente cada vez que se le vende.
+///
+/// Es hermana de CreditTier —misma forma, misma pantalla de configuracion, mismo
+/// motivo para ser tabla y no enum: los valores son justamente lo que se va a
+/// querer retocar sin tocar codigo—, pero responde otra pregunta. El escalafon
+/// dice *cuanto se le puede financiar*; la etiqueta dice *a que precio se le
+/// vende*. Un contacto puede tener una, la otra, las dos o ninguna.
+///
+/// `type` sigue la convencion de ProductDiscount (String "PERCENTAGE" | "FIXED"
+/// y no un enum) a proposito: un ENUM de MySQL guarda por posicion y meter un
+/// valor nuevo en el medio reescribe la tabla, y estos dos valores son
+/// exactamente los mismos que ya se validan a mano en los descuentos de
+/// producto.
+///
+/// En PERCENTAGE, `value` es el porcentaje (20 = 20%). En FIXED, es el monto en
+/// pesos que se descuenta de la venta entera (no por item).
+model DiscountTag {
+  id        String   @id @default(cuid())
+  code      String   @unique // "A" | "MAYORISTA" | lo que se cargue
+  name      String
+  type      String   @default("PERCENTAGE") @db.VarChar(10) // PERCENTAGE | FIXED
+  value     Decimal  @db.Decimal(12, 2)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts Contact[]
+  sales    Sale[]
+
+  @@map("discount_tags")
 }
 
 model Visit {
@@ -540,26 +578,41 @@ model Quote {
 }
 
 model Sale {
-  id              String     @id @default(cuid())
-  number          Int        @unique @default(autoincrement())
-  contactId       String
-  contact         Contact    @relation(fields: [contactId], references: [id])
-  userId          String
-  user            User       @relation(fields: [userId], references: [id])
-  requiresFactura Boolean    @default(false)
-  type            SaleType   @default(REGULAR)
-  status          SaleStatus @default(PENDING)
-  subtotal        Decimal    @db.Decimal(10, 2)
-  discount        Decimal    @default(0) @db.Decimal(10, 2)
-  tax             Decimal    @default(0) @db.Decimal(10, 2)
-  total           Decimal    @db.Decimal(10, 2)
+  id               String       @id @default(cuid())
+  number           Int          @unique @default(autoincrement())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id])
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  requiresFactura  Boolean      @default(false)
+  type             SaleType     @default(REGULAR)
+  status           SaleStatus   @default(PENDING)
+  subtotal         Decimal      @db.Decimal(10, 2)
+  /// Descuento total de la venta, en pesos. Sigue siendo **uno solo** —lo que se
+  /// resta del subtotal— para que remitos, cuenta corriente y devoluciones
+  /// (creditRatio en src/lib/returns.ts prorratea sobre total/subtotal) no
+  /// necesiten saber de donde salio. Las tres columnas de abajo son las que
+  /// explican de donde salio.
+  discount         Decimal      @default(0) @db.Decimal(10, 2)
+  /// La parte de `discount` que puso la etiqueta del contacto. El resto es la
+  /// concesion que cargo a mano quien vendio. Sin este desglose, una venta con
+  /// descuento automatico es indistinguible de una con descuento a dedo.
+  tagDiscount      Decimal      @default(0) @db.Decimal(10, 2)
+  discountTagId    String?
+  discountTag      DiscountTag? @relation(fields: [discountTagId], references: [id], onDelete: SetNull)
+  /// Copia legible de la etiqueta al momento de vender ("A - Mayorista (20%)").
+  /// Las etiquetas se editan y se borran; esto queda escrito para que una venta
+  /// vieja siga explicando su propio precio.
+  discountTagLabel String?
+  tax              Decimal      @default(0) @db.Decimal(10, 2)
+  total            Decimal      @db.Decimal(10, 2)
   // Hoy siempre ARS (auditado en agosto 2026: no existe ni una venta pactada en
   // otra moneda). La columna existe para no migrar el día que se venda a Uruguay.
-  currency        Currency   @default(ARS)
-  exchangeRate    Decimal?   @db.Decimal(10, 4)
-  notes           String?    @db.Text
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  currency         Currency     @default(ARS)
+  exchangeRate     Decimal?     @db.Decimal(10, 4)
+  notes            String?      @db.Text
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   items               SaleItem[]
   remito              Remito?

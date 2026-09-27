@@ -8,6 +8,7 @@ import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@
 import { confirmSale } from "@/lib/sales";
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { calcTax } from "@/lib/utils";
+import { resolveSaleDiscount } from "@/lib/discount-tags";
 import { validateBody } from "@/lib/api-validation";
 import { serializeSaleDetail } from "@/lib/mobile-sale";
 import { createLogger } from "@/lib/logger";
@@ -88,7 +89,10 @@ export async function POST(request: Request) {
   const json = await request.json().catch(() => null);
   const validation = validateBody(createSaleSchema, json);
   if (!validation.success) return withMobileCors(validation.response);
-  const { contactId, items, discount, notes, requiresFactura, taxId } = validation.data;
+  // `discount` es la concesion cargada a mano en el POS. El descuento pactado
+  // del contacto (su etiqueta) lo resuelve el servidor y se suma a este, asi el
+  // POS no tiene que reimplementar el calculo ni puede salteárselo.
+  const { contactId, items, discount: manualDiscount, notes, requiresFactura, taxId } = validation.data;
 
   try {
     // El carrito manda el precio que vio el vendedor al armarlo, y hasta ahora
@@ -117,6 +121,8 @@ export async function POST(request: Request) {
     }
 
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const { discount, tagDiscount, discountTagId, discountTagLabel } =
+      await resolveSaleDiscount(contactId, subtotal, manualDiscount);
     const tax = requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - discount + tax;
 
@@ -140,6 +146,9 @@ export async function POST(request: Request) {
           requiresFactura,
           subtotal,
           discount,
+          tagDiscount,
+          discountTagId,
+          discountTagLabel,
           tax,
           total,
           notes,

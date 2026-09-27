@@ -22,6 +22,15 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
     notes: sale.notes,
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
+    // Desglose del descuento: cuanto puso la etiqueta del contacto y cuanto se
+    // cargo a mano. El POS lo necesita para que el ticket diga "Descuento A
+    // (20%)" en vez de un numero suelto que el vendedor no sabe de donde salio.
+    tagDiscount: Number(sale.tagDiscount),
+    // Acotado a 0: un admin puede reescribir los totales a mano desde el
+    // detalle de la venta, y ahi `discount` puede terminar por debajo de lo que
+    // habia puesto la etiqueta.
+    manualDiscount: Math.max(0, Number(sale.discount) - Number(sale.tagDiscount)),
+    discountTagLabel: sale.discountTagLabel,
     tax: Number(sale.tax),
     total: Number(sale.total),
     totalPaid,

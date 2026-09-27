@@ -34,6 +34,7 @@ import dynamic from "next/dynamic";
 import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "lucide-react";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { CreditTierCard } from "@/components/clients/credit-tier-card";
+import { DiscountTagCard } from "@/components/clients/discount-tag-card";
 import { ClientAccountStatement } from "@/components/clients/client-account-statement";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
@@ -82,6 +83,7 @@ interface ClientDetail {
   }>;
   balance: number;
   creditTier: { id: string; code: string; name: string; limit: string } | null;
+  discountTag: { id: string; code: string; name: string; type: string; value: string; active: boolean } | null;
   consignmentBalance: number;
 }
 
@@ -553,6 +555,16 @@ export default function ClientDetailPage() {
             clientId={clientId}
             creditTier={client.creditTier}
             consignmentBalance={client.consignmentBalance}
+            canEdit={isAdminUser}
+            onChanged={fetchClient}
+          />
+        )}
+
+        {/* Etiqueta de descuento (se aplica al crear cada venta) */}
+        {client && (
+          <DiscountTagCard
+            clientId={clientId}
+            discountTag={client.discountTag}
             canEdit={isAdminUser}
             onChanged={fetchClient}
           />

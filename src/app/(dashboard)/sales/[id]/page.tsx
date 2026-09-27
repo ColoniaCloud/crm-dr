@@ -72,6 +72,8 @@ interface SaleDetail {
   requiresFactura: boolean;
   subtotal: string;
   discount: string;
+  tagDiscount: string;
+  discountTagLabel: string | null;
   tax: string;
   total: string;
   notes: string | null;
@@ -614,7 +616,22 @@ export default function SaleDetailPage() {
             </div>
             {parseFloat(sale.discount) > 0 && (
               <div className="flex justify-end gap-8">
-                <span className="text-muted-foreground">Descuento</span>
+                {/* De donde salio el descuento: la etiqueta del cliente al
+                    momento de vender, lo cargado a mano, o las dos cosas. La
+                    etiqueta se muestra desde la copia guardada en la venta, no
+                    desde la etiqueta actual del cliente: si despues le cambian
+                    el valor o se la borran, esta venta sigue explicandose. */}
+                <span className="text-muted-foreground">
+                  Descuento
+                  {sale.discountTagLabel && (
+                    <span className="block text-xs">
+                      Etiqueta {sale.discountTagLabel}: -{formatCurrency(sale.tagDiscount)}
+                      {parseFloat(sale.discount) - parseFloat(sale.tagDiscount) > 0 && (
+                        <> · a mano: -{formatCurrency(parseFloat(sale.discount) - parseFloat(sale.tagDiscount))}</>
+                      )}
+                    </span>
+                  )}
+                </span>
                 <span className="text-red-600">-{formatCurrency(sale.discount)}</span>
               </div>
             )}

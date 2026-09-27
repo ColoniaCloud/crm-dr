@@ -14,9 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate, calcTax } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
+import { calcTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";
 
 function defaultFirstDueDate(): string {
   const hoy = new Date();
@@ -38,7 +39,8 @@ interface Sale {
 }
 
 interface Product { id: string; name: string; price: string; stock: number; }
-interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; }
+interface ContactDiscountTag { id: string; code: string; name: string; type: string; value: string; active: boolean; }
+interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; discountTag?: ContactDiscountTag | null; }
 
 interface CreatedSaleItem {
   product: { name: string };
@@ -146,17 +148,32 @@ function SalesPage() {
     finally { setLoading(false); }
   }
 
+  /**
+   * La aritmetica del formulario, en un solo lugar.
+   *
+   * El descuento de la etiqueta lo decide el servidor al crear la venta
+   * (resolveSaleDiscount); esto lo recalcula con la misma funcion
+   * (splitDiscount / calcTagDiscount) para que el vendedor vea el total real
+   * antes de confirmar y no se entere despues. Si los dos dieran distinto, el
+   * que manda es el servidor.
+   */
+  const totals = useMemo(() => {
+    const subtotal = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const contact = contacts.find((c) => c.id === form.contactId);
+    const tag = contact?.discountTag?.active ? contact.discountTag : null;
+    const split = splitDiscount(tag ? calcTagDiscount(tag, subtotal) : 0, form.discount, subtotal);
+    const tax = form.requiresFactura ? calcTax(subtotal) : 0;
+    return { subtotal, tag, ...split, tax, total: subtotal - split.discount + tax };
+  }, [form.items, form.contactId, form.discount, form.requiresFactura, contacts]);
+
   const installmentPreview = useMemo(() => {
     if (form.type !== "CONSIGNMENT" || !form.buildPlan || !form.firstDueDate) return [];
     const n = parseInt(form.installmentCount, 10);
     if (!n || n < 2 || n > 60) return [];
-    const sub = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const tax = form.requiresFactura ? calcTax(sub) : 0;
-    const total = sub - form.discount + tax;
     const fecha = new Date(`${form.firstDueDate}T12:00:00`);
-    if (Number.isNaN(fecha.getTime()) || total <= 0) return [];
-    return buildInstallmentSchedule({ total, installmentCount: n, frequency: form.frequency, firstDueDate: fecha });
-  }, [form.type, form.buildPlan, form.installmentCount, form.frequency, form.firstDueDate, form.items, form.discount, form.requiresFactura]);
+    if (Number.isNaN(fecha.getTime()) || totals.total <= 0) return [];
+    return buildInstallmentSchedule({ total: totals.total, installmentCount: n, frequency: form.frequency, firstDueDate: fecha });
+  }, [form.type, form.buildPlan, form.installmentCount, form.frequency, form.firstDueDate, totals.total]);
 
   function updateItem(idx: number, field: string, value: string | number) {
     const items = [...form.items];
@@ -172,9 +189,6 @@ function SalesPage() {
   }
 
   async function handleCreate() {
-    const subtotal = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const tax = form.requiresFactura ? calcTax(subtotal) : 0;
-    const total = subtotal - form.discount + tax;
     setPlanWarning("");
     try {
       const res = await fetch("/api/sales", {
@@ -507,20 +521,32 @@ function SalesPage() {
               <Button variant="outline" size="sm" className="mt-2" onClick={() => setForm({ ...form, items: [...form.items, { productId: "", quantity: 1, unitPrice: 0 }] })}><Plus className="h-4 w-4 mr-1" />Item</Button>
             </div>
             <div className="flex gap-4 items-end">
-              <div><Label>Descuento</Label><Input type="number" value={form.discount} onChange={(e) => setForm({ ...form, discount: parseFloat(e.target.value) || 0 })} className="w-32" /></div>
-              {(() => {
-                const sub = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-                const tax = form.requiresFactura ? calcTax(sub) : 0;
-                const total = sub - form.discount + tax;
-                return (
-                  <div className="space-y-1">
-                    {form.requiresFactura && (
-                      <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(sub - form.discount)} | IVA (21%): {formatCurrency(tax)}</p>
-                    )}
-                    <p className="text-lg font-bold">Total: {formatCurrency(total)}</p>
-                  </div>
-                );
-              })()}
+              <div>
+                <Label htmlFor="saleDescuento">Descuento a mano</Label>
+                <Input id="saleDescuento" type="number" value={form.discount} onChange={(e) => setForm({ ...form, discount: parseFloat(e.target.value) || 0 })} className="w-32" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(totals.subtotal)}</p>
+                {totals.tag && (
+                  <p className="text-sm font-medium text-primary flex items-center gap-1">
+                    <Tag className="h-3.5 w-3.5" />
+                    Etiqueta {describeTag(totals.tag)}: −{formatCurrency(totals.tagDiscount)}
+                  </p>
+                )}
+                {totals.manualDiscount > 0 && (
+                  <p className="text-sm text-muted-foreground">Descuento a mano: −{formatCurrency(totals.manualDiscount)}</p>
+                )}
+                {form.requiresFactura && (
+                  <p className="text-sm text-muted-foreground">IVA (21%): {formatCurrency(totals.tax)}</p>
+                )}
+                <p className="text-lg font-bold">Total: {formatCurrency(totals.total)}</p>
+                {form.discount > 0 && totals.manualDiscount < form.discount && (
+                  <p className="text-xs text-destructive">
+                    El descuento a mano se recortó a {formatCurrency(totals.manualDiscount)}: junto con la
+                    etiqueta dejaba la venta en cero o en negativo.
+                  </p>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input

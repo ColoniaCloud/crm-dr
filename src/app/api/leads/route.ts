@@ -80,6 +80,9 @@ export async function GET(request: Request) {
           company: true,
           cuit: true,
           type: true,
+          // El formulario de venta muestra el descuento de la etiqueta mientras
+          // se arma el carrito, y toma los contactos de este listado.
+          discountTag: { select: { id: true, code: true, name: true, type: true, value: true, active: true } },
         },
         orderBy,
         skip: isAll ? undefined : (page - 1) * (limit ?? 30),

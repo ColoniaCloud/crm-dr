@@ -18,7 +18,7 @@ export async function GET(
 
     const [profile, contact, consignmentBalance] = await Promise.all([
       getClientProfile(id),
-      prisma.contact.findFirst({ where: { id, type: "CLIENT" }, include: { creditTier: true } }),
+      prisma.contact.findFirst({ where: { id, type: "CLIENT" }, include: { creditTier: true, discountTag: true } }),
       getConsignmentBalance(id),
     ]);
 
@@ -62,6 +62,16 @@ export async function GET(
       balance: profile.balance,
       creditTier: contact.creditTier
         ? { id: contact.creditTier.id, code: contact.creditTier.code, name: contact.creditTier.name, limit: contact.creditTier.limit.toString() }
+        : null,
+      discountTag: contact.discountTag
+        ? {
+            id: contact.discountTag.id,
+            code: contact.discountTag.code,
+            name: contact.discountTag.name,
+            type: contact.discountTag.type,
+            value: contact.discountTag.value.toString(),
+            active: contact.discountTag.active,
+          }
         : null,
       consignmentBalance,
     });
@@ -115,14 +125,16 @@ export async function PATCH(
       return NextResponse.json({ ok: true });
     }
 
-    // Legacy partial update (notes, suppliers, priceRange, creditTierId)
-    const { notes, suppliers, priceRange, creditTierId } = body;
+    // Legacy partial update (notes, suppliers, priceRange, creditTierId, discountTagId)
+    const { notes, suppliers, priceRange, creditTierId, discountTagId } = body;
 
     const data: Record<string, unknown> = {};
     if (notes !== undefined) data.notes = notes;
     if (suppliers !== undefined) data.currentSupplier = JSON.stringify(suppliers);
     if (priceRange !== undefined) data.currentSupplierPrices = priceRange;
     if (creditTierId !== undefined) data.creditTierId = creditTierId || null;
+    // `null` (o "") desasigna la etiqueta: el cliente vuelve a precio de lista.
+    if (discountTagId !== undefined) data.discountTagId = discountTagId || null;
 
     const result = await prisma.contact.updateMany({
       where: { id, type: "CLIENT" },

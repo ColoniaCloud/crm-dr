@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { checkConsignmentCredit } from "@/lib/credit";
+import { resolveSaleDiscount } from "@/lib/discount-tags";
 import { calcTax } from "@/lib/utils";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
@@ -98,7 +99,10 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = validateBody(createSaleSchema, body);
     if (!parsed.success) return parsed.response;
-    const { contactId, type, discount, notes, requiresFactura } = parsed.data;
+    // `discount` del body es la concesion que cargo a mano quien vende. El
+    // descuento de la etiqueta del contacto lo calcula el servidor mas abajo y
+    // se suma a este — ver src/lib/discount-tags.ts.
+    const { contactId, type, discount: manualDiscount, notes, requiresFactura } = parsed.data;
 
     // A specific traced roll (productUnitId) is always exactly 1 unit —
     // ignore whatever quantity the client sent for those items.
@@ -111,6 +115,9 @@ export async function POST(request: Request) {
         sum + item.quantity * item.unitPrice,
       0
     );
+    // Read-only, antes de abrir la transaccion (igual que el gate de credito).
+    const { discount, tagDiscount, discountTagId, discountTagLabel } =
+      await resolveSaleDiscount(contactId, subtotal, manualDiscount);
     const tax = requiresFactura ? calcTax(subtotal) : 0;
     const total = subtotal - discount + tax;
 
@@ -150,6 +157,9 @@ export async function POST(request: Request) {
           requiresFactura,
           subtotal,
           discount,
+          tagDiscount,
+          discountTagId,
+          discountTagLabel,
           tax,
           total,
           notes,
