@@ -15,8 +15,13 @@ export function formatCurrency(amount: number | string): string {
   }).format(num);
 }
 
-export function calcTax(subtotal: number): number {
-  return Math.round(subtotal * 0.21 * 100) / 100;
+/**
+ * IVA sobre la base imponible, que es el subtotal YA neto de descuentos y no
+ * el precio de lista. Pasarle el subtotal bruto de una venta con descuento le
+ * cobra al cliente IVA por plata que no paga.
+ */
+export function calcTax(base: number): number {
+  return Math.round(base * 0.21 * 100) / 100;
 }
 
 /** Returns true if the role is ADMIN or SUPERADMIN */

@@ -162,7 +162,7 @@ function SalesPage() {
     const contact = contacts.find((c) => c.id === form.contactId);
     const tag = contact?.discountTag?.active ? contact.discountTag : null;
     const split = splitDiscount(tag ? calcTagDiscount(tag, subtotal) : 0, form.discount, subtotal);
-    const tax = form.requiresFactura ? calcTax(subtotal) : 0;
+    const tax = form.requiresFactura ? calcTax(Math.max(subtotal - split.discount, 0)) : 0;
     return { subtotal, tag, ...split, tax, total: subtotal - split.discount + tax };
   }, [form.items, form.contactId, form.discount, form.requiresFactura, contacts]);
 

@@ -123,7 +123,10 @@ export async function POST(request: Request) {
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const { discount, tagDiscount, discountTagId, discountTagLabel } =
       await resolveSaleDiscount(contactId, subtotal, manualDiscount);
-    const tax = requiresFactura ? calcTax(subtotal) : 0;
+    // IVA sobre la base neta, igual que /api/sales — y que money.ts del POS,
+    // que replica esta cuenta para cantarle el total al taller antes de
+    // confirmar. Los dos lados tienen que decir lo mismo.
+    const tax = requiresFactura ? calcTax(Math.max(subtotal - discount, 0)) : 0;
     const total = subtotal - discount + tax;
 
     // Productos con garantía que se quedaron sin rollo al confirmar.

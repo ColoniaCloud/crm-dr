@@ -39,6 +39,7 @@ export async function POST(
                 number: true,
                 subtotal: true,
                 discount: true,
+                tax: true,
                 total: true,
                 requiresFactura: true,
                 payments: { select: { amount: true } },
@@ -109,8 +110,17 @@ export async function POST(
         await tx.sale.update({ where: { id: sale.id }, data: { status: "CANCELLED" } });
       } else {
         const newSubtotal = Number(sale.subtotal) - Number(saleItem.total);
-        const newTax = sale.requiresFactura ? calcTax(newSubtotal) : 0;
-        const newTotal = newSubtotal - Number(sale.discount) + newTax;
+        const discount = Number(sale.discount);
+        // Sacarle un rollo a una venta no le cambia la regla de IVA con la que
+        // se emitio. Las nuevas lo calculan sobre la base neta; las anteriores
+        // al cambio lo tienen sobre el subtotal bruto y hay que respetarselo,
+        // asi que la regla se deduce de los valores que la venta ya tiene
+        // guardados. Sin descuento las dos ramas dan lo mismo.
+        const sobreNeto =
+          Math.abs(Number(sale.tax) - calcTax(Math.max(Number(sale.subtotal) - discount, 0))) < 0.01;
+        const newBase = sobreNeto ? Math.max(newSubtotal - discount, 0) : newSubtotal;
+        const newTax = sale.requiresFactura ? calcTax(newBase) : 0;
+        const newTotal = newSubtotal - discount + newTax;
         await tx.sale.update({
           where: { id: sale.id },
           data: { subtotal: newSubtotal, tax: newTax, total: newTotal },

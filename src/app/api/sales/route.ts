@@ -118,7 +118,11 @@ export async function POST(request: Request) {
     // Read-only, antes de abrir la transaccion (igual que el gate de credito).
     const { discount, tagDiscount, discountTagId, discountTagLabel } =
       await resolveSaleDiscount(contactId, subtotal, manualDiscount);
-    const tax = requiresFactura ? calcTax(subtotal) : 0;
+    // El IVA va sobre la base neta: se factura lo que el cliente paga, no el
+    // precio de lista. Con las etiquetas de descuento (discount-tags.ts) casi
+    // toda venta a un cliente con etiqueta lleva descuento, asi que calcularlo
+    // sobre el bruto inflaba el total de forma sistematica.
+    const tax = requiresFactura ? calcTax(Math.max(subtotal - discount, 0)) : 0;
     const total = subtotal - discount + tax;
 
     if (type === "CONSIGNMENT") {
