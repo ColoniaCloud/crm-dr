@@ -349,9 +349,9 @@ export function renderCertificado(d: DatosCertificado, boton: BotonCertificado):
         });
 
   return {
-    subject: `Garantía registrada — ${d.installationCode}`,
+    subject: `Tu garantía ya está lista! — ${d.installationCode}`,
     html: documento({
-      asunto: `Garantía registrada — ${d.installationCode}`,
+      asunto: `Tu garantía ya está lista! — ${d.installationCode}`,
       preheader: `Tu garantía Kristall Film quedó registrada. Código ${d.installationCode}.`,
       contenido:
         cabecera("Garantía registrada") +
