@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { formatDate, calcTax } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
@@ -162,9 +162,9 @@ function SalesPage() {
     const contact = contacts.find((c) => c.id === form.contactId);
     const tag = contact?.discountTag?.active ? contact.discountTag : null;
     const split = splitDiscount(tag ? calcTagDiscount(tag, subtotal) : 0, form.discount, subtotal);
-    const tax = form.requiresFactura ? calcTax(Math.max(subtotal - split.discount, 0)) : 0;
-    return { subtotal, tag, ...split, tax, total: subtotal - split.discount + tax };
-  }, [form.items, form.contactId, form.discount, form.requiresFactura, contacts]);
+    // Sin IVA encima, igual que el servidor: el precio de lista ya lo incluye.
+    return { subtotal, tag, ...split, tax: 0, total: subtotal - split.discount };
+  }, [form.items, form.contactId, form.discount, contacts]);
 
   const installmentPreview = useMemo(() => {
     if (form.type !== "CONSIGNMENT" || !form.buildPlan || !form.firstDueDate) return [];
@@ -536,9 +536,6 @@ function SalesPage() {
                 {totals.manualDiscount > 0 && (
                   <p className="text-sm text-muted-foreground">Descuento a mano: −{formatCurrency(totals.manualDiscount)}</p>
                 )}
-                {form.requiresFactura && (
-                  <p className="text-sm text-muted-foreground">IVA (21%): {formatCurrency(totals.tax)}</p>
-                )}
                 <p className="text-lg font-bold">Total: {formatCurrency(totals.total)}</p>
                 {form.discount > 0 && totals.manualDiscount < form.discount && (
                   <p className="text-xs text-destructive">
@@ -558,12 +555,12 @@ function SalesPage() {
               />
               <Label htmlFor="requiresFacturaSale">Requiere facturación</Label>
             </div>
-            {!form.requiresFactura && (
-              <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                Los precios expresados en la lista no incluyen el IVA (21%).
-              </div>
-            )}
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted p-3 text-sm text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {form.requiresFactura
+                ? "Los precios de lista ya incluyen el IVA (21%), así que el total no cambia. Al confirmar la venta le llega el aviso a quien factura."
+                : "Los precios expresados en la lista incluyen el IVA (21%)."}
+            </div>
             <div className="flex gap-2">
               <Button onClick={handleCreate}>Crear Venta</Button>
               <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>

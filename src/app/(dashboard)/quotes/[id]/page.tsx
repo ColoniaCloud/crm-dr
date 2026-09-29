@@ -252,12 +252,10 @@ export default function QuoteDetailPage() {
               </>
             )}
             <p className="text-xl font-bold">Total: {formatCurrency(quote.total)}</p>
-            {!quote.requiresFactura && (
-              <div className="flex items-center justify-end gap-2 mt-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                Los precios expresados en la lista no incluyen el IVA (21%).
-              </div>
-            )}
+            <div className="flex items-center justify-end gap-2 mt-3 rounded-md border border-border bg-muted p-3 text-sm text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Los precios expresados en la lista incluyen el IVA (21%).
+            </div>
           </div>
         </CardContent>
       </Card>

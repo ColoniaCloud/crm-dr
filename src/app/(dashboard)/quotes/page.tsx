@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDate, calcTax } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { Plus, FileText, Trash2, Download, Send, Mail, AlertTriangle, ChevronRight } from "lucide-react";
 import { downloadQuotePDF, getQuotePDFBase64 } from "@/components/quote-pdf";
@@ -148,9 +148,11 @@ function QuotesPageInner() {
 
   async function handleCreate(andSend = false) {
     setCreateError("");
+    // Sin IVA encima, igual que el servidor y que las ventas: el precio de
+    // lista ya lo incluye y el presupuesto promete el numero que se cobra.
     const sub = form.items.reduce((s, i) => s + computeItemTotal(i), 0);
-    const tax = form.requiresFactura ? calcTax(sub) : 0;
-    const total = sub + tax;
+    const tax = 0;
+    const total = sub;
     try {
       const res = await fetch("/api/quotes", {
         method: "POST",
@@ -315,18 +317,9 @@ function QuotesPageInner() {
             {createError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{createError}</div>}
 
             <div className="flex gap-4 items-end flex-wrap">
-              {(() => {
-                const tax = form.requiresFactura ? calcTax(subtotal) : 0;
-                const total = subtotal + tax;
-                return (
-                  <div className="space-y-1">
-                    {form.requiresFactura && (
-                      <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(subtotal)} | IVA (21%): {formatCurrency(tax)}</p>
-                    )}
-                    <div className="text-lg font-bold">Total: {formatCurrency(total)}</div>
-                  </div>
-                );
-              })()}
+              <div className="space-y-1">
+                <div className="text-lg font-bold">Total: {formatCurrency(subtotal)}</div>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -338,12 +331,11 @@ function QuotesPageInner() {
               />
               <Label htmlFor="requiresFactura">Requiere facturación</Label>
             </div>
-            {!form.requiresFactura && (
-              <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                Los precios expresados en la lista no incluyen el IVA (21%).
-              </div>
-            )}
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted p-3 text-sm text-muted-foreground">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Los precios expresados en la lista incluyen el IVA (21%). Pedir factura no
+              cambia el total.
+            </div>
 
             <div className="flex gap-2">
               <Button onClick={() => handleCreate(false)} disabled={sending}>Guardar</Button>

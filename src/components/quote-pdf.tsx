@@ -161,15 +161,14 @@ export async function generateQuotePDF(quote: QuotePDFData): Promise<jsPDF> {
   doc.text("TOTAL:", tX, currentY);
   doc.text(fmt(quote.total), W - margin, currentY, { align: "right" });
 
-  // IVA disclaimer when no factura
-  if (!quote.requiresFactura) {
-    currentY += 10;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
-    doc.setTextColor(150, 100, 0);
-    doc.text("Los precios expresados en la lista no incluyen el IVA (21%).", margin, currentY);
-    doc.setTextColor(0, 0, 0);
-  }
+  // El precio de lista ya incluye el IVA, lleve factura o no: el aviso va
+  // siempre. Antes salia solo cuando NO se pedia factura y decia lo contrario.
+  currentY += 10;
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(150, 100, 0);
+  doc.text("Los precios expresados en la lista incluyen el IVA (21%).", margin, currentY);
+  doc.setTextColor(0, 0, 0);
 
   // Footer separator
   const pageH = doc.internal.pageSize.getHeight();

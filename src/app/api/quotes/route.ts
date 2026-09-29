@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { calcTax } from "@/lib/utils";
 import { logOperatorAction, notifyAdmins, escapeHtml } from "@/lib/notifications";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
@@ -102,8 +101,13 @@ export async function POST(request: Request) {
     );
 
     const subtotal = processedItems.reduce((sum: number, i: { total: number }) => sum + i.total, 0);
-    const tax = requiresFactura ? calcTax(subtotal) : 0;
-    const total = subtotal + tax;
+    // Sin IVA encima, igual que las ventas: el precio de lista ya lo incluye, y
+    // el presupuesto tiene que prometer el mismo numero que despues se cobra.
+    // `requiresFactura` se sigue guardando porque viaja a la venta cuando el
+    // presupuesto se convierte, y es lo que dispara el recordatorio de
+    // facturacion (src/lib/factura-notify.ts).
+    const tax = 0;
+    const total = subtotal;
 
     const quote = await prisma.quote.create({
       data: {

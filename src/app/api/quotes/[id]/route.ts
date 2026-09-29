@@ -178,8 +178,12 @@ export async function POST(
           requiresFactura: quote.requiresFactura,
           subtotal: quote.subtotal,
           discount: quote.discount,
-          tax: quote.tax,
-          total: quote.total,
+          // Ninguna venta lleva IVA sumado aparte, ni siquiera la que sale de
+          // un presupuesto viejo que si lo tenia cargado: si se copiara ese
+          // `tax`, la venta quedaria con un 21% encima de un precio que ya lo
+          // incluye. El total se rearma sin ese agregado.
+          tax: 0,
+          total: Number(quote.subtotal) - Number(quote.discount),
           notes: quote.notes,
           items: {
             // b. Create SaleItems from QuoteItems

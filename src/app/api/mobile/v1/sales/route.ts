@@ -6,8 +6,8 @@ import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@/lib/notifications";
 import { confirmSale } from "@/lib/sales";
+import { avisarFacturaPendiente } from "@/lib/factura-notify";
 import { notifyNewPurchase } from "@/lib/client-portal";
-import { calcTax } from "@/lib/utils";
 import { resolveSaleDiscount } from "@/lib/discount-tags";
 import { validateBody } from "@/lib/api-validation";
 import { serializeSaleDetail } from "@/lib/mobile-sale";
@@ -123,11 +123,13 @@ export async function POST(request: Request) {
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
     const { discount, tagDiscount, discountTagId, discountTagLabel } =
       await resolveSaleDiscount(contactId, subtotal, manualDiscount);
-    // IVA sobre la base neta, igual que /api/sales — y que money.ts del POS,
-    // que replica esta cuenta para cantarle el total al taller antes de
-    // confirmar. Los dos lados tienen que decir lo mismo.
-    const tax = requiresFactura ? calcTax(Math.max(subtotal - discount, 0)) : 0;
-    const total = subtotal - discount + tax;
+    // Sin IVA encima, igual que /api/sales: el precio de lista ya lo incluye.
+    // money.ts del POS replica esta cuenta para cantarle el total al taller
+    // antes de confirmar, asi que los dos lados tienen que decir lo mismo. Lo
+    // que pide factura dispara el recordatorio a quien factura, abajo, apenas
+    // la venta queda confirmada.
+    const tax = 0;
+    const total = subtotal - discount;
 
     // Productos con garantía que se quedaron sin rollo al confirmar.
 
@@ -207,6 +209,13 @@ export async function POST(request: Request) {
 
     }
 
+
+    // La venta del POS nace confirmada, así que el recordatorio de facturación
+    // sale acá mismo. Después del commit y sin await que pueda tumbar la
+    // respuesta: `avisarFacturaPendiente` se traga lo suyo.
+    if (requiresFactura) {
+      await avisarFacturaPendiente(result.id);
+    }
 
     const sale = await prisma.sale.findUnique({
       where: { id: result.id },

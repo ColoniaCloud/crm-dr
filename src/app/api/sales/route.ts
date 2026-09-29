@@ -5,7 +5,6 @@ import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { checkConsignmentCredit } from "@/lib/credit";
 import { resolveSaleDiscount } from "@/lib/discount-tags";
-import { calcTax } from "@/lib/utils";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
@@ -118,12 +117,14 @@ export async function POST(request: Request) {
     // Read-only, antes de abrir la transaccion (igual que el gate de credito).
     const { discount, tagDiscount, discountTagId, discountTagLabel } =
       await resolveSaleDiscount(contactId, subtotal, manualDiscount);
-    // El IVA va sobre la base neta: se factura lo que el cliente paga, no el
-    // precio de lista. Con las etiquetas de descuento (discount-tags.ts) casi
-    // toda venta a un cliente con etiqueta lleva descuento, asi que calcularlo
-    // sobre el bruto inflaba el total de forma sistematica.
-    const tax = requiresFactura ? calcTax(Math.max(subtotal - discount, 0)) : 0;
-    const total = subtotal - discount + tax;
+    // Sin IVA encima: el precio de lista YA lo incluye, asi que sumarle un 21%
+    // a la venta que pedia factura lo cobraba dos veces. El total es el mismo
+    // lleve factura o no, y la factura se emite aparte por ese mismo total.
+    // `requiresFactura` se sigue guardando porque es lo que dispara el
+    // recordatorio a quien factura (src/lib/factura-notify.ts) al confirmarse
+    // la venta, y lo que decide el texto del remito.
+    const tax = 0;
+    const total = subtotal - discount;
 
     if (type === "CONSIGNMENT") {
       const credit = await checkConsignmentCredit(contactId, total);

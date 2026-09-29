@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable, notifyAdmins } from "@/lib/notifications";
 import { confirmSale, restoreSaleStock } from "@/lib/sales";
+import { avisarFacturaPendiente } from "@/lib/factura-notify";
 
 const log = createLogger("api/sales/[id]");
 
@@ -125,6 +126,10 @@ export async function PUT(
 
     // Productos con garantía que se quedaron sin rollo al confirmar.
     let sinRollo: string[] = [];
+    // Si esta llamada es la que confirmó la venta. No alcanza con mirar
+    // `status`: un PUT que manda CONFIRMED sobre una venta ya confirmada no
+    // entra a la transacción, y avisaría de nuevo por una venta ya avisada.
+    let reciénConfirmada = false;
 
     if (status && status !== existing.status) {
       const allowed = VALID_TRANSITIONS[existing.status] ?? [];
@@ -139,6 +144,7 @@ export async function PUT(
         if (status === "CONFIRMED") {
           const r = await confirmSale(tx, id, session.user.id);
           sinRollo = r.sinRollo;
+          reciénConfirmada = true;
         } else if (status === "CANCELLED") {
           const restored = await restoreSaleStock(tx, id, session.user.id, `Venta #${existing.number} cancelada`);
           if (!restored.ok) throw new Error(restored.error);
@@ -150,6 +156,14 @@ export async function PUT(
       });
     } else if (Object.keys(rest).length > 0) {
       await prisma.sale.update({ where: { id }, data: rest });
+    }
+
+    // El recordatorio de facturación va acá, después del commit y solo al
+    // pasar a CONFIRMED: una venta PENDING todavía puede no existir nunca, y
+    // avisar de esas llena la bandeja de quien factura con ventas que se
+    // cancelan. No tira: se traga su propio error (factura-notify.ts).
+    if (reciénConfirmada && existing.requiresFactura) {
+      await avisarFacturaPendiente(id);
     }
 
     const updated = await prisma.sale.findUnique({ where: { id } });

@@ -19,6 +19,14 @@ export function formatCurrency(amount: number | string): string {
  * IVA sobre la base imponible, que es el subtotal YA neto de descuentos y no
  * el precio de lista. Pasarle el subtotal bruto de una venta con descuento le
  * cobra al cliente IVA por plata que no paga.
+ *
+ * **Ninguna venta ni presupuesto nuevo pasa por acá.** El precio de lista ya
+ * incluye el IVA, así que sumárselo aparte a lo que pedía factura lo cobraba
+ * dos veces; ahora el total es el que se cobra, y la factura se emite por ese
+ * mismo total con aviso a quien factura (`src/lib/factura-notify.ts`). Esto
+ * queda vivo solo para releer las ventas viejas, que sí tienen el agregado
+ * guardado: lo usa detach-sale para recalcular los totales de una venta ya
+ * emitida con la misma regla con la que se emitió.
  */
 export function calcTax(base: number): number {
   return Math.round(base * 0.21 * 100) / 100;
