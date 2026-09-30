@@ -22,6 +22,19 @@ interface ReturnableItem {
   quantity: number;
   returned: number;
   returnable: number;
+  /** Lo que descontó la etiqueta en esta línea de la venta. */
+  tagDiscount: number;
+  discountTagLabel: string | null;
+  /**
+   * Lo que se le acredita por CADA unidad devuelta de esta línea — ya con el
+   * descuento de su propia etiqueta y el cargado a mano prorrateado.
+   *
+   * Se usa esto y NO `subtotal × creditRatio`: un ratio único asume que todas las
+   * líneas llevan el mismo descuento, y desde que la etiqueta se aplica por línea
+   * una venta puede tener 16,66% en una y 0% en otra. Con el ratio global, devolver
+   * la línea sin descuento le acreditaba de menos.
+   */
+  creditPerUnit: number;
 }
 
 interface SaleReturn {
@@ -75,7 +88,6 @@ export default function SaleReturnsCard({
   // Cuánto se acredita por cada peso de mercadería: con IVA es mayor a 1, con
   // descuento menor. Lo manda el backend para que la previsualización y lo que
   // se emite sean el mismo número.
-  const [ratio, setRatio] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -96,7 +108,6 @@ export default function SaleReturnsCard({
       setItems(data.items ?? []);
       setReturns(data.returns ?? []);
       setReturnable(Boolean(data.returnable));
-      setRatio(typeof data.creditRatio === "number" ? data.creditRatio : 1);
     } finally {
       setLoading(false);
     }
@@ -121,12 +132,20 @@ export default function SaleReturnsCard({
     [seleccion]
   );
 
-  // Lo que se le acredita al cliente, no el precio de lista: una venta con
-  // factura acredita el IVA también, y una con descuento acredita menos.
+  // Lo que se le acredita al cliente, no el precio de lista: se suma el
+  // acreditable de cada línea, que es exactamente la cuenta que hace
+  // createSaleReturn del lado del servidor. Antes era `subtotal × ratio`, y eso
+  // dejó de valer cuando cada línea puede llevar su propio descuento.
   const totalSeleccion = useMemo(
-    () => Math.round(subtotalSeleccion * ratio * 100) / 100,
-    [subtotalSeleccion, ratio]
+    () =>
+      Math.round(
+        seleccion.reduce((suma, x) => suma + x.quantity * x.item.creditPerUnit, 0) * 100
+      ) / 100,
+    [seleccion]
   );
+
+  /** Si lo acreditable difiere del bruto, hay que mostrar las dos cifras. */
+  const hayDiferencia = Math.abs(totalSeleccion - subtotalSeleccion) > 0.009;
 
   function openDialog() {
     setQuantities({});
@@ -311,7 +330,7 @@ export default function SaleReturnsCard({
             </div>
 
             <div className="space-y-1 border-t pt-3 text-sm">
-              {Math.abs(ratio - 1) > 0.0001 && (
+              {hayDiferencia && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>Mercadería devuelta</span>
                   <span>{formatCurrency(subtotalSeleccion)}</span>
@@ -321,9 +340,9 @@ export default function SaleReturnsCard({
                 <span>Se le acredita</span>
                 <span>{formatCurrency(totalSeleccion)}</span>
               </div>
-              {Math.abs(ratio - 1) > 0.0001 && (
+              {hayDiferencia && (
                 <p className="text-xs text-muted-foreground">
-                  Incluye la parte proporcional del {ratio > 1 ? "IVA" : "descuento"} de la venta.
+                  Descuenta el descuento que llevó cada ítem en la venta original.
                 </p>
               )}
             </div>

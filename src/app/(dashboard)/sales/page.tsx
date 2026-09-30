@@ -17,7 +17,7 @@ import { useCurrency } from "@/contexts/currency-context";
 import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
-import { calcTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";
+import { calcItemTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";
 
 function defaultFirstDueDate(): string {
   const hoy = new Date();
@@ -40,6 +40,8 @@ interface Sale {
 
 interface Product { id: string; name: string; price: string; stock: number; }
 interface ContactDiscountTag { id: string; code: string; name: string; type: string; value: string; active: boolean; }
+/** Una etiqueta tal como la devuelven /api/discount-tags y product-tags (value numerico). */
+interface DiscountTagInfo { id: string; code: string; name: string; type: string; value: number; active?: boolean; }
 interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; discountTag?: ContactDiscountTag | null; }
 
 interface CreatedSaleItem {
@@ -82,13 +84,37 @@ function SalesPage() {
       preselectedProductId
         ? { productId: preselectedProductId, quantity: 1, unitPrice: 0, productUnitId: preselectedUnitId || undefined }
         : { productId: "", quantity: 1, unitPrice: 0 },
-    ] as Array<{ productId: string; quantity: number; unitPrice: number; productUnitId?: string }>,
+    ] as Array<{
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      productUnitId?: string;
+      /**
+       * La etiqueta de descuento de esta línea. `undefined` = lo decide el acuerdo
+       * pactado del contacto (el caso normal); un id o `null` = el operador la
+       * cambió a mano y el servidor lo registra como override.
+       */
+      discountTagId?: string | null;
+    }>,
     discount: 0, notes: "", requiresFactura: false,
     buildPlan: false,
     installmentCount: "3",
     frequency: "MONTHLY" as PlanFrequency,
     firstDueDate: defaultFirstDueDate(),
   });
+  /**
+   * `productId → etiqueta pactada` para el contacto elegido, resuelto por el
+   * servidor (`/api/clients/[id]/product-tags`).
+   *
+   * Se pide y no se deduce: la precedencia tiene una regla que no es obvia —un
+   * contacto con acuerdos por producto deja de usar su etiqueta general para
+   * todo— y si la pantalla la reimplementara, mostraría un descuento y el
+   * servidor guardaría otro.
+   */
+  const [productTags, setProductTags] = useState<Record<string, DiscountTagInfo | null>>({});
+  const [tagsLoading, setTagsLoading] = useState(false);
+  /** Todas las etiquetas activas, para el dropdown de cada linea. */
+  const [allTags, setAllTags] = useState<DiscountTagInfo[]>([]);
   const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [planWarning, setPlanWarning] = useState("");
@@ -101,6 +127,38 @@ function SalesPage() {
   const [tierError, setTierError] = useState("");
 
   useEffect(() => { fetchAll(); }, []);
+
+  // Al cambiar de contacto cambian TODOS los precios de la venta, así que se
+  // vuelven a pedir sus etiquetas y se limpia cualquier override que hubiera
+  // quedado del contacto anterior — un override pensado para un cliente no tiene
+  // por qué valer para otro.
+  useEffect(() => {
+    if (!form.contactId) {
+      setProductTags({});
+      return;
+    }
+    let vigente = true;
+    setTagsLoading(true);
+    fetch(`/api/clients/${form.contactId}/product-tags`)
+      .then((r) => (r.ok ? r.json() : { tags: {} }))
+      .then((d) => {
+        if (!vigente) return;
+        setProductTags(d.tags ?? {});
+        setForm((f) => ({
+          ...f,
+          items: f.items.map((item) => {
+            const limpio = { ...item };
+            delete limpio.discountTagId;
+            return limpio;
+          }),
+        }));
+      })
+      .catch(() => vigente && setProductTags({}))
+      .finally(() => vigente && setTagsLoading(false));
+    return () => {
+      vigente = false;
+    };
+  }, [form.contactId]);
 
   // Backfill the preloaded rollo's price once products finish loading
   useEffect(() => {
@@ -127,6 +185,19 @@ function SalesPage() {
         fetch("/api/leads?limit=all&minimal=true"),
         fetch("/api/clients?limit=all&minimal=true"),
       ]);
+      // Las etiquetas del dropdown por linea. Fuera del Promise.all de arriba a
+      // proposito: que no haya etiquetas cargadas no tiene que romper la pantalla
+      // de ventas — el dropdown queda con "Sin descuento" y nada mas.
+      fetch("/api/discount-tags")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d: DiscountTagInfo[]) =>
+          setAllTags(
+            (Array.isArray(d) ? d : [])
+              .filter((t) => t.active !== false)
+              .map((t) => ({ ...t, value: Number(t.value) }))
+          )
+        )
+        .catch(() => setAllTags([]));
       if (salesRes.ok) setSales(await salesRes.json().then((d: Sale[]) => Array.isArray(d) ? d : []));
       else throw new Error(`No se pudieron cargar las ventas (Error ${salesRes.status})`);
 
@@ -149,22 +220,44 @@ function SalesPage() {
   }
 
   /**
+   * La etiqueta que efectivamente lleva cada línea: el override si el operador
+   * eligió uno, y si no la pactada para ese producto.
+   *
+   * `discountTagId: null` es distinto de `undefined` — es "Sin descuento" elegido
+   * a mano, pisando una etiqueta que sí correspondía. Es la misma distinción que
+   * hace `resolveSaleDiscount` del lado del servidor.
+   */
+  const lineTags = useMemo(
+    () =>
+      form.items.map((item) => {
+        if (item.discountTagId === undefined) return productTags[item.productId] ?? null;
+        if (item.discountTagId === null) return null;
+        return allTags.find((t) => t.id === item.discountTagId) ?? null;
+      }),
+    [form.items, productTags, allTags]
+  );
+
+  /**
    * La aritmetica del formulario, en un solo lugar.
    *
-   * El descuento de la etiqueta lo decide el servidor al crear la venta
-   * (resolveSaleDiscount); esto lo recalcula con la misma funcion
-   * (splitDiscount / calcTagDiscount) para que el vendedor vea el total real
-   * antes de confirmar y no se entere despues. Si los dos dieran distinto, el
-   * que manda es el servidor.
+   * El descuento lo decide el servidor al crear la venta (resolveSaleDiscount);
+   * esto lo recalcula con la misma funcion (calcItemTagDiscount / splitDiscount)
+   * para que el vendedor vea el total real antes de confirmar y no se entere
+   * despues. Si los dos dieran distinto, el que manda es el servidor.
+   *
+   * Por linea y no sobre el subtotal: una venta puede llevar 16,66% en un item y
+   * nada en otro, y el desglose de abajo lo muestra item por item.
    */
   const totals = useMemo(() => {
+    const perLine = form.items.map((item, i) =>
+      calcItemTagDiscount({ total: item.quantity * item.unitPrice, tag: lineTags[i] })
+    );
     const subtotal = form.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const contact = contacts.find((c) => c.id === form.contactId);
-    const tag = contact?.discountTag?.active ? contact.discountTag : null;
-    const split = splitDiscount(tag ? calcTagDiscount(tag, subtotal) : 0, form.discount, subtotal);
+    const tagTotal = perLine.reduce((s, l) => s + l.tagDiscount, 0);
+    const split = splitDiscount(tagTotal, form.discount, subtotal);
     // Sin IVA encima, igual que el servidor: el precio de lista ya lo incluye.
-    return { subtotal, tag, ...split, tax: 0, total: subtotal - split.discount };
-  }, [form.items, form.contactId, form.discount, contacts]);
+    return { subtotal, perLine, ...split, tax: 0, total: subtotal - split.discount };
+  }, [form.items, form.discount, lineTags]);
 
   const installmentPreview = useMemo(() => {
     if (form.type !== "CONSIGNMENT" || !form.buildPlan || !form.firstDueDate) return [];
@@ -184,6 +277,10 @@ function SalesPage() {
       // Changing the product means this row no longer represents the
       // specific rollo it was preloaded with.
       delete items[idx].productUnitId;
+      // Y el override tampoco sobrevive: se eligió para otro producto. Sin esto,
+      // cambiar el producto de una línea le dejaba puesta una etiqueta que no
+      // tenía nada que ver con lo pactado para el producto nuevo.
+      delete items[idx].discountTagId;
     }
     setForm({ ...form, items });
   }
@@ -516,6 +613,55 @@ function SalesPage() {
                     <span className="flex items-center w-28 text-sm">{formatCurrency(item.quantity * item.unitPrice)}</span>
                     {form.items.length > 1 && <Button variant="ghost" size="icon" aria-label="Eliminar item" onClick={() => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })}><Trash2 className="h-4 w-4" /></Button>}
                   </div>
+                  {/* El descuento de esta linea.
+                      Viene PRECARGADO con lo pactado para este producto y este
+                      cliente: el operador no tiene que acordarse del acuerdo, y
+                      olvidarlo (el cliente paga de mas) o aplicarlo donde no
+                      corresponde (margen regalado) deja de ser posible por descuido.
+                      Cambiarlo sigue estando permitido —es ADMIN+ quien llega a este
+                      formulario— y el servidor lo registra como override. */}
+                  <div className="mt-1 flex items-center gap-2 pl-1">
+                    <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <select
+                      aria-label={`Descuento del item ${idx + 1}`}
+                      className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                      disabled={!form.contactId || tagsLoading}
+                      value={
+                        item.discountTagId === undefined
+                          ? (productTags[item.productId]?.id ?? "")
+                          : (item.discountTagId ?? "")
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const items = [...form.items];
+                        // Elegir exactamente lo pactado no es un override: se vuelve
+                        // a `undefined` para que el servidor no lo registre como tal.
+                        const pactada = productTags[item.productId]?.id ?? "";
+                        if (value === pactada) delete items[idx].discountTagId;
+                        else items[idx].discountTagId = value === "" ? null : value;
+                        setForm({ ...form, items });
+                      }}
+                    >
+                      <option value="">Sin descuento</option>
+                      {allTags.map((t) => (
+                        <option key={t.id} value={t.id}>{describeTag(t)}</option>
+                      ))}
+                    </select>
+                    {totals.perLine[idx]?.tagDiscount > 0 && (
+                      <span className="text-xs font-medium text-primary">
+                        −{formatCurrency(totals.perLine[idx].tagDiscount)}
+                      </span>
+                    )}
+                    {item.discountTagId !== undefined && (
+                      <span className="text-xs text-amber-600">
+                        cambiado a mano (lo pactado:{" "}
+                        {productTags[item.productId]
+                          ? describeTag(productTags[item.productId]!)
+                          : "sin descuento"}
+                        )
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="mt-2" onClick={() => setForm({ ...form, items: [...form.items, { productId: "", quantity: 1, unitPrice: 0 }] })}><Plus className="h-4 w-4 mr-1" />Item</Button>
@@ -527,10 +673,12 @@ function SalesPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Subtotal: {formatCurrency(totals.subtotal)}</p>
-                {totals.tag && (
+                {totals.tagDiscount > 0 && (
                   <p className="text-sm font-medium text-primary flex items-center gap-1">
                     <Tag className="h-3.5 w-3.5" />
-                    Etiqueta {describeTag(totals.tag)}: −{formatCurrency(totals.tagDiscount)}
+                    {/* Sin nombrar una etiqueta: la venta puede llevar varias, una
+                        por item. El detalle esta arriba, linea por linea. */}
+                    Descuentos por ítem: −{formatCurrency(totals.tagDiscount)}
                   </p>
                 )}
                 {totals.manualDiscount > 0 && (
@@ -539,8 +687,8 @@ function SalesPage() {
                 <p className="text-lg font-bold">Total: {formatCurrency(totals.total)}</p>
                 {form.discount > 0 && totals.manualDiscount < form.discount && (
                   <p className="text-xs text-destructive">
-                    El descuento a mano se recortó a {formatCurrency(totals.manualDiscount)}: junto con la
-                    etiqueta dejaba la venta en cero o en negativo.
+                    El descuento a mano se recortó a {formatCurrency(totals.manualDiscount)}: junto con los
+                    descuentos por ítem dejaba la venta en cero o en negativo.
                   </p>
                 )}
               </div>

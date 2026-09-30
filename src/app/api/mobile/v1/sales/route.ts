@@ -19,6 +19,13 @@ const saleItemSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
+  /**
+   * La etiqueta de descuento de ESTA línea. El POS la manda solo cuando el
+   * vendedor la cambió a mano, y **eso solo lo puede hacer ADMIN/SUPERADMIN**:
+   * mandarla como OPERATOR con un valor distinto del pactado corta la venta con
+   * un 400 legible. Ver resolveSaleDiscount().
+   */
+  discountTagId: z.string().nullish(),
 });
 
 const createSaleSchema = z.object({
@@ -121,8 +128,27 @@ export async function POST(request: Request) {
     }
 
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const { discount, tagDiscount, discountTagId, discountTagLabel } =
-      await resolveSaleDiscount(contactId, subtotal, manualDiscount);
+    // `allowOverride` por rol: esta ruta acepta OPERATOR —es el vendedor en la
+    // calle— y cambiar la etiqueta de una linea es regalar margen sin que nadie
+    // lo apruebe. El acuerdo pactado del contacto es el piso, y para un OPERATOR
+    // no se negocia.
+    //
+    // Se RECHAZA y no se ignora en silencio: money.ts del POS calcula el total
+    // local para cantarselo al taller antes de confirmar, asi que usar otra
+    // etiqueta de la que el vendedor vio deja anotado un numero distinto del que
+    // canto. Mismo criterio que el chequeo de precios de arriba.
+    const resolved = await resolveSaleDiscount(
+      contactId,
+      items.map((item) => ({
+        productId: item.productId,
+        total: item.quantity * item.unitPrice,
+        discountTagId: item.discountTagId,
+      })),
+      manualDiscount,
+      { allowOverride: role === "ADMIN" || role === "SUPERADMIN" }
+    );
+    if (!resolved.ok) throw new Error(resolved.error);
+    const { discount, tagDiscount, discountTagId, discountTagLabel } = resolved;
     // Sin IVA encima, igual que /api/sales: el precio de lista ya lo incluye.
     // money.ts del POS replica esta cuenta para cantarle el total al taller
     // antes de confirmar, asi que los dos lados tienen que decir lo mismo. Lo
@@ -158,11 +184,16 @@ export async function POST(request: Request) {
           total,
           notes,
           items: {
-            create: items.map((item) => ({
+            // Por indice, no por productId: el carrito puede repetir el mismo
+            // producto en dos lineas.
+            create: items.map((item, i) => ({
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               total: item.quantity * item.unitPrice,
+              discountTagId: resolved.lines[i].discountTagId,
+              discountTagLabel: resolved.lines[i].discountTagLabel,
+              tagDiscount: resolved.lines[i].tagDiscount,
             })),
           },
         },

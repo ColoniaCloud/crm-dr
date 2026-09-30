@@ -5,7 +5,7 @@ import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { validateBody } from "@/lib/api-validation";
 import { logOperatorAction, notifyAdmins } from "@/lib/notifications";
-import { createSaleReturn, creditRatio, getReturnedQuantities } from "@/lib/returns";
+import { createSaleReturn, creditPerUnit, creditRatio, getReturnedQuantities } from "@/lib/returns";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/mobile/v1/sales/[id]/returns");
@@ -42,12 +42,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         number: true,
         status: true,
         subtotal: true,
+        // `tagDiscount` hace falta para creditPerUnit: la base sobre la que se
+        // prorratea el descuento cargado a mano es el subtotal NETO de etiquetas.
+        tagDiscount: true,
         total: true,
         items: {
           select: {
             id: true,
             quantity: true,
             unitPrice: true,
+            tagDiscount: true,
+            discountTagLabel: true,
             product: { select: { id: true, name: true, sku: true } },
           },
         },
@@ -73,9 +78,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       NextResponse.json({
         saleNumber: sale.number,
         returnable: sale.status === "CONFIRMED" || sale.status === "DELIVERED",
-        // Con IVA o descuento, un peso de mercadería no acredita un peso: la
-        // pantalla necesita la misma proporción que usa createSaleReturn para
-        // no prometer un importe distinto del que se va a emitir.
+        // Se sigue mandando por compatibilidad, pero **la pantalla tiene que usar
+        // `creditPerUnit` de cada ítem**: un ratio único asume que todas las
+        // líneas llevan el mismo descuento, y desde que la etiqueta se aplica por
+        // línea eso puede ser falso en la misma venta.
         creditRatio: creditRatio(sale),
         items: sale.items.map((item) => {
           const returned = devueltas.get(item.id) ?? 0;
@@ -88,6 +94,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             quantity: item.quantity,
             returned,
             returnable: item.quantity - returned,
+            tagDiscount: Number(item.tagDiscount),
+            discountTagLabel: item.discountTagLabel,
+            /** Lo acreditable por cada unidad devuelta de esta línea. */
+            creditPerUnit: creditPerUnit(sale, item),
           };
         }),
         returns: returns.map((r) => ({

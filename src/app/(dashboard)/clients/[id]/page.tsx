@@ -35,6 +35,7 @@ import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, Chevro
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { CreditTierCard } from "@/components/clients/credit-tier-card";
 import { DiscountTagCard } from "@/components/clients/discount-tag-card";
+import { ProductDiscountsCard } from "@/components/clients/product-discounts-card";
 import { ClientAccountStatement } from "@/components/clients/client-account-statement";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
@@ -565,6 +566,18 @@ export default function ClientDetailPage() {
           <DiscountTagCard
             clientId={clientId}
             discountTag={client.discountTag}
+            canEdit={isAdminUser}
+            onChanged={fetchClient}
+          />
+        )}
+
+        {/* Descuentos pactados producto por producto. Va pegada a la de arriba
+            porque las dos son la misma decisión —a qué precio le vendemos— y
+            porque son EXCLUYENTES: con acuerdos cargados, la etiqueta general de
+            arriba no se aplica. La tarjeta lo dice explícitamente. */}
+        {client && (
+          <ProductDiscountsCard
+            clientId={clientId}
             canEdit={isAdminUser}
             onChanged={fetchClient}
           />

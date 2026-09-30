@@ -22,9 +22,13 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
     notes: sale.notes,
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
-    // Desglose del descuento: cuanto puso la etiqueta del contacto y cuanto se
-    // cargo a mano. El POS lo necesita para que el ticket diga "Descuento A
-    // (20%)" en vez de un numero suelto que el vendedor no sabe de donde salio.
+    // Desglose del descuento: cuanto pusieron las etiquetas y cuanto se cargo a
+    // mano. El POS lo necesita para que el ticket explique de donde salio cada
+    // peso en vez de mostrar un numero suelto.
+    //
+    // Desde octubre 2026 el detalle real vive en los items —cada linea con su
+    // etiqueta— y esto es la suma. `discountTagLabel` dice "N etiquetas por item"
+    // cuando la venta llevo varias; ver resumirEtiquetas() en discount-tags.ts.
     tagDiscount: Number(sale.tagDiscount),
     // Acotado a 0: un admin puede reescribir los totales a mano desde el
     // detalle de la venta, y ahi `discount` puede terminar por debajo de lo que
@@ -42,7 +46,11 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
       sku: item.product.sku,
       quantity: item.quantity,
       unitPrice: Number(item.unitPrice),
+      /** BRUTO: quantity × unitPrice. El neto es `total - tagDiscount`. */
       total: Number(item.total),
+      /** Lo que descontó la etiqueta de ESTA linea, y cual fue. */
+      tagDiscount: Number(item.tagDiscount),
+      discountTagLabel: item.discountTagLabel,
     })),
     payments: sale.payments.map((p) => ({
       id: p.id,

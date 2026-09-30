@@ -15,6 +15,14 @@ const saleItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   productUnitId: z.string().optional(),
+  /**
+   * La etiqueta de descuento de ESTA línea, cuando quien vende la cambió a mano.
+   *
+   * Omitirla es lo normal: entonces manda el acuerdo pactado del contacto. `null`
+   * explícito es distinto de omitirla — es "Sin descuento" pisando una etiqueta
+   * que sí correspondía. Las dos cosas las distingue `resolveSaleDiscount`.
+   */
+  discountTagId: z.string().nullish(),
 });
 
 const createSaleSchema = z.object({
@@ -115,8 +123,24 @@ export async function POST(request: Request) {
       0
     );
     // Read-only, antes de abrir la transaccion (igual que el gate de credito).
-    const { discount, tagDiscount, discountTagId, discountTagLabel } =
-      await resolveSaleDiscount(contactId, subtotal, manualDiscount);
+    //
+    // `allowOverride: true` sin chequear el rol porque esta ruta ya es ADMIN+
+    // (arriba): nadie por debajo de ADMIN llega a este formulario. La que sí
+    // tiene que chequearlo es /api/mobile/v1/sales, que acepta OPERATOR.
+    const resolved = await resolveSaleDiscount(
+      contactId,
+      items.map((item) => ({
+        productId: item.productId,
+        total: item.quantity * item.unitPrice,
+        discountTagId: item.discountTagId,
+      })),
+      manualDiscount,
+      { allowOverride: true }
+    );
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: 400 });
+    }
+    const { discount, tagDiscount, discountTagId, discountTagLabel } = resolved;
     // Sin IVA encima: el precio de lista YA lo incluye, asi que sumarle un 21%
     // a la venta que pedia factura lo cobraba dos veces. El total es el mismo
     // lleve factura o no, y la factura se emite aparte por ese mismo total.
@@ -169,12 +193,18 @@ export async function POST(request: Request) {
           total,
           notes,
           items: {
-            create: items.map((item) => ({
+            // `resolved.lines` viene en el mismo orden que `items` — por indice y
+            // no por productId, porque una venta puede repetir el mismo producto
+            // en dos lineas (dos rollos trazados del mismo SKU, por ejemplo).
+            create: items.map((item, i) => ({
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               total: item.quantity * item.unitPrice,
               productUnitId: item.productUnitId ?? null,
+              discountTagId: resolved.lines[i].discountTagId,
+              discountTagLabel: resolved.lines[i].discountTagLabel,
+              tagDiscount: resolved.lines[i].tagDiscount,
             })),
           },
         },

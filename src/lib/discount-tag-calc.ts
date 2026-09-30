@@ -70,3 +70,59 @@ export function splitDiscount(
   const manual = round2(Math.min(Math.max(manualDiscount, 0), Math.max(subtotal - tag, 0)));
   return { discount: round2(tag + manual), tagDiscount: tag, manualDiscount: manual };
 }
+
+// ─── Descuento por línea ────────────────────────────────────────────────────
+//
+// Desde octubre 2026 la etiqueta se aplica **por línea de la venta** y no sobre
+// el subtotal. El motivo es un caso que el modelo viejo no podía expresar: a un
+// revendedor se le pactó 16,66% en una lámina y nada en las otras dos de la
+// misma venta.
+//
+// `calcTagDiscount` de arriba se reusa tal cual — el "subtotal" que recibe pasa
+// a ser el total de una línea, y el acotado a `[0, monto]` sigue siendo lo que
+// se quiere: una etiqueta FIXED más grande que la línea descuenta la línea
+// entera y no la deja en negativo.
+//
+// ─── Por qué esto NO prorratea nada ─────────────────────────────────────────
+//
+// Una versión anterior del diseño tenía **una** etiqueta por contacto estirada
+// sobre todas las líneas, y ahí sí había que prorratear: una FIXED de $50.000
+// aplicada "a cada línea" son $150.000 en tres líneas, que es plata regalada.
+//
+// Con una etiqueta elegida por línea eso desaparece: cada línea calcula el suyo
+// contra su propio total. Y la invariante que sostiene el desglose sale gratis,
+// sin restos de redondeo que haya que asignarle a alguna línea:
+//
+//     Σ SaleItem.tagDiscount === Sale.tagDiscount     (al centavo, siempre)
+
+/** Una línea con la etiqueta que le corresponde, ya resuelta. */
+export interface LineaConEtiqueta {
+  /** Total BRUTO de la línea: quantity × unitPrice. */
+  total: number;
+  /** La etiqueta de esta línea, o null si no lleva descuento. */
+  tag: DiscountTagLike | null;
+}
+
+/** Lo que una línea descuenta, y con qué. */
+export interface DescuentoDeLinea {
+  tagDiscount: number;
+  /** Para guardar en `SaleItem.discountTagLabel`. Null si la línea no descontó. */
+  label: string | null;
+}
+
+/** Cuánto descuenta una línea. `calcTagDiscount` sobre su propio total. */
+export function calcItemTagDiscount(linea: LineaConEtiqueta): DescuentoDeLinea {
+  if (!linea.tag) return { tagDiscount: 0, label: null };
+  const tagDiscount = calcTagDiscount(linea.tag, linea.total);
+  // Sin descuento efectivo no se guarda la etiqueta: una línea con
+  // `discountTagLabel` y `tagDiscount: 0` haría que el desglose muestre una
+  // etiqueta que no hizo nada, y quien lo lea va a buscar el error donde no está.
+  return { tagDiscount, label: tagDiscount > 0 ? describeTag(linea.tag) : null };
+}
+
+/** El descuento de etiquetas de toda la venta: la suma de sus líneas. */
+export function calcLinesTagDiscount(lineas: LineaConEtiqueta[]): number {
+  return round2(
+    lineas.reduce((suma, linea) => suma + calcItemTagDiscount(linea).tagDiscount, 0)
+  );
+}

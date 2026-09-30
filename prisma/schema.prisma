@@ -341,6 +341,10 @@ model Contact {
   verifications       ContactVerification[]
   paymentDeclarations PaymentDeclaration[]
   saleReturns         SaleReturn[]
+  // Los descuentos pactados producto por producto. Ojo con la regla: si este
+  // contacto tiene AL MENOS UNO, su `discountTag` general deja de aplicarse por
+  // completo — ver resolveSaleDiscount() en src/lib/discount-tags.ts.
+  productDiscounts    ContactProductDiscount[]
 
   @@index([email])
   @@index([source])
@@ -416,8 +420,45 @@ model DiscountTag {
 
   contacts Contact[]
   sales    Sale[]
+  // Las líneas de venta donde esta etiqueta se aplicó. Una etiqueta ahora se
+  // usa en dos planos: general del contacto (`contacts`) y por línea.
+  saleItems SaleItem[]
+  // Los acuerdos producto por producto que la usan.
+  contactProductDiscounts ContactProductDiscount[]
 
   @@map("discount_tags")
+}
+
+/// El descuento pactado con un contacto **para un producto puntual**.
+///
+/// Es lo que permite que a un revendedor se le descuente 16,66% en una lámina y
+/// nada en las otras dos de la misma venta — algo que la etiqueta general del
+/// contacto (`Contact.discountTagId`) no puede expresar, porque es una sola para
+/// toda la venta.
+///
+/// **Ausencia de fila = ese producto se le vende a precio de lista.** No hay que
+/// cargar las 200 filas de un catálogo para pactar tres láminas.
+///
+/// **Y la regla que no es obvia:** un contacto con al menos un acuerdo acá deja de
+/// usar su etiqueta general **para todo**, no solo para los productos con acuerdo.
+/// Si fuera cascada, cargar el acuerdo de una lámina le dejaría el descuento
+/// general sobre las otras, que es justo lo contrario de lo pactado. Vive en
+/// resolveSaleDiscount() y la ficha del contacto avisa antes de guardar el primero.
+model ContactProductDiscount {
+  id            String      @id @default(cuid())
+  contactId     String
+  contact       Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  discountTagId String
+  discountTag   DiscountTag @relation(fields: [discountTagId], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([contactId, productId])
+  @@index([contactId])
+  @@index([productId])
+  @@map("contact_product_discounts")
 }
 
 model Visit {
@@ -492,6 +533,7 @@ model Product {
   warrantyRolls      WarrantyRoll[]
   workOrderItems     WorkOrderItem[]
   saleReturnItems    SaleReturnItem[]
+  contactDiscounts   ContactProductDiscount[]
 
   @@map("products")
 }
@@ -633,7 +675,28 @@ model SaleItem {
   product       Product          @relation(fields: [productId], references: [id])
   quantity      Int
   unitPrice     Decimal          @db.Decimal(10, 2)
+  /// **BRUTO**: quantity × unitPrice, sin descontar `tagDiscount`. El neto de la
+  /// línea es `total - tagDiscount`.
+  ///
+  /// No cambiarlo a neto: las devoluciones suman `item.total` para armar el
+  /// importe a devolver (ver returns.ts), y el remito y la cuenta corriente
+  /// derivan de los totales de `Sale`. Lo que cambió al agregar el descuento por
+  /// línea es que ahora hay un neto **además** del bruto, no en lugar de.
   total         Decimal          @db.Decimal(10, 2)
+  /// La etiqueta que se aplicó EN ESTA LÍNEA. Null = esta línea no llevó
+  /// descuento, que es lo normal en los productos sin acuerdo.
+  discountTagId String?
+  discountTag   DiscountTag?     @relation(fields: [discountTagId], references: [id], onDelete: SetNull)
+  /// Copia legible de la etiqueta al momento de vender ("KRY16 — 16,66%"). Las
+  /// etiquetas se editan y se borran; esto queda escrito para que una línea vieja
+  /// siga explicando su propio precio — mismo criterio que Sale.discountTagLabel.
+  discountTagLabel String?
+  /// Los pesos que descontó esa etiqueta en esta línea.
+  ///
+  /// Invariante: `Σ SaleItem.tagDiscount === Sale.tagDiscount`, al centavo. Se
+  /// cumple por construcción porque cada línea calcula el suyo y no hay
+  /// prorrateo — ver calcItemTagDiscount() en src/lib/discount-tag-calc.ts.
+  tagDiscount   Decimal          @default(0) @db.Decimal(10, 2)
   productUnitId String?          @unique
   productUnit   ProductUnit?     @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
   warrantyRoll  WarrantyRoll?

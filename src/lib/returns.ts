@@ -71,12 +71,73 @@ export async function getReturnedQuantities(
  *
  * Una venta con subtotal cero no debería existir; si aparece, se acredita uno
  * a uno en vez de dividir por cero.
+ *
+ * ─── OJO: ya no alcanza sola ────────────────────────────────────────────────
+ *
+ * Prorratea el descuento de forma **uniforme** sobre toda la mercadería, y eso
+ * es correcto solo mientras todas las líneas lleven el mismo descuento. Desde
+ * que la etiqueta se aplica por línea (octubre 2026) una venta puede tener
+ * 16,66% en una línea y 0% en otras dos: devolver la línea sin descuento
+ * acreditaría el 94% cuando le corresponde el 100%, y devolver la que sí tuvo
+ * acreditaría de más. Sistemáticamente mal en las dos direcciones.
+ *
+ * Sigue exportada porque es la mitad correcta de la cuenta —la parte del
+ * descuento cargado A MANO, que sí es de toda la venta— y la usa
+ * `creditRatioNeto`. **Para acreditar, usar `creditPerUnit`.**
  */
 export function creditRatio(sale: { subtotal: unknown; total: unknown }): number {
   const subtotal = Number(sale.subtotal);
   const total = Number(sale.total);
   if (!Number.isFinite(subtotal) || subtotal <= 0) return 1;
   return total / subtotal;
+}
+
+/**
+ * La parte de la cuenta que SÍ es de toda la venta: el descuento cargado a mano
+ * (y en su momento el IVA), prorrateado sobre la base **neta de etiquetas**.
+ *
+ * Se aplica sobre el neto de cada línea, no sobre su bruto — ver `creditPerUnit`.
+ */
+function creditRatioNeto(sale: { subtotal: unknown; tagDiscount: unknown; total: unknown }): number {
+  const base = Number(sale.subtotal) - Number(sale.tagDiscount);
+  const total = Number(sale.total);
+  if (!Number.isFinite(base) || base <= 0) return 1;
+  return total / base;
+}
+
+/**
+ * Cuánto se le acredita al cliente por **cada unidad** devuelta de esta línea.
+ *
+ * ```
+ * (unitPrice − tagDiscount/quantity) × total / (subtotal − tagDiscount)
+ *   └─ el neto unitario de la línea ─┘   └─ el descuento a mano prorrateado ─┘
+ * ```
+ *
+ * El descuento de la etiqueta se descuenta de **su propia línea**, que es el
+ * arreglo; el cargado a mano se prorratea, porque es de la venta entera.
+ *
+ * ─── Por qué esto da lo mismo que antes para las ventas viejas ──────────────
+ *
+ * Después del backfill (scripts/backfill-item-tag-discount.ts), una venta vieja
+ * tiene `item.tagDiscount = sale.tagDiscount × item.total / sale.subtotal`.
+ * Sustituyendo:
+ *
+ *   neto de la línea = item.total × (subtotal − tagDiscount) / subtotal
+ *   × total / (subtotal − tagDiscount)  =  item.total × total / subtotal
+ *                                       =  item.total × creditRatio(sale)   ✓
+ *
+ * O sea: **exactamente el número que se acreditaba antes**. Por eso el cambio se
+ * puede verificar contra las devoluciones ya emitidas en vez de confiar en que
+ * está bien — el script del backfill lo comprueba.
+ */
+export function creditPerUnit(
+  sale: { subtotal: unknown; tagDiscount: unknown; total: unknown },
+  saleItem: { unitPrice: unknown; tagDiscount: unknown; quantity: number }
+): number {
+  const unitPrice = Number(saleItem.unitPrice);
+  const tagPorUnidad =
+    saleItem.quantity > 0 ? Number(saleItem.tagDiscount) / saleItem.quantity : 0;
+  return round2((unitPrice - tagPorUnidad) * creditRatioNeto(sale));
 }
 
 /**
@@ -169,7 +230,10 @@ export async function createSaleReturn(
   const aDevolver: {
     saleItem: (typeof sale.items)[number];
     quantity: number;
+    /** Bruto: unitPrice × quantity. */
     total: number;
+    /** Acreditable: el neto de la línea con el descuento a mano prorrateado. */
+    credito: number;
   }[] = [];
 
   for (const item of items) {
@@ -191,13 +255,21 @@ export async function createSaleReturn(
       saleItem,
       quantity: item.quantity,
       total: round2(Number(saleItem.unitPrice) * item.quantity),
+      // Lo acreditable de esta parte de la línea, con SU propio descuento de
+      // etiqueta descontado y el cargado a mano prorrateado. Se guarda acá para
+      // que el total de abajo sea una suma y no dos cuentas distintas.
+      credito: round2(creditPerUnit(sale, saleItem) * item.quantity),
     });
   }
 
+  // `subtotal` sigue siendo el bruto de lo devuelto: es lo que se guarda en
+  // SaleReturn.subtotal y lo que el remito de devolución muestra como
+  // mercadería. El descuento vive en la diferencia con `total`.
   const subtotal = round2(aDevolver.reduce((suma, i) => suma + i.total, 0));
-  // Lo que se acredita no es el precio de lista de los ítems sino su parte del
-  // total que el cliente realmente debe — con IVA y descuento prorrateados.
-  const total = round2(subtotal * creditRatio(sale));
+  // Y el total es la suma de los créditos por línea. Antes era
+  // `subtotal × creditRatio(sale)` — un prorrateo uniforme que dejó de valer
+  // cuando cada línea puede llevar su propio descuento (ver creditPerUnit).
+  const total = round2(aDevolver.reduce((suma, i) => suma + i.credito, 0));
   if (total <= 0) {
     return { ok: false, error: "El importe a devolver da cero" };
   }

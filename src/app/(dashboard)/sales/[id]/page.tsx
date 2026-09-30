@@ -27,7 +27,12 @@ interface SaleItem {
   id: string;
   quantity: number;
   unitPrice: string;
+  /** BRUTO: quantity × unitPrice. El neto de la linea es `total - tagDiscount`. */
   total: string;
+  /** Lo que descontó la etiqueta de ESTA linea, en pesos. */
+  tagDiscount: string;
+  /** Copia legible de la etiqueta al momento de vender. Null si no llevó. */
+  discountTagLabel: string | null;
   product: { id: string; name: string; category: string | null; sku: string | null };
   warrantyRoll: {
     fullRollCode: string;
@@ -594,6 +599,7 @@ export default function SaleDetailPage() {
                 <TableHead>SKU</TableHead>
                 <TableHead className="text-right">Cantidad</TableHead>
                 <TableHead className="text-right">Precio Unit.</TableHead>
+                <TableHead className="text-right">Descuento</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
@@ -604,7 +610,32 @@ export default function SaleDetailPage() {
                   <TableCell className="text-muted-foreground font-mono text-xs">{item.product.sku || "-"}</TableCell>
                   <TableCell className="text-right">{item.quantity}</TableCell>
                   <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
-                  <TableCell className="text-right font-medium">{formatCurrency(item.total)}</TableCell>
+                  {/* El descuento de cada linea, con la etiqueta que lo puso.
+                      Es el unico lugar donde se puede auditar por que esta venta
+                      salio a este precio: una venta puede llevar varias etiquetas
+                      distintas, y el resumen de abajo solo dice cuantas. */}
+                  <TableCell className="text-right">
+                    {parseFloat(item.tagDiscount) > 0 ? (
+                      <span className="text-primary">
+                        -{formatCurrency(item.tagDiscount)}
+                        {item.discountTagLabel && (
+                          <span className="block text-xs text-muted-foreground">
+                            {item.discountTagLabel}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {formatCurrency(parseFloat(item.total) - parseFloat(item.tagDiscount))}
+                    {parseFloat(item.tagDiscount) > 0 && (
+                      <span className="block text-xs font-normal text-muted-foreground line-through">
+                        {formatCurrency(item.total)}
+                      </span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -625,7 +656,7 @@ export default function SaleDetailPage() {
                   Descuento
                   {sale.discountTagLabel && (
                     <span className="block text-xs">
-                      Etiqueta {sale.discountTagLabel}: -{formatCurrency(sale.tagDiscount)}
+                      {sale.discountTagLabel}: -{formatCurrency(sale.tagDiscount)}
                       {parseFloat(sale.discount) - parseFloat(sale.tagDiscount) > 0 && (
                         <> · a mano: -{formatCurrency(parseFloat(sale.discount) - parseFloat(sale.tagDiscount))}</>
                       )}
