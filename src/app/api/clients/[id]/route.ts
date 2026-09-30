@@ -7,6 +7,14 @@ import { isAdminRole } from "@/lib/utils";
 import { getClientProfile } from "@/lib/client-portal";
 import { releaseRollForSaleItem } from "@/lib/warranty";
 import { getConsignmentBalance } from "@/lib/credit";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
+
+// Esta ruta es LA FICHA de un contacto comprador, no "la ficha de un cliente":
+// abre igual para CLIENT y para RESELLER, porque /revendedores/[id] reusa esta
+// misma pantalla. El que sigue siendo solo CLIENT es el LISTADO (../route.ts):
+// si incluyera revendedores, aparecerian duplicados en la seccion Clientes y el
+// contador del dashboard dejaria de cuadrar con lo que se ve. Ver
+// src/lib/contact-types.ts.
 const log = createLogger("api/clients/[id]");
 
 export async function GET(
@@ -18,7 +26,7 @@ export async function GET(
 
     const [profile, contact, consignmentBalance] = await Promise.all([
       getClientProfile(id),
-      prisma.contact.findFirst({ where: { id, type: "CLIENT" }, include: { creditTier: true, discountTag: true } }),
+      prisma.contact.findFirst({ where: { id, ...WHERE_COMPRADOR }, include: { creditTier: true, discountTag: true } }),
       getConsignmentBalance(id),
     ]);
 
@@ -39,6 +47,10 @@ export async function GET(
 
     return NextResponse.json({
       id: contact.id,
+      // CLIENT o RESELLER. La ficha del CRM es la misma pantalla para los dos y
+      // usa esto para no decirle "Cliente" a un revendedor ni mandarlo de vuelta
+      // a la seccion equivocada.
+      type: contact.type,
       leadNumber: contact.leadNumber,
       firstName: contact.firstName,
       lastName: contact.lastName,
@@ -113,7 +125,7 @@ export async function PATCH(
       if (body.priceRange !== undefined) data.currentSupplierPrices = body.priceRange;
 
       const result = await prisma.contact.updateMany({
-        where: { id, type: "CLIENT" },
+        where: { id, ...WHERE_COMPRADOR },
         data,
       });
 
@@ -137,7 +149,7 @@ export async function PATCH(
     if (discountTagId !== undefined) data.discountTagId = discountTagId || null;
 
     const result = await prisma.contact.updateMany({
-      where: { id, type: "CLIENT" },
+      where: { id, ...WHERE_COMPRADOR },
       data,
     });
 
@@ -170,7 +182,7 @@ export async function DELETE(
 
   try {
     const existing = await prisma.contact.findFirst({
-      where: { id, type: "CLIENT" },
+      where: { id, ...WHERE_COMPRADOR },
       select: { id: true, firstName: true, lastName: true, company: true },
     });
 

@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { credentialVersion } from "@/lib/portal-credentials";
+import { esComprador } from "@/lib/contact-types";
 
 const log = createLogger("api/portal/v1/auth/login");
 
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     // never reveal which part failed, to avoid account enumeration.
     const invalid = NextResponse.json({ error: "Credenciales inválidas" }, { status: 401 });
 
-    if (!account || !account.enabled || account.contact.type !== "CLIENT") {
+    if (!account || !account.enabled || !esComprador(account.contact.type)) {
       return invalid;
     }
 

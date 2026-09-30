@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
 import { getClientAccount } from "@/lib/account";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 const log = createLogger("api/clients/[id]/account");
 
@@ -22,7 +23,7 @@ export async function GET(
   try {
     const { id } = await params;
     const contact = await prisma.contact.findFirst({
-      where: { id, type: "CLIENT" },
+      where: { id, ...WHERE_COMPRADOR },
       select: { id: true },
     });
     if (!contact) {

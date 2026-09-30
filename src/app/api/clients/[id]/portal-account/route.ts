@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 const log = createLogger("api/clients/[id]/portal-account");
 
@@ -85,7 +86,7 @@ export async function PUT(
 
   try {
     const { id } = await params;
-    const contact = await prisma.contact.findFirst({ where: { id, type: "CLIENT" }, select: { id: true, firstName: true, lastName: true, company: true } });
+    const contact = await prisma.contact.findFirst({ where: { id, ...WHERE_COMPRADOR }, select: { id: true, firstName: true, lastName: true, company: true } });
     if (!contact) {
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }

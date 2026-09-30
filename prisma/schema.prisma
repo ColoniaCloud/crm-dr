@@ -17,6 +17,17 @@ enum ContactType {
   LEAD
   CLIENT
   INSTALLER
+  /// Revendedor: compra para revender a talleres. Comercialmente es un Cliente
+  /// —tiene ventas, cuenta corriente, portal y descuentos pactados— pero se
+  /// lista aparte y no se cuenta como cliente propio de Kristall.
+  ///
+  /// **Va al final del enum a proposito.** MySQL guarda los ENUM por posicion:
+  /// meter un valor en el medio reescribe la tabla y puede convertir un valor en
+  /// otro en silencio. Cualquier tipo nuevo, tambien al final.
+  ///
+  /// Quien lo incluye y quien no esta en src/lib/contact-types.ts, no repartido
+  /// por el codigo.
+  RESELLER
 }
 
 enum ContactMethod {

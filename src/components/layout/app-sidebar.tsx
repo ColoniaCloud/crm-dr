@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Bell,
   Wrench,
+  Store,
   Plus,
   MessageSquare,
   ShieldCheck,
@@ -73,6 +74,11 @@ function CurrencyToggle() {
 const simpleItems = [
   { label: "Clientes", href: "/clients", icon: Users },
   { label: "Leads", href: "/leads", icon: UserPlus },
+  // Revendedores va pegado a Clientes y no al final: comercialmente son lo
+  // mismo —compran, deben, tienen portal— y quien busca "a quien le vendemos"
+  // los busca juntos. Lo que los separa es que su cartera de talleres no es
+  // nuestra, no el tipo de relacion.
+  { label: "Revendedores", href: "/revendedores", icon: Store },
   { label: "Instaladores", href: "/installers", icon: Wrench },
 ];
 

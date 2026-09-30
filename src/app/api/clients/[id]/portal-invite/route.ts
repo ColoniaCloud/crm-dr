@@ -7,6 +7,7 @@ import { createLogger } from "@/lib/logger";
 import { logOperatorAction, escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 const log = createLogger("api/clients/[id]/portal-invite");
 
@@ -51,7 +52,7 @@ export async function POST(
     const { id } = await params;
 
     const contact = await prisma.contact.findFirst({
-      where: { id, type: "CLIENT" },
+      where: { id, ...WHERE_COMPRADOR },
       select: {
         id: true,
         firstName: true,

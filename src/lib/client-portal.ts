@@ -3,11 +3,12 @@ import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { getClientBalance } from "@/lib/account";
 import { isWarrantyClaimable } from "@/lib/warranty";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
 export async function findClientContact(contactId: string) {
   return prisma.contact.findFirst({
-    where: { id: contactId, type: "CLIENT" },
+    where: { id: contactId, ...WHERE_COMPRADOR },
     select: { id: true, firstName: true, lastName: true, company: true, email: true },
   });
 }
@@ -15,7 +16,7 @@ export async function findClientContact(contactId: string) {
 /** Resolves a CLIENT contact by email. Used for the external backend's initial linking step. */
 export async function lookupClientByEmail(email: string) {
   return prisma.contact.findMany({
-    where: { type: "CLIENT", email },
+    where: { ...WHERE_COMPRADOR, email },
     select: { id: true, firstName: true, lastName: true, company: true },
   });
 }
@@ -27,7 +28,7 @@ export async function lookupClientByEmail(email: string) {
  */
 export async function getClientProfile(contactId: string) {
   const contact = await prisma.contact.findFirst({
-    where: { id: contactId, type: "CLIENT" },
+    where: { id: contactId, ...WHERE_COMPRADOR },
     include: {
       sales: {
         include: {
@@ -286,7 +287,7 @@ export async function createClientClaim(
 
 /** Notifies a CLIENT contact's portal of a newly registered purchase. */
 export async function notifyNewPurchase(contactId: string, saleNumber: number, total: number) {
-  const contact = await prisma.contact.findFirst({ where: { id: contactId, type: "CLIENT" }, select: { id: true } });
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, ...WHERE_COMPRADOR }, select: { id: true } });
   if (!contact) return;
 
   await prisma.portalNotification.create({
@@ -312,7 +313,7 @@ export async function notifyWarrantyActivated(installationId: string) {
   const contactId = installation?.roll.saleItem?.sale.contactId;
   if (!contactId) return;
 
-  const contact = await prisma.contact.findFirst({ where: { id: contactId, type: "CLIENT" }, select: { id: true } });
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, ...WHERE_COMPRADOR }, select: { id: true } });
   if (!contact) return;
 
   await prisma.portalNotification.create({

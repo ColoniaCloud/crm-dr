@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { esComprador } from "@/lib/contact-types";
 
 const log = createLogger("api/locations");
 
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
         );
       }
       const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { type: true } });
-      if (!contact || contact.type !== "CLIENT") {
+      if (!contact || !esComprador(contact.type)) {
         return NextResponse.json(
           { error: "El contacto indicado no existe o no es de tipo Cliente" },
           { status: 400 }

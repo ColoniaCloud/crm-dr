@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { escapeHtml } from "@/lib/notifications";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 const log = createLogger("api/portal/v1/auth/request-activation");
 
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
 
   try {
     const contacts = await prisma.contact.findMany({
-      where: { type: "CLIENT", email },
+      where: { ...WHERE_COMPRADOR, email },
       select: {
         id: true,
         firstName: true,

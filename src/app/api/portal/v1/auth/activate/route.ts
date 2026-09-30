@@ -9,6 +9,7 @@ import { createLogger } from "@/lib/logger";
 import { credentialVersion } from "@/lib/portal-credentials";
 import { notifyAdmins } from "@/lib/notifications";
 import { verifyPortalToken } from "@/lib/portal-tokens";
+import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 const log = createLogger("api/portal/v1/auth/activate");
 
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     }
 
     const contact = await prisma.contact.findFirst({
-      where: { id: lookup.contactId, type: "CLIENT" },
+      where: { id: lookup.contactId, ...WHERE_COMPRADOR },
       select: { firstName: true, lastName: true, company: true, whatsapp: true },
     });
     if (!contact) {
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
     }
 
     const contact = await prisma.contact.findFirst({
-      where: { id: lookup.contactId, type: "CLIENT" },
+      where: { id: lookup.contactId, ...WHERE_COMPRADOR },
       select: { id: true, firstName: true, lastName: true, company: true, whatsapp: true },
     });
     if (!contact) {

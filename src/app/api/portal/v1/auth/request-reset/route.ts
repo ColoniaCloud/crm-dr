@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { escapeHtml } from "@/lib/notifications";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
+import { esComprador } from "@/lib/contact-types";
 
 const log = createLogger("api/portal/v1/auth/request-reset");
 
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       include: { contact: { select: { id: true, firstName: true, type: true } } },
     });
 
-    if (!account || !account.enabled || account.contact.type !== "CLIENT") return generic;
+    if (!account || !account.enabled || !esComprador(account.contact.type)) return generic;
     if (!isSmtpConfigured()) {
       log.error("SMTP not configured — cannot send reset email");
       return generic;

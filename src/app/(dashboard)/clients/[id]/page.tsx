@@ -83,6 +83,8 @@ interface ClientDetail {
     saleNumber: string;
   }>;
   balance: number;
+  /** CLIENT o RESELLER: esta ficha sirve para los dos (ver revendedores/[id]). */
+  type: string;
   creditTier: { id: string; code: string; name: string; limit: string } | null;
   discountTag: { id: string; code: string; name: string; type: string; value: string; active: boolean } | null;
   consignmentBalance: number;
@@ -124,6 +126,8 @@ export default function ClientDetailPage() {
   const clientId = params.id as string;
 
   const [client, setClient] = useState<ClientDetail | null>(null);
+  /** Esta ficha sirve para Clientes y para Revendedores — ver revendedores/[id]. */
+  const esRevendedor = client?.type === "RESELLER";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
@@ -315,8 +319,11 @@ export default function ClientDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <Button variant="ghost" size="sm" className="p-0 h-auto text-muted-foreground hover:text-foreground mb-1" onClick={() => router.push("/clients")}>
-            <ChevronLeft className="h-4 w-4" />Clientes
+          {/* Vuelve a la seccion que corresponde al tipo: esta misma pantalla
+              es la ficha de un Cliente y la de un Revendedor, y mandar a un
+              revendedor de vuelta a "Clientes" es donde se pierde la gente. */}
+          <Button variant="ghost" size="sm" className="p-0 h-auto text-muted-foreground hover:text-foreground mb-1" onClick={() => router.push(esRevendedor ? "/revendedores" : "/clients")}>
+            <ChevronLeft className="h-4 w-4" />{esRevendedor ? "Revendedores" : "Clientes"}
           </Button>
           <h1 className="text-3xl font-bold">{client.company || client.name}</h1>
           <p className="text-sm text-muted-foreground">
