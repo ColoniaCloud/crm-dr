@@ -181,9 +181,24 @@ enum PaymentDeclarationStatus {
 
 // ─── Portal de clientes: niveles de acceso y alta de cuenta ─────────────────
 
+/// Con qué panel entra una cuenta al portal.
+///
+/// **NO es una escalera.** Hasta septiembre 2026 eran dos y INSTALLER contenía a
+/// BASIC, así que el código podía preguntar `=== "INSTALLER" ? todo : BASIC`.
+/// RESELLER rompe eso: no está arriba ni abajo de INSTALLER, está **al costado**
+/// — comparte compras y cuenta corriente con BASIC, comparte stock con
+/// INSTALLER, y no comparte ni Mi Taller ni instalaciones ni reclamos.
+///
+/// Por eso cada endpoint declara **qué niveles** lo pueden usar (`requireNivel`)
+/// y cada ítem del menú de kristall-web declara lo mismo. Preguntar por un nivel
+/// solo vuelve a introducir la escalera.
 enum PortalAccessLevel {
   BASIC // "Panel Clientes": compras, cuenta corriente, notificaciones
-  INSTALLER // suma stock, instalaciones, sub-códigos y reclamos
+  INSTALLER // suma stock, instalaciones, sub-códigos, reclamos y Mi Taller
+  /// "Portal Revendedor": compras, cuenta corriente, **sus precios** y stock.
+  /// No instala, así que no ve instalaciones, reclamos ni Mi Taller.
+  /// Va al final del enum por lo mismo que ContactType.RESELLER.
+  RESELLER
 }
 
 enum PortalTokenPurpose {

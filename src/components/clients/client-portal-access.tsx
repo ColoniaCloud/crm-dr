@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { KeyRound, Mail, AlertTriangle } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
-type AccessLevel = "BASIC" | "INSTALLER";
+type AccessLevel = "BASIC" | "INSTALLER" | "RESELLER";
 
 interface PortalAccountInfo {
   configured: boolean;
@@ -35,13 +35,18 @@ interface ClientPortalAccessProps {
 const LEVEL_LABEL: Record<AccessLevel, string> = {
   BASIC: "Panel Clientes",
   INSTALLER: "Portal Instalador",
+  RESELLER: "Portal Revendedor",
 };
 
 /**
  * "Acceso al Portal" — tarjeta + diálogo para que un admin gestione el acceso de
  * un Cliente a kristallfilm.com.
  *
- * Dos niveles: `BASIC` ("Panel Clientes": compras y cuenta corriente) lo obtiene
+ * Tres niveles, y **no son una escalera**: `RESELLER` no está por encima ni por
+ * debajo de `INSTALLER`, está al costado — comparte stock, no comparte taller ni
+ * instalaciones. Elegir el nivel es elegir con qué panel entra, no cuánto puede.
+ *
+ * `BASIC` ("Panel Clientes": compras y cuenta corriente) lo obtiene
  * cualquier Cliente que active su cuenta; `INSTALLER` (suma stock, garantías y
  * reclamos) lo habilita a mano un operador acá.
  */
@@ -248,6 +253,9 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                     <SelectItem value="BASIC">Panel Clientes — compras y cuenta corriente</SelectItem>
                     <SelectItem value="INSTALLER">
                       Portal Instalador — suma stock, garantías, reclamos y Mi Taller
+                    </SelectItem>
+                    <SelectItem value="RESELLER">
+                      Portal Revendedor — sus precios y su stock, sin taller ni instalaciones
                     </SelectItem>
                   </SelectContent>
                 </Select>

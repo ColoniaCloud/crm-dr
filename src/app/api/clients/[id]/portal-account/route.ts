@@ -68,7 +68,7 @@ const putSchema = z.object({
   // BASIC lo obtiene cualquier Cliente que active su cuenta. INSTALLER es la
   // habilitación manual del segundo nivel: la hace un operador desde la ficha,
   // antes o después de que el cliente active — el nivel no depende de eso.
-  accessLevel: z.enum(["BASIC", "INSTALLER"]).optional(),
+  accessLevel: z.enum(["BASIC", "INSTALLER", "RESELLER"]).optional(),
 });
 
 export async function PUT(

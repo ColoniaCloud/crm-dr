@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
-import type { PortalApiClient } from "@prisma/client";
+import type { PortalAccessLevel, PortalApiClient } from "@prisma/client";
 /**
  * `prismaReal` y no `prisma`: las api keys viven SIEMPRE en la base real.
  *
@@ -173,20 +173,36 @@ function checkCredentialVersion(
 }
 
 /**
- * Exige que el Cliente tenga nivel `INSTALLER` (stock, garantías, reclamos).
+ * Exige que la cuenta de portal esté habilitada y con **uno de los niveles**
+ * que este endpoint acepta.
  *
  * Defensa en profundidad. La API confía en que kristall-web manda el
- * `contactId` del Cliente que realmente inició sesión — eso no cambia. Pero
- * ahora que cualquier Cliente puede tener cuenta, el CRM además verifica de su
- * lado que ese contacto tenga habilitado el segundo nivel, en vez de depender
- * solo de que el sitio externo esconda los botones.
+ * `contactId` del Cliente que realmente inició sesión — eso no cambia. Pero el
+ * CRM además verifica de su lado que ese contacto tenga el nivel, en vez de
+ * depender de que el sitio externo esconda los botones.
  *
- * Falla cerrado: si el contacto no tiene cuenta de portal, o está deshabilitada,
- * o es BASIC, se rechaza.
+ * ─── Por qué recibe una lista y no un nivel mínimo ─────────────────────────
+ *
+ * Porque los niveles **no son una escalera**. Cuando eran dos (BASIC e
+ * INSTALLER) alcanzaba con "de acá para arriba", pero RESELLER está al costado:
+ * comparte stock con INSTALLER y no comparte Mi Taller. Un "nivel mínimo" no
+ * puede expresar eso, y el primer intento de forzarlo termina dándole el taller
+ * a un revendedor o quitándole el stock.
+ *
+ * Así que cada endpoint dice qué niveles acepta:
+ *
+ * ```ts
+ * await requireNivel(contactId, request, ["INSTALLER"]);              // Mi Taller
+ * await requireNivel(contactId, request, ["INSTALLER", "RESELLER"]);  // Stock
+ * ```
+ *
+ * Falla cerrado: sin cuenta de portal, deshabilitada, sin activar o con un nivel
+ * que no está en la lista, se rechaza.
  */
-export async function requireInstallerLevel(
+export async function requireNivel(
   contactId: string,
-  request: Request
+  request: Request,
+  niveles: readonly PortalAccessLevel[]
 ): Promise<{ success: true } | { success: false; response: NextResponse }> {
   const account = await prisma.clientPortalAccount.findUnique({
     where: { contactId },
@@ -194,21 +210,36 @@ export async function requireInstallerLevel(
   });
 
   // `!passwordHash`: invitada y sin activar — ver requireEnabledPortalAccount.
-  // Una cuenta puede estar invitada YA con nivel INSTALLER, y aun así no debe
+  // Una cuenta puede estar invitada YA con su nivel puesto, y aun así no debe
   // pasar hasta que el Cliente elija su contraseña.
   if (
     !account ||
     !account.enabled ||
     !account.passwordHash ||
-    account.accessLevel !== "INSTALLER"
+    !niveles.includes(account.accessLevel)
   ) {
     return {
       success: false,
       response: NextResponse.json(
-        { error: "Este cliente no tiene habilitado el portal de instalador" },
+        { error: "Este cliente no tiene habilitado ese nivel del portal" },
         { status: 403 }
       ),
     };
   }
   return checkCredentialVersion(request, account.passwordHash);
+}
+
+/**
+ * Azúcar para los endpoints que son **solo** de instalador: Mi Taller,
+ * instalaciones, sub-códigos y reclamos.
+ *
+ * Se mantiene con este nombre a propósito: en esos archivos dice qué son mejor
+ * que `requireNivel(id, req, ["INSTALLER"])`. Para los que aceptan más de un
+ * nivel —el stock, por ejemplo— usar `requireNivel` directamente.
+ */
+export async function requireInstallerLevel(
+  contactId: string,
+  request: Request
+): Promise<{ success: true } | { success: false; response: NextResponse }> {
+  return requireNivel(contactId, request, ["INSTALLER"]);
 }

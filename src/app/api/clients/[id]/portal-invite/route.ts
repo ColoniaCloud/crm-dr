@@ -31,7 +31,7 @@ const log = createLogger("api/clients/[id]/portal-invite");
  * nivel**.
  */
 const schema = z.object({
-  accessLevel: z.enum(["BASIC", "INSTALLER"]).optional(),
+  accessLevel: z.enum(["BASIC", "INSTALLER", "RESELLER"]).optional(),
 });
 
 export async function POST(

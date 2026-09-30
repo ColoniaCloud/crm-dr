@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { requirePortalApiKey, requireInstallerLevel } from "@/lib/portal-api-auth";
+import { requirePortalApiKey, requireNivel } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
-import { findClientContact, getClientStock } from "@/lib/client-portal";
+import { findClientContact, getClientStock, getResellerStock } from "@/lib/client-portal";
+import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/stock");
@@ -25,10 +26,25 @@ export async function GET(
       return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     }
 
-    const level = await requireInstallerLevel(contactId, request);
+    // Stock lo ven los dos niveles que tienen rollos en la mano. Es el caso que
+    // obligó a que el portero reciba una lista y no un nivel mínimo: RESELLER no
+    // está por encima ni por debajo de INSTALLER.
+    const level = await requireNivel(contactId, request, ["INSTALLER", "RESELLER"]);
     if (!level.success) return level.response;
 
-    const rolls = await getClientStock(contactId);
+    // El revendedor recibe además el link de garantía de cada rollo, porque no
+    // instala: es lo único que le puede entregar a quien se lo compre. El
+    // instalador no lo necesita —genera sus propios sub-códigos— y dárselo
+    // ampliaría sin motivo la superficie de un token que es capacidad al
+    // portador. Ver getResellerStock().
+    const account = await prisma.clientPortalAccount.findUnique({
+      where: { contactId },
+      select: { accessLevel: true },
+    });
+    const rolls =
+      account?.accessLevel === "RESELLER"
+        ? await getResellerStock(contactId)
+        : await getClientStock(contactId);
     return NextResponse.json(rolls);
   } catch (error) {
     log.error({ err: error }, "Error fetching client stock");

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { portalBaseUrl } from "@/lib/portal-tokens";
 import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { getClientBalance } from "@/lib/account";
@@ -167,6 +168,66 @@ export async function getClientStock(contactId: string) {
     where: { saleItem: { sale: { contactId } } },
     select: PORTAL_ROLL_SELECT,
     orderBy: { createdAt: "asc" },
+  });
+}
+
+/**
+ * El stock de un **revendedor**: lo mismo que ve un instalador, más el link de
+ * garantía de cada rollo listo para pasarle a quien se lo compre.
+ *
+ * ─── Por qué esto existe aparte y no se le agrega a PORTAL_ROLL_SELECT ─────
+ *
+ * Porque el `activationToken` está excluido de ese select **a propósito**: es
+ * una capacidad al portador —quien lo tiene activa la garantía a nombre de
+ * cualquiera— y ampliarlo para todos desharía una decisión de seguridad tomada
+ * a conciencia (ver el comentario de PORTAL_ROLL_SELECT y el de
+ * getClientInstallations).
+ *
+ * Un **instalador** no lo necesita: genera sus propios sub-códigos desde el
+ * portal. Un **revendedor no instala**, así que el token es literalmente lo
+ * único que le puede entregar a su comprador; sin él, el rollo sale, se vende,
+ * se instala, y la garantía no se activa nunca.
+ *
+ * Se devuelve como URL armada y no como token pelado: es lo que se comparte, y
+ * evita que cada pantalla tenga que saber cómo se construye el link.
+ *
+ * **Alcance:** esto cubre los rollos que el revendedor compró en firme. Cuando
+ * exista la Fase D —el rollo pasa a nombre del taller y el taller genera sus
+ * propias instalaciones— la vía normal deja de necesitar esto, y queda solo para
+ * los rollos viejos. Ver §5.2 de REVENDEDORES.md.
+ */
+export async function getResellerStock(contactId: string) {
+  const rolls = await prisma.warrantyRoll.findMany({
+    where: { saleItem: { sale: { contactId } } },
+    select: {
+      ...PORTAL_ROLL_SELECT,
+      installations: {
+        orderBy: { installationNumber: "asc" as const },
+        select: {
+          ...PORTAL_ROLL_SELECT.installations.select,
+          // Solo acá, y solo para este nivel.
+          activationToken: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const base = portalBaseUrl();
+  return rolls.map((roll) => {
+    // El link que se entrega es el de la instalación que todavía nadie activó.
+    // Si ya están todas activadas no hay nada que pasar, y devolver una URL que
+    // lleva a "esta garantía ya fue activada" confunde más de lo que ayuda.
+    const pendiente = roll.installations.find((i) => i.status === "PENDING");
+    return {
+      ...roll,
+      // Sin el token pelado en la respuesta: lo que la pantalla necesita es el
+      // link, y dejar los dos invita a que alguien loguee el token.
+      installations: roll.installations.map(({ activationToken: _t, ...i }) => i),
+      warrantyUrl: pendiente
+        ? `${base}/garantia/${encodeURIComponent(pendiente.activationToken)}`
+        : null,
+    };
   });
 }
 
