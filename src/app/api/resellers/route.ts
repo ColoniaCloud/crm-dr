@@ -44,6 +44,12 @@ export async function GET(request: Request) {
       ? undefined
       : Math.min(100, Math.max(1, parseInt(limitParam || "30", 10)));
 
+    // `?minimal=true` devuelve la misma forma que /api/clients: lo consumen los
+    // selectores de contacto de Ventas y Presupuestos, que necesitan a TODOS los
+    // que pueden comprar. Sin esto un revendedor no aparecia en la lista y el
+    // boton "Crear venta" de su ficha llevaba a un formulario donde no se lo
+    // podia elegir ni buscar.
+    const minimal = searchParams.get("minimal") === "true";
     const where: Prisma.ContactWhereInput = { type: "RESELLER" as const };
     if (search) {
       where.OR = [
@@ -53,6 +59,26 @@ export async function GET(request: Request) {
         { email: { contains: search } },
         { phone: { contains: search } },
       ];
+    }
+
+    if (minimal) {
+      const resellers = await prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          company: true,
+          cuit: true,
+          type: true,
+          discountTag: {
+            select: { id: true, code: true, name: true, type: true, value: true, active: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        ...(isAll ? {} : { skip: (page - 1) * limit!, take: limit }),
+      });
+      return NextResponse.json({ resellers });
     }
 
     const [resellers, total] = await Promise.all([

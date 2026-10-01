@@ -24,7 +24,14 @@ export async function GET() {
   try {
     const tags = await prisma.discountTag.findMany({
       orderBy: [{ active: "desc" }, { code: "asc" }],
-      include: { _count: { select: { contacts: true } } },
+      // `contacts` son los que la tienen como etiqueta general;
+      // `contactProductDiscounts`, los acuerdos por producto que la usan. Hacen
+      // falta los dos para poder avisar a cuanta gente le cambia el precio una
+      // edicion: desde la Fase A una etiqueta se usa en los dos planos, y contar
+      // solo uno subestima el alcance justo cuando mas importa.
+      include: {
+        _count: { select: { contacts: true, contactProductDiscounts: true } },
+      },
     });
     return NextResponse.json(tags);
   } catch (error) {

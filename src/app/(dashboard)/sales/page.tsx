@@ -14,10 +14,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag, Pencil } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
 import { calcItemTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";
+import { DiscountTagDialog, type TagEditable } from "@/components/sales/discount-tag-dialog";
 
 function defaultFirstDueDate(): string {
   const hoy = new Date();
@@ -41,7 +42,11 @@ interface Sale {
 interface Product { id: string; name: string; price: string; stock: number; }
 interface ContactDiscountTag { id: string; code: string; name: string; type: string; value: string; active: boolean; }
 /** Una etiqueta tal como la devuelven /api/discount-tags y product-tags (value numerico). */
-interface DiscountTagInfo { id: string; code: string; name: string; type: string; value: number; active?: boolean; }
+interface DiscountTagInfo {
+  id: string; code: string; name: string; type: string; value: number; active?: boolean;
+  /** Cuanta gente usa esta etiqueta. Lo necesita el dialogo para avisar al editar. */
+  _count?: { contacts: number; contactProductDiscounts: number };
+}
 interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; discountTag?: ContactDiscountTag | null; }
 
 interface CreatedSaleItem {
@@ -72,6 +77,10 @@ function SalesPage() {
   const preselectedUnitCode = searchParams.get("code") || "";
   const userRole = (session?.user?.role as string) || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
+  // Crear y editar etiquetas de descuento es SUPERADMIN, igual que en /settings:
+  // una etiqueta es un objeto compartido y cambiarla mueve precios de muchos
+  // contactos a la vez. Elegirla en una linea sigue siendo de cualquier ADMIN.
+  const isSuperAdmin = userRole === "SUPERADMIN";
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -115,6 +124,14 @@ function SalesPage() {
   const [tagsLoading, setTagsLoading] = useState(false);
   /** Todas las etiquetas activas, para el dropdown de cada linea. */
   const [allTags, setAllTags] = useState<DiscountTagInfo[]>([]);
+  /**
+   * El dialogo de crear/editar etiqueta, y sobre que linea se abrio.
+   *
+   * `linea` sirve para dejar seleccionada la etiqueta recien creada en el item
+   * desde el que se la creo: crearla y despues tener que buscarla en el
+   * desplegable es la mitad del trabajo hecho.
+   */
+  const [tagDialog, setTagDialog] = useState<{ linea: number; tag: TagEditable | null } | null>(null);
   const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [planWarning, setPlanWarning] = useState("");
@@ -175,29 +192,56 @@ function SalesPage() {
     }));
   }, [products, preselectedProductId, preselectedUnitId]);
 
+  /**
+   * Las etiquetas pactadas del contacto, sin tocar el formulario.
+   *
+   * Distinta del efecto de abajo a proposito: aquel corre al CAMBIAR de contacto
+   * y ademas limpia los overrides, porque un override pensado para un cliente no
+   * vale para otro. Esta solo refresca los valores — se usa despues de editar una
+   * etiqueta, donde el contacto es el mismo y lo elegido sigue valiendo.
+   */
+  async function refreshProductTags(contactId: string) {
+    try {
+      const r = await fetch(`/api/clients/${contactId}/product-tags`);
+      if (r.ok) setProductTags((await r.json()).tags ?? {});
+    } catch {
+      /* se deja lo que habia: el servidor manda igual al crear la venta */
+    }
+  }
+
+  async function fetchTags() {
+    try {
+      const res = await fetch("/api/discount-tags");
+      const d = res.ok ? await res.json() : [];
+      setAllTags(
+        (Array.isArray(d) ? d : [])
+          .filter((t: DiscountTagInfo) => t.active !== false)
+          .map((t: DiscountTagInfo) => ({ ...t, value: Number(t.value) }))
+      );
+    } catch {
+      setAllTags([]);
+    }
+  }
+
   async function fetchAll() {
     setLoading(true);
     setError("");
     try {
-      const [salesRes, prodRes, leadsRes, clientsRes] = await Promise.all([
+      const [salesRes, prodRes, leadsRes, clientsRes, resellersRes] = await Promise.all([
         fetch("/api/sales"),
         fetch("/api/products"),
         fetch("/api/leads?limit=all&minimal=true"),
         fetch("/api/clients?limit=all&minimal=true"),
+        // Los revendedores tambien compran: sin esto no aparecian en el selector
+        // y el boton "Crear venta" de su ficha llevaba a un formulario donde no
+        // se los podia elegir. Van en su propia ruta y no mezclados en
+        // /api/clients a proposito — ese listado es la seccion Clientes del CRM.
+        fetch("/api/resellers?limit=all&minimal=true"),
       ]);
       // Las etiquetas del dropdown por linea. Fuera del Promise.all de arriba a
       // proposito: que no haya etiquetas cargadas no tiene que romper la pantalla
       // de ventas — el dropdown queda con "Sin descuento" y nada mas.
-      fetch("/api/discount-tags")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((d: DiscountTagInfo[]) =>
-          setAllTags(
-            (Array.isArray(d) ? d : [])
-              .filter((t) => t.active !== false)
-              .map((t) => ({ ...t, value: Number(t.value) }))
-          )
-        )
-        .catch(() => setAllTags([]));
+      fetchTags();
       if (salesRes.ok) setSales(await salesRes.json().then((d: Sale[]) => Array.isArray(d) ? d : []));
       else throw new Error(`No se pudieron cargar las ventas (Error ${salesRes.status})`);
 
@@ -208,7 +252,10 @@ function SalesPage() {
       const clientsData = clientsRes.ok ? await clientsRes.json() : null;
       const leads = leadsData && Array.isArray(leadsData.leads) ? leadsData.leads : [];
       const clients = clientsData && Array.isArray(clientsData.clients) ? clientsData.clients : [];
-      setContacts([...leads, ...clients]);
+      const resellersData = resellersRes.ok ? await resellersRes.json() : null;
+      const resellers =
+        resellersData && Array.isArray(resellersData.resellers) ? resellersData.resellers : [];
+      setContacts([...leads, ...clients, ...resellers]);
     } catch (err) {
       console.error("[sales] fetchAll", err);
       setSales([]);
@@ -661,6 +708,45 @@ function SalesPage() {
                         )
                       </span>
                     )}
+                    {/* Crear y editar etiquetas es SUPERADMIN (ver la API). Para
+                        un ADMIN los botones no aparecen: ofrecer un control que
+                        siempre va a dar 403 es peor que no ofrecerlo. */}
+                    {isSuperAdmin && (
+                      <>
+                        <Button
+                          type="button" variant="ghost" size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setTagDialog({ linea: idx, tag: null })}
+                        >
+                          <Plus className="mr-1 h-3 w-3" />Crear descuento nuevo
+                        </Button>
+                        {/* Solo con una etiqueta efectivamente puesta en la linea:
+                            "editar este descuento" sin descuento no significa nada. */}
+                        {lineTags[idx] && (
+                          <Button
+                            type="button" variant="ghost" size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              const t = allTags.find((x) => x.id === lineTags[idx]!.id);
+                              setTagDialog({
+                                linea: idx,
+                                tag: {
+                                  id: lineTags[idx]!.id,
+                                  code: lineTags[idx]!.code,
+                                  name: lineTags[idx]!.name,
+                                  type: lineTags[idx]!.type,
+                                  value: Number(lineTags[idx]!.value),
+                                  usoContactos: t?._count?.contacts ?? 0,
+                                  usoAcuerdos: t?._count?.contactProductDiscounts ?? 0,
+                                },
+                              });
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />Editar este descuento
+                          </Button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -779,6 +865,33 @@ function SalesPage() {
           )}
         </CardContent>
       </Card>
+
+      <DiscountTagDialog
+        open={tagDialog !== null}
+        onOpenChange={(v) => !v && setTagDialog(null)}
+        tag={tagDialog?.tag ?? null}
+        onSaved={async (tagId) => {
+          const linea = tagDialog?.linea;
+          const creada = tagDialog?.tag === null;
+          // Las dos listas, porque una linea puede tomar su etiqueta de
+          // cualquiera: `allTags` alimenta el desplegable y los overrides;
+          // `productTags`, lo pactado. Refrescar solo una deja la vista previa
+          // mostrando el valor viejo en las lineas que vienen del acuerdo.
+          await Promise.all([
+            fetchTags(),
+            form.contactId ? refreshProductTags(form.contactId) : Promise.resolve(),
+          ]);
+          // Una etiqueta recien creada queda puesta en la linea desde la que se
+          // la creo. Editar una existente NO toca la seleccion: ya estaba puesta.
+          if (creada && linea !== undefined && tagId) {
+            setForm((f) => ({
+              ...f,
+              items: f.items.map((it, i) => (i === linea ? { ...it, discountTagId: tagId } : it)),
+            }));
+          }
+          setTagDialog(null);
+        }}
+      />
 
       <Dialog open={creditTierPrompt} onOpenChange={(o) => !o && setCreditTierPrompt(false)}>
         <DialogContent>

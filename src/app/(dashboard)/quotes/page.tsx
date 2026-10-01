@@ -109,15 +109,20 @@ function QuotesPageInner() {
 
   async function fetchContacts() {
     try {
-      const [leadsRes, clientsRes] = await Promise.all([
+      const [leadsRes, clientsRes, resellersRes] = await Promise.all([
         fetch("/api/leads?limit=all&minimal=true"),
         fetch("/api/clients?limit=all&minimal=true"),
+        // Los revendedores tambien se presupuestan. Mismo motivo que en Ventas.
+        fetch("/api/resellers?limit=all&minimal=true"),
       ]);
       const leadsData = leadsRes.ok ? await leadsRes.json() : null;
       const clientsData = clientsRes.ok ? await clientsRes.json() : null;
+      const resellersData = resellersRes.ok ? await resellersRes.json() : null;
       const leads = leadsData && Array.isArray(leadsData.leads) ? leadsData.leads : [];
       const clients = clientsData && Array.isArray(clientsData.clients) ? clientsData.clients : [];
-      setContacts([...leads, ...clients]);
+      const resellers =
+        resellersData && Array.isArray(resellersData.resellers) ? resellersData.resellers : [];
+      setContacts([...leads, ...clients, ...resellers]);
     } catch (err) { console.error(err); }
   }
 
