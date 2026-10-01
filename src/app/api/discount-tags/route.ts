@@ -47,9 +47,20 @@ const createSchema = z.object({
   value: z.number().positive(),
 });
 
-// POST — SUPERADMIN, desde /settings.
+// POST — ADMIN+.
+//
+// Era SUPERADMIN, cuando el unico lugar para crear una etiqueta era /settings.
+// Se abrio a ADMIN porque el descuento se pacta EN EL MOMENTO: quien vende esta
+// armando la venta y recien ahi aparece que a este cliente se le acordo un
+// porcentaje que nadie cargo. Con SUPERADMIN, ese caso terminaba en un descuento
+// a mano sin registro de que era un acuerdo — justo lo que las etiquetas vinieron
+// a evitar.
+//
+// Crear es aditivo: una etiqueta nueva no le cambia el precio a nadie hasta que
+// alguien la asigna. **DELETE sigue siendo SUPERADMIN**, porque borrar la saca de
+// todos los contactos que la tenian.
 export async function POST(request: Request) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
   if (!gate.success) return gate.response;
   const { session } = gate;
 

@@ -21,13 +21,23 @@ const updateSchema = z.object({
   active: z.boolean().optional(),
 });
 
-// PATCH — SUPERADMIN.
+// PATCH — ADMIN+.
 //
 // Ojo con lo que significa editar: el descuento se calcula al crear cada venta,
 // así que cambiar el valor de una etiqueta cambia el precio de **las próximas**
-// ventas de todos los contactos que la tienen. Las ya hechas no se mueven.
+// ventas de todos los contactos que la tienen y de todos los acuerdos por
+// producto que la usan. Las ya hechas no se mueven, porque cada venta guarda su
+// propia copia legible.
+//
+// Era SUPERADMIN. Se abrió a ADMIN junto con el POST, por el mismo motivo: el
+// descuento se pacta mientras se vende. El alcance no se oculta — el diálogo del
+// formulario de venta muestra a cuántos contactos y acuerdos alcanza antes de
+// guardar, con el número que devuelve el `_count` del listado.
+//
+// **DELETE sigue siendo SUPERADMIN**: borrar saca la etiqueta de todos los
+// contactos que la tenían, y eso no se deshace.
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
   if (!gate.success) return gate.response;
   const { session } = gate;
 

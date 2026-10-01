@@ -77,10 +77,11 @@ function SalesPage() {
   const preselectedUnitCode = searchParams.get("code") || "";
   const userRole = (session?.user?.role as string) || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
-  // Crear y editar etiquetas de descuento es SUPERADMIN, igual que en /settings:
-  // una etiqueta es un objeto compartido y cambiarla mueve precios de muchos
-  // contactos a la vez. Elegirla en una linea sigue siendo de cualquier ADMIN.
-  const isSuperAdmin = userRole === "SUPERADMIN";
+  // Crear y editar etiquetas de descuento es ADMIN+, igual que la API: el
+  // descuento se pacta mientras se vende, y mandar a quien vende a Configuracion
+  // para cargarlo le hace perder el carrito. Borrarlas sigue siendo SUPERADMIN,
+  // desde /settings, porque eso las saca de todos los contactos que las tenian.
+  const puedeEditarEtiquetas = isAdminUser;
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -708,10 +709,9 @@ function SalesPage() {
                         )
                       </span>
                     )}
-                    {/* Crear y editar etiquetas es SUPERADMIN (ver la API). Para
-                        un ADMIN los botones no aparecen: ofrecer un control que
-                        siempre va a dar 403 es peor que no ofrecerlo. */}
-                    {isSuperAdmin && (
+                    {/* ADMIN+ , igual que la API. Un OPERATOR no llega a este
+                        formulario: POST /api/sales ya es ADMIN+. */}
+                    {puedeEditarEtiquetas && (
                       <>
                         <Button
                           type="button" variant="ghost" size="sm"

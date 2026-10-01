@@ -119,7 +119,7 @@ export function DiscountTagDialog({
         // y "Error 403" no le dice a nadie qué hacer.
         throw new Error(
           res.status === 403
-            ? "Solo un superadministrador puede crear o editar etiquetas de descuento."
+            ? "No tenés permiso para crear o editar etiquetas de descuento."
             : data.error || "No se pudo guardar"
         );
       }
