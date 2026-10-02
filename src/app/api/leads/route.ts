@@ -155,7 +155,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
     const body = await request.json();
+    // Estos campos los define el sistema; que vengan en el body no los pisa.
+    delete body.id;
+    delete body.leadNumber;
+    delete body.createdAt;
+    delete body.updatedAt;
 
     const lead = await prisma.contact.create({
       data: {

@@ -11,6 +11,11 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
   try {
     const { id } = await params;
 
@@ -81,6 +86,14 @@ export async function PUT(
     }
 
     const data: Record<string, unknown> = { ...body };
+
+    // Cambiar el tipo es convertir el lead, y eso pasa por /api/leads/[id]/convert
+    // (que deja la actividad y el log CONVERT_LEAD). Por un PUT no.
+    delete data.type;
+    delete data.id;
+    delete data.leadNumber;
+    delete data.createdAt;
+    delete data.updatedAt;
 
     if ("contactMethod" in data) {
       data.contactMethod = data.contactMethod || "NONE";

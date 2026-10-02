@@ -848,6 +848,35 @@ export function pickPublicStatus(warranty: WarrantyStatus) {
 }
 
 /**
+ * La proyección que usan las propias páginas /garantia/[token] del CRM
+ * (GET /api/garantia/[token]) — son first-party, pero igual llegan por HTTP
+ * directo (no hay forma de verificar "same-origin" del lado del servidor), así
+ * que no pueden devolver el objeto completo de verifyWarranty(). A diferencia
+ * de pickPublicStatus(), acá sí sale `clientName` porque la pantalla le
+ * muestra al titular su propio nombre — pero nunca `clientEmail`,
+ * `clientPhone`, `clientDni` ni `activationToken`: quien tiene el link no
+ * necesita que se los repitan, y antes de este fix salían los cuatro en texto
+ * plano sin límite de consultas.
+ */
+export function pickOwnStatus(warranty: WarrantyStatus) {
+  return {
+    installationCode: warranty.installationCode,
+    status: warranty.status,
+    product: warranty.product,
+    lotNumber: warranty.lotNumber,
+    fullRollCode: warranty.fullRollCode,
+    assetType: warranty.assetType,
+    assetDescription: warranty.assetDescription,
+    clientName: warranty.clientName,
+    installedAt: warranty.installedAt,
+    activatedAt: warranty.activatedAt,
+    expiresAt: warranty.expiresAt,
+    isActive: warranty.isActive,
+    daysRemaining: warranty.daysRemaining,
+  };
+}
+
+/**
  * Lets the Usuario (end car owner) set a simple password on their own
  * installation, so they can check on it later with just their short
  * installationCode instead of the long activationToken. Knowing the token

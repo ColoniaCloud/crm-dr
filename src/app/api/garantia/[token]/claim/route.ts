@@ -2,15 +2,27 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { notifyAdmins } from "@/lib/notifications";
+import { rateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/request-ip";
 
 const log = createLogger("api/garantia/[token]/claim");
 
 // Same matching rule as /api/public/warranty/claims: the reporter must
 // provide the email or DNI used at activation — the code alone isn't enough.
+// El límite por IP frena adivinar email/DNI a fuerza bruta contra un token ya
+// conocido.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
+  const rl = rateLimit(`garantia-claim:${clientIp(request)}`, 20, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Demasiados intentos. Esperá ${rl.retryAfter}s.` },
+      { status: 429 }
+    );
+  }
+
   try {
     const { token } = await params;
     const body = await request.json();

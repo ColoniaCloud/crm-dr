@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { releaseRollForSaleItem } from "@/lib/warranty";
 const log = createLogger("api/installers/[id]");
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,8 +26,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const body = await request.json();
     const { firstName, lastName, phone, email, whatsapp, hasLocalStore, storeAddress, installerCountry, installerProvince, installerDepartment } = body;
 
-    const installer = await prisma.contact.update({
-      where: { id },
+    const result = await prisma.contact.updateMany({
+      where: { id, type: "INSTALLER" },
       data: {
         firstName,
         lastName,
@@ -40,6 +41,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         installerDepartment: installerCountry === "Uruguay" ? (installerDepartment || null) : null,
       },
     });
+
+    if (result.count === 0) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+    const installer = await prisma.contact.findUnique({ where: { id } });
 
     await logOperatorAction({
       userId: session.user.id,
@@ -68,12 +74,38 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
   try {
-    await prisma.$transaction([
-      prisma.contactTag.deleteMany({ where: { contactId: id } }),
-      prisma.activityLog.deleteMany({ where: { contactId: id } }),
-      prisma.leadActivity.deleteMany({ where: { contactId: id } }),
-      prisma.contact.delete({ where: { id } }),
-    ]);
+    const existing = await prisma.contact.findFirst({
+      where: { id, type: "INSTALLER" },
+      select: { id: true },
+    });
+    if (!existing) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    // Misma cascada que clients/[id] y contacts/[id]: un instalador también
+    // puede tener ventas, pagos y presupuestos (es el mismo modelo Contact).
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { contactId: id } });
+      const saleIds = (await tx.sale.findMany({ where: { contactId: id }, select: { id: true } })).map((s) => s.id);
+      if (saleIds.length > 0) {
+        const saleItemIds = (await tx.saleItem.findMany({ where: { saleId: { in: saleIds } }, select: { id: true } })).map((i) => i.id);
+        for (const saleItemId of saleItemIds) {
+          await releaseRollForSaleItem(tx, saleItemId);
+        }
+        await tx.remito.deleteMany({ where: { saleId: { in: saleIds } } });
+        await tx.saleItem.deleteMany({ where: { saleId: { in: saleIds } } });
+      }
+      await tx.sale.deleteMany({ where: { contactId: id } });
+      const quoteIds = (await tx.quote.findMany({ where: { contactId: id }, select: { id: true } })).map((q) => q.id);
+      if (quoteIds.length > 0) {
+        await tx.quoteItem.deleteMany({ where: { quoteId: { in: quoteIds } } });
+      }
+      await tx.quote.deleteMany({ where: { contactId: id } });
+      await tx.visit.deleteMany({ where: { contactId: id } });
+      await tx.call.deleteMany({ where: { contactId: id } });
+      await tx.contactTag.deleteMany({ where: { contactId: id } });
+      await tx.activityLog.deleteMany({ where: { contactId: id } });
+      await tx.leadActivity.deleteMany({ where: { contactId: id } });
+      await tx.contact.delete({ where: { id } });
+    });
 
     await logOperatorAction({
       userId: session.user.id,
