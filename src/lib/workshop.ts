@@ -1266,6 +1266,25 @@ export async function handlesLibres(
 }
 
 /**
+ * Los talleres con página publicada, para el sitemap de polariz.ar.
+ *
+ * Solo los publicados: listarlos no revela nada que no esté ya a la vista en
+ * su propia URL. Los que tienen handle pero no publicaron siguen sin aparecer,
+ * por la misma razón que `getPublicWorkshop` les devuelve `null`.
+ *
+ * `updatedAt` va como `lastModified` del sitemap: le dice a Google cuándo
+ * volver a mirar la página.
+ */
+export async function listPublishedWorkshopHandles() {
+  const filas = await prisma.workshopSettings.findMany({
+    where: { publicPageEnabled: true, handle: { not: null } },
+    select: { handle: true, updatedAt: true },
+    orderBy: { handle: "asc" },
+  });
+  return filas.flatMap((f) => (f.handle ? [{ handle: f.handle, updatedAt: f.updatedAt.toISOString() }] : []));
+}
+
+/**
  * La ficha pública de un taller, por handle.
  *
  * **Es lo único del taller que sale del CRM sin sesión**, así que la proyección
