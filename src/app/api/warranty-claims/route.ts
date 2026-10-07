@@ -23,12 +23,27 @@ export async function GET(request: Request) {
     const claims = await prisma.warrantyClaim.findMany({
       where: status ? { status: status as "OPEN" | "IN_REVIEW" | "RESOLVED" | "REJECTED" } : {},
       include: {
+        // `select` explícito y no `include`: un include pelado de la instalación
+        // trae `activationToken` (capacidad al portador sobre la garantía) y
+        // `portalPasswordHash`, y esto termina en el navegador. Solo va lo que
+        // dibuja el Centro de Garantías — mismo criterio que PORTAL_ROLL_SELECT
+        // en src/lib/client-portal.ts.
         installation: {
-          include: {
+          select: {
+            installationCode: true,
+            clientName: true,
+            // Datos de obra, para evaluar una rotura térmica.
+            siteAddress: true,
+            areaM2: true,
+            paneCount: true,
+            glassType: true,
+            filmSide: true,
+            buildingUse: true,
             roll: {
-              include: {
+              select: {
+                fullRollCode: true,
                 // `category` para saber si mostrar los datos de la obra.
-                product: { select: { id: true, name: true, sku: true, category: true } },
+                product: { select: { name: true, category: true } },
                 lot: { select: { lotNumber: true } },
               },
             },
