@@ -16,6 +16,9 @@ import { formatDate } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { RollsByLocation } from "@/components/warranty/rolls-by-location";
+import type { BuildingUse, ClaimIssueType, FilmSide, GlassType } from "@prisma/client";
+import { CLAIM_ISSUE_LABELS, CLAIM_ISSUE_TYPES } from "@/lib/claim-issues";
+import { describirSuperficie, FILM_SIDE_LABELS, GLASS_TYPE_LABELS, BUILDING_USE_LABELS } from "@/lib/obra";
 
 interface InstallationMatch {
   id: string;
@@ -39,16 +42,35 @@ interface Claim {
   createdAt: string;
   resolvedAt: string | null;
   assignedTo: { id: string; name: string } | null;
+  /** Null en los reclamos anteriores a octubre 2026, que eran solo texto. */
+  issueType: ClaimIssueType | null;
+  affectedPanes: number | null;
+  photos: { id: string }[];
   installation: {
     installationCode: string;
     clientName: string | null;
+    // Datos de obra: con esto se evalúa una rotura del vidrio por estrés
+    // térmico. `areaM2` llega como string (Decimal).
+    siteAddress: string | null;
+    areaM2: string | number | null;
+    paneCount: number | null;
+    glassType: GlassType | null;
+    filmSide: FilmSide | null;
+    buildingUse: BuildingUse | null;
     roll: {
       fullRollCode: string;
-      product: { name: string };
+      product: { name: string; category: string };
       lot: { lotNumber: string } | null;
     };
   };
 }
+
+const channelLabel: Record<string, string> = {
+  PUBLIC_API: "Web pública",
+  WARRANTY_PORTAL: "Web (con contraseña)",
+  CLIENT_PORTAL_API: "Portal del taller",
+  INTERNAL: "Interno",
+};
 
 interface RollTrace {
   fullRollCode: string;
@@ -85,6 +107,8 @@ export default function WarrantyClaimsPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("ALL");
+  // El tipo se filtra del lado del cliente: la lista ya viene entera.
+  const [filterIssue, setFilterIssue] = useState("ALL");
   const [selected, setSelected] = useState<Claim | null>(null);
   const [statusDraft, setStatusDraft] = useState<Claim["status"]>("OPEN");
   const [notesDraft, setNotesDraft] = useState("");
@@ -105,6 +129,8 @@ export default function WarrantyClaimsPage() {
   };
 
   useEffect(() => { fetchClaims(); }, [filterStatus]);
+
+  const visibles = filterIssue === "ALL" ? claims : claims.filter((c) => c.issueType === filterIssue);
 
   const openClaim = (c: Claim) => {
     setSelected(c);
@@ -265,6 +291,17 @@ export default function WarrantyClaimsPage() {
             <SelectItem value="REJECTED">Rechazado</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={filterIssue} onValueChange={setFilterIssue}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filtrar por problema" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Todos los problemas</SelectItem>
+            {CLAIM_ISSUE_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>{CLAIM_ISSUE_LABELS[t]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -273,10 +310,10 @@ export default function WarrantyClaimsPage() {
           <div className="md:hidden space-y-2 p-4">
             {loading ? (
               <p className="text-center text-muted-foreground py-8 text-sm">Cargando...</p>
-            ) : claims.length === 0 ? (
+            ) : visibles.length === 0 ? (
               <p className="text-center text-muted-foreground py-8 text-sm">No hay reclamos de garantía</p>
             ) : (
-              claims.map((c) => (
+              visibles.map((c) => (
                 <div key={c.id} className="flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/50" onClick={() => openClaim(c)}>
                   <div className="flex-1 min-w-0 space-y-0.5">
                     <p className="font-medium text-sm truncate">{c.reporterName}</p>
@@ -284,6 +321,7 @@ export default function WarrantyClaimsPage() {
                       <Badge variant={statusVariant[c.status]} className="text-[10px] px-1.5 py-0">
                         {statusLabel[c.status]}
                       </Badge>
+                      {c.issueType && <span className="font-medium">{CLAIM_ISSUE_LABELS[c.issueType]}</span>}
                       <span className="text-muted-foreground font-mono">{c.installation.installationCode}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">{formatDate(c.createdAt)}</div>
@@ -301,6 +339,7 @@ export default function WarrantyClaimsPage() {
                 <TableRow>
                   <TableHead>Código de instalación</TableHead>
                   <TableHead>Producto</TableHead>
+                  <TableHead>Problema</TableHead>
                   <TableHead>Reportado por</TableHead>
                   <TableHead>Canal</TableHead>
                   <TableHead>Estado</TableHead>
@@ -311,22 +350,30 @@ export default function WarrantyClaimsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">Cargando...</TableCell>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">Cargando...</TableCell>
                   </TableRow>
-                ) : claims.length === 0 ? (
+                ) : visibles.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No hay reclamos de garantía</TableCell>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No hay reclamos de garantía</TableCell>
                   </TableRow>
                 ) : (
-                  claims.map((c) => (
+                  visibles.map((c) => (
                     <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openClaim(c)}>
                       <TableCell className="font-mono">{c.installation.installationCode}</TableCell>
                       <TableCell>{c.installation.roll.product.name}</TableCell>
                       <TableCell>
+                        {c.issueType ? CLAIM_ISSUE_LABELS[c.issueType] : <span className="text-muted-foreground">—</span>}
+                        {c.photos.length > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {c.photos.length} {c.photos.length === 1 ? "foto" : "fotos"}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div>{c.reporterName}</div>
                         <div className="text-xs text-muted-foreground">{c.reporterEmail}</div>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{c.channel === "PUBLIC_API" ? "Web pública" : "Interno"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{channelLabel[c.channel] ?? c.channel}</TableCell>
                       <TableCell>
                         <Badge variant={statusVariant[c.status]}>{statusLabel[c.status]}</Badge>
                       </TableCell>
@@ -366,10 +413,49 @@ export default function WarrantyClaimsPage() {
                 </div>
               </div>
 
+              {(selected.issueType || selected.affectedPanes) && (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {selected.issueType && (
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Problema</p>
+                      <p className="font-medium">{CLAIM_ISSUE_LABELS[selected.issueType]}</p>
+                    </div>
+                  )}
+                  {selected.affectedPanes && (
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Paños afectados</p>
+                      <p className="font-medium">
+                        {selected.affectedPanes}
+                        {selected.installation.paneCount ? ` de ${selected.installation.paneCount}` : ""}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <p className="text-muted-foreground text-xs mb-1">Descripción del problema</p>
-                <p className="text-sm">{selected.description}</p>
+                <p className="text-sm whitespace-pre-line">{selected.description}</p>
               </div>
+
+              {selected.photos.length > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1">Fotos</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {selected.photos.map((f) => {
+                      const src = `/api/warranty-claims/${selected.id}/photos/${f.id}`;
+                      return (
+                        <a key={f.id} href={src} target="_blank" rel="noopener noreferrer" className="block">
+                          {/* eslint-disable-next-line @next/next/no-img-element -- imagen privada servida por la API, no pasa por el optimizador */}
+                          <img src={src} alt="Foto del reclamo" className="aspect-square w-full rounded-md border object-cover" />
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {selected.installation.roll.product.category === "ARCHITECTURAL" && <FichaObra claim={selected} />}
 
               <div className="space-y-2">
                 <Label>Estado</Label>
@@ -397,6 +483,49 @@ export default function WarrantyClaimsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Los datos de la obra registrados al instalar. En una rotura del vidrio son
+ * lo primero que se mira para evaluar si fue estrés térmico (cubierto por
+ * Kristall): sobre qué vidrio estaba la lámina y de qué lado.
+ */
+function FichaObra({ claim }: { claim: Claim }) {
+  const i = claim.installation;
+  const superficie = describirSuperficie(i.areaM2 != null ? Number(i.areaM2) : null, i.paneCount);
+  const filas: [string, string][] = [];
+  if (i.siteAddress) filas.push(["Dirección", i.siteAddress]);
+  if (superficie) filas.push(["Superficie", superficie]);
+  if (i.glassType) filas.push(["Vidrio", GLASS_TYPE_LABELS[i.glassType]]);
+  if (i.filmSide) filas.push(["Lámina del lado", FILM_SIDE_LABELS[i.filmSide]]);
+  if (i.buildingUse) filas.push(["Uso", BUILDING_USE_LABELS[i.buildingUse]]);
+  const esRotura = claim.issueType === "ROTURA_VIDRIO";
+  const faltaVidrio = esRotura && (!i.glassType || !i.filmSide);
+
+  if (filas.length === 0 && !esRotura) return null;
+  return (
+    <div className="rounded-lg border p-3 space-y-2 text-sm">
+      <p className="font-medium">
+        {esRotura ? "Datos para evaluar la rotura térmica" : "Datos de la obra"}
+      </p>
+      {filas.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {filas.map(([etiqueta, valor]) => (
+            <div key={etiqueta}>
+              <p className="text-muted-foreground text-xs">{etiqueta}</p>
+              <p>{valor}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {faltaVidrio && (
+        <p className="text-xs text-muted-foreground">
+          La instalación no tiene registrado el tipo de vidrio o el lado de la lámina. Pedíselo al taller
+          antes de resolver.
+        </p>
+      )}
     </div>
   );
 }

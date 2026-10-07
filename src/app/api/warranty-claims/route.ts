@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, notifyAdmins } from "@/lib/notifications";
+import { conResumen, crearReclamo, datosReclamoSchema } from "@/lib/warranty-claims";
 
 const log = createLogger("api/warranty-claims");
 
@@ -26,13 +27,17 @@ export async function GET(request: Request) {
           include: {
             roll: {
               include: {
-                product: { select: { id: true, name: true, sku: true } },
+                // `category` para saber si mostrar los datos de la obra.
+                product: { select: { id: true, name: true, sku: true, category: true } },
                 lot: { select: { lotNumber: true } },
               },
             },
           },
         },
         assignedTo: { select: { id: true, name: true } },
+        // Solo los ids: el contenido (base64) se pide foto por foto a
+        // /api/warranty-claims/:id/photos/:photoId, que es lo que dibuja <img>.
+        photos: { select: { id: true }, orderBy: { createdAt: "asc" } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -71,16 +76,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Instalación no encontrada" }, { status: 404 });
     }
 
-    const claim = await prisma.warrantyClaim.create({
-      data: {
-        installationId,
+
+    // Tipo de problema, paños y fotos. Opcionales; la regla del rubro la
+    // aplica crearReclamo().
+    const extras = datosReclamoSchema.safeParse(body);
+    if (!extras.success) {
+      return NextResponse.json(
+        { error: extras.error.issues[0]?.message ?? "Datos del reclamo inválidos" },
+        { status: 400 }
+      );
+    }
+
+    const claim = await crearReclamo(
+      {
+        installationId: installationId,
         description,
         reporterName,
-        reporterEmail,
+        reporterEmail: reporterEmail,
         reporterPhone: reporterPhone ?? null,
         channel: "INTERNAL",
       },
-    });
+      extras.data
+    );
+    if (!claim.ok) {
+      return NextResponse.json({ error: claim.error }, { status: claim.status });
+    }
 
     await logOperatorAction({
       userId: session.user.id,
@@ -96,11 +116,11 @@ export async function POST(request: Request) {
       // además de la campanita. Ver la nota en notifyAdmins.
       email: true,
       title: "Nuevo reclamo de garantía",
-      message: `${reporterName} reportó un problema (${installation.installationCode})`,
+      message: conResumen(`${reporterName} reportó un problema (${installation.installationCode})`, extras.data),
       link: `/warranty-claims`,
     });
 
-    return NextResponse.json(claim, { status: 201 });
+    return NextResponse.json({ id: claim.id, status: claim.status }, { status: 201 });
   } catch (error) {
     log.error({ err: error }, "Error creating warranty claim");
     return NextResponse.json({ error: "Error al crear el reclamo" }, { status: 500 });

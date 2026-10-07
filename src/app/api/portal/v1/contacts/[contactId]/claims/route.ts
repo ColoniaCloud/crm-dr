@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { validateBody } from "@/lib/api-validation";
 import { findClientContact, getClientClaims, createClientClaim } from "@/lib/client-portal";
 import { createLogger } from "@/lib/logger";
+import { datosReclamoSchema } from "@/lib/warranty-claims";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/claims");
 
@@ -44,7 +45,8 @@ const claimSchema = z.object({
   reporterName: z.string().min(1),
   reporterEmail: z.string().email(),
   reporterPhone: z.string().optional(),
-});
+  // Tipo de problema, paños y fotos (CLIENT_PORTAL_API.md 4.5).
+}).extend(datosReclamoSchema.shape);
 
 export async function POST(
   request: Request,
@@ -72,7 +74,8 @@ export async function POST(
     const level = await requireInstallerLevel(contactId, request);
     if (!level.success) return level.response;
 
-    const result = await createClientClaim(contactId, validation.data);
+    const { issueType, affectedPanes, photos, ...base } = validation.data;
+    const result = await createClientClaim(contactId, base, { issueType, affectedPanes, photos });
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }

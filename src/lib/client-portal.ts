@@ -6,6 +6,7 @@ import { getClientBalance } from "@/lib/account";
 import { isWarrantyClaimable } from "@/lib/warranty";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
 import { numeroOnull } from "@/lib/obra";
+import { conResumen, crearReclamo, type DatosReclamo } from "@/lib/warranty-claims";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
 export async function findClientContact(contactId: string) {
@@ -288,6 +289,10 @@ export async function getClientClaims(contactId: string) {
       id: true,
       status: true,
       description: true,
+      // Qué se reclamó (null en reclamos anteriores a octubre 2026). Las fotos
+      // no salen: son del cliente final y las evalúa Kristall, no el taller.
+      issueType: true,
+      affectedPanes: true,
       createdAt: true,
       installation: {
         select: { installationCode: true, status: true },
@@ -311,7 +316,8 @@ export async function createClientClaim(
     reporterName: string;
     reporterEmail: string;
     reporterPhone?: string;
-  }
+  },
+  extras?: DatosReclamo | null
 ): Promise<{ ok: true; id: string; status: string } | { ok: false; error: string; status: number }> {
   const installation = await prisma.warrantyInstallation.findFirst({
     where: {
@@ -336,8 +342,8 @@ export async function createClientClaim(
     };
   }
 
-  const claim = await prisma.warrantyClaim.create({
-    data: {
+  const claim = await crearReclamo(
+    {
       installationId: installation.id,
       description: data.description,
       reporterName: data.reporterName,
@@ -345,7 +351,9 @@ export async function createClientClaim(
       reporterPhone: data.reporterPhone ?? null,
       channel: "CLIENT_PORTAL_API",
     },
-  });
+    extras
+  );
+  if (!claim.ok) return claim;
 
   await notifyAdmins({
     type: "WARRANTY_CLAIM",
@@ -353,7 +361,7 @@ export async function createClientClaim(
     // además de la campanita. Ver la nota en notifyAdmins.
     email: true,
     title: "Nuevo reclamo de garantía (portal de clientes)",
-    message: `${data.reporterName} reportó un problema (${installation.installationCode})`,
+    message: conResumen(`${data.reporterName} reportó un problema (${installation.installationCode})`, extras),
     link: `/warranty-claims`,
   });
 

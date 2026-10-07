@@ -229,7 +229,7 @@ function nombreCategoria(c: ProductCategory): string {
 }
 
 /**
- * La cobertura, en las mismas tres líneas del diseño aprobado. El texto habla
+ * La cobertura, en las tres líneas del diseño aprobado (cuatro en arquitectura, por la rotura térmica). El texto habla
  * de «vehículo»; para láminas arquitectónicas se cambia por «superficie», que
  * es lo único que no aplica.
  */
@@ -238,6 +238,12 @@ function cobertura(categoria: ProductCategory): string {
   const filas: [boolean, string, string][] = [
     [true, "Defectos de fabricación", `burbujas, desprendimientos, cambios de color o pérdida de adhesión no atribuibles al uso normal ${usoNormal}.`],
     [true, "Degradación prematura", "pérdida de propiedades ópticas o térmicas dentro del período de garantía, bajo condiciones normales de uso."],
+    // Kristall cubre la rotura térmica (decidido en octubre 2026). Solo en
+    // arquitectura: en un auto no es algo que pueda causar la lámina. Se
+    // evalúa con el vidrio y el lado que quedaron registrados en la instalación.
+    ...(categoria === "ARCHITECTURAL"
+      ? [[true, "Rotura térmica del vidrio", "rotura del vidrio por estrés térmico originada en la lámina instalada, evaluada según el tipo de vidrio y la instalación registrados."] as [boolean, string, string]]
+      : []),
     [false, "No cubre", "daños causados por accidentes, vandalismo o daños físicos externos que no correspondan a defectos de fabricación del producto."],
   ];
   return `<div style="font-family:${F};font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${C.ink};padding:28px 0 14px 0;">Cobertura de la garantía</div>

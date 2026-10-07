@@ -4,6 +4,7 @@ import { createLogger } from "@/lib/logger";
 import { notifyAdmins } from "@/lib/notifications";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
+import { conResumen, crearReclamo, datosReclamoSchema } from "@/lib/warranty-claims";
 
 const log = createLogger("api/garantia/[token]/claim");
 
@@ -51,8 +52,19 @@ export async function POST(
       return NextResponse.json({ error: "Los datos no coinciden con los de la activación" }, { status: 403 });
     }
 
-    const claim = await prisma.warrantyClaim.create({
-      data: {
+
+    // Tipo de problema, paños y fotos. Opcionales; la regla del rubro la
+    // aplica crearReclamo().
+    const extras = datosReclamoSchema.safeParse(body);
+    if (!extras.success) {
+      return NextResponse.json(
+        { error: extras.error.issues[0]?.message ?? "Datos del reclamo inválidos" },
+        { status: 400 }
+      );
+    }
+
+    const claim = await crearReclamo(
+      {
         installationId: installation.id,
         description,
         reporterName,
@@ -60,7 +72,11 @@ export async function POST(
         reporterPhone: reporterPhone ?? null,
         channel: "INTERNAL",
       },
-    });
+      extras.data
+    );
+    if (!claim.ok) {
+      return NextResponse.json({ error: claim.error }, { status: claim.status });
+    }
 
     await notifyAdmins({
       type: "WARRANTY_CLAIM",
@@ -68,7 +84,7 @@ export async function POST(
       // además de la campanita. Ver la nota en notifyAdmins.
       email: true,
       title: "Nuevo reclamo de garantía",
-      message: `${reporterName} reportó un problema (${installation.installationCode})`,
+      message: conResumen(`${reporterName} reportó un problema (${installation.installationCode})`, extras.data),
       link: `/warranty-claims`,
     });
 

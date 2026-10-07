@@ -4,6 +4,7 @@ import { createLogger } from "@/lib/logger";
 import { notifyAdmins } from "@/lib/notifications";
 import { verifyWarrantyApiKey } from "@/lib/warranty-api-auth";
 import { isWarrantyClaimable } from "@/lib/warranty";
+import { conResumen, crearReclamo, datosReclamoSchema } from "@/lib/warranty-claims";
 
 const log = createLogger("api/public/warranty/claims");
 
@@ -100,8 +101,19 @@ export async function POST(request: Request) {
       }
     }
 
-    const claim = await prisma.warrantyClaim.create({
-      data: {
+
+    // Tipo de problema, paños y fotos. Opcionales; la regla del rubro la
+    // aplica crearReclamo().
+    const extras = datosReclamoSchema.safeParse(body);
+    if (!extras.success) {
+      return NextResponse.json(
+        { error: extras.error.issues[0]?.message ?? "Datos del reclamo inválidos" },
+        { status: 400 }
+      );
+    }
+
+    const claim = await crearReclamo(
+      {
         installationId: installation.id,
         description,
         reporterName,
@@ -109,7 +121,11 @@ export async function POST(request: Request) {
         reporterPhone: reporterPhone ?? null,
         channel: porCodigo ? "WARRANTY_PORTAL" : "PUBLIC_API",
       },
-    });
+      extras.data
+    );
+    if (!claim.ok) {
+      return NextResponse.json({ error: claim.error }, { status: claim.status });
+    }
 
     await notifyAdmins({
       type: "WARRANTY_CLAIM",
@@ -119,7 +135,7 @@ export async function POST(request: Request) {
       title: porCodigo
         ? "Nuevo reclamo de garantía (portal de garantías)"
         : "Nuevo reclamo de garantía (web pública)",
-      message: `${reporterName} reportó un problema (${installation.installationCode})`,
+      message: conResumen(`${reporterName} reportó un problema (${installation.installationCode})`, extras.data),
       link: `/warranty-claims`,
     });
 

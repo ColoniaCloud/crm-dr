@@ -1433,8 +1433,16 @@ model WarrantyClaim {
   assignedTo      User?                @relation(fields: [assignedToId], references: [id])
   resolutionNotes String?              @db.Text
   resolvedAt      DateTime?
+  /// Qué le pasó a la lámina. Null en los reclamos anteriores a octubre 2026,
+  /// que eran solo texto libre. `ROTURA_VIDRIO` solo se acepta en láminas de
+  /// arquitectura — ver src/lib/warranty-claims.ts.
+  issueType       ClaimIssueType?
+  /// Arquitectura: cuántos paños están afectados.
+  affectedPanes   Int?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+
+  photos WarrantyClaimPhoto[]
 
   @@map("warranty_claims")
 }
@@ -1444,6 +1452,34 @@ enum WarrantyClaimStatus {
   IN_REVIEW
   RESOLVED
   REJECTED
+}
+
+/// MySQL guarda los ENUM por posición: un valor nuevo va AL FINAL.
+enum ClaimIssueType {
+  BURBUJAS
+  DESPEGUE
+  DECOLORACION
+  /// Rotura del vidrio por estrés térmico. Cubierta por Kristall; se evalúa
+  /// con el vidrio y el lado registrados en la instalación.
+  ROTURA_VIDRIO
+  OTRO
+}
+
+/// Foto que acompaña un reclamo, en base64 sin el prefijo `data:`.
+///
+/// Se guarda en la base como la foto de los pedidos de turno, ya achicada del
+/// lado del navegador. **No se sirve públicamente**: es la casa o el auto de
+/// una persona. Solo la ve un ADMIN+ en el Centro de Garantías.
+model WarrantyClaimPhoto {
+  id        String        @id @default(cuid())
+  claimId   String
+  claim     WarrantyClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  data      String        @db.LongText
+  mimeType  String
+  createdAt DateTime      @default(now())
+
+  @@index([claimId])
+  @@map("warranty_claim_photos")
 }
 
 model WarrantyApiClient {
