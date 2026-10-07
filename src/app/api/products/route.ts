@@ -54,6 +54,16 @@ export async function GET(request: Request) {
   }
 }
 
+
+/**
+ * El tope de instalaciones que se guarda. Vacío o inválido = null = sin
+ * límite (ver limiteDeInstalaciones en warranty.ts).
+ */
+function topeAGuardar(valor: unknown): number | null {
+  const n = Number(valor);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -76,7 +86,7 @@ export async function POST(request: Request) {
             productId: created.id,
             rollWarrantyMonths: warrantyConfig.rollWarrantyMonths,
             installWarrantyMonths: warrantyConfig.installWarrantyMonths,
-            maxInstallations: warrantyConfig.maxInstallations,
+            maxInstallations: topeAGuardar(warrantyConfig.maxInstallations),
           },
         });
 

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { addMonths } from "date-fns";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, ProductCategory } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { columnasObra, numeroOnull, recortarDireccion, type ColumnasObra, type DatosObra } from "@/lib/obra";
@@ -378,6 +378,23 @@ export async function transferRollLocation(
 }
 
 const DEFAULT_MAX_INSTALLATIONS = 15;
+
+/**
+ * Cuántas instalaciones (sub-códigos) admite un rollo.
+ *
+ * - `maxInstallations: null` en la config: sin límite (el operador lo dejó vacío).
+ * - Sin config: 15, como siempre.
+ *
+ * Arquitectura va a pasar a controlarse por m² (lo que queda en el rollo) en
+ * vez de por cantidad de cortes; mientras tanto vale el mismo tope que el resto.
+ */
+export function limiteDeInstalaciones(product: {
+  category: ProductCategory;
+  warrantyConfig: { maxInstallations: number | null } | null;
+}): number {
+  if (!product.warrantyConfig) return DEFAULT_MAX_INSTALLATIONS;
+  return product.warrantyConfig.maxInstallations ?? Infinity;
+}
 /**
  * Meses de garantia cuando el producto no tiene `warrantyConfig`.
  *
@@ -462,7 +479,7 @@ export async function createAdditionalInstallation(
       return { ok: false as const, error: "Este rollo ya no admite más instalaciones", status: 400 };
     }
 
-    const maxInstallations = roll.product.warrantyConfig?.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
+    const maxInstallations = limiteDeInstalaciones(roll.product);
     const nextNumber = roll.installations.length + 1;
 
     // **El rubro no se pregunta: se deriva del producto del rollo.**
@@ -664,7 +681,7 @@ export async function allocateInstallationTx(
           status: true,
         },
       },
-      product: { select: { warrantyConfig: { select: { maxInstallations: true } } } },
+      product: { select: { category: true, warrantyConfig: { select: { maxInstallations: true } } } },
     },
   });
   if (!roll || roll.status === "VOIDED") return null;
@@ -678,7 +695,7 @@ export async function allocateInstallationTx(
     };
   }
 
-  const maxInstallations = roll.product.warrantyConfig?.maxInstallations ?? DEFAULT_MAX_INSTALLATIONS;
+  const maxInstallations = limiteDeInstalaciones(roll.product);
   const nextNumber = roll.installations.length + 1;
   if (nextNumber > maxInstallations) {
     await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });

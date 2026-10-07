@@ -1301,7 +1301,9 @@ model WarrantyConfig {
   warrantyEnabled       Boolean  @default(true)
   rollWarrantyMonths    Int      @default(24)
   installWarrantyMonths Int      @default(12)
-  maxInstallations      Int      @default(15)
+  /// Tope de instalaciones (sub-códigos) por rollo. **Null = sin límite.**
+  /// La regla vive en limiteDeInstalaciones() de src/lib/warranty.ts.
+  maxInstallations      Int?     @default(15)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

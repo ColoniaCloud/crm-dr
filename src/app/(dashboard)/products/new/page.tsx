@@ -36,6 +36,9 @@ const SUBCATEGORIES: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
+/** Valor del select para «no aplica»: Radix no acepta "" como valor de un ítem. */
+const SIN_TONALIDAD = "__sin_tonalidad__";
+
 const SHADE_OPTIONS = Array.from({ length: 15 }, (_, i) => {
   const val = String((i + 1) * 5).padStart(2, "0");
   return { value: val, label: `${val}%` };
@@ -184,7 +187,8 @@ export default function NewProductPage() {
             ? {
                 rollWarrantyMonths: parseInt(form.rollWarrantyMonths) || 24,
                 installWarrantyMonths: parseInt(form.installWarrantyMonths) || 12,
-                maxInstallations: parseInt(form.maxInstallations) || 15,
+                // Vacío = sin límite.
+                maxInstallations: parseInt(form.maxInstallations) || null,
               }
             : null,
         }),
@@ -268,13 +272,20 @@ export default function NewProductPage() {
             {/* Tonalidad + Marca */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Tonalidad {isPPF && <span className="text-muted-foreground text-xs">(manual)</span>}</Label>
+                <Label>Tonalidad (VLT) {isPPF && <span className="text-muted-foreground text-xs">(manual)</span>}</Label>
                 {isPPF ? (
                   <Input value={form.shade} onChange={(e) => setForm({ ...form, shade: e.target.value })} placeholder="Ej: Gloss, Matte..." />
                 ) : (
-                  <Select value={form.shade || undefined} onValueChange={(v) => setForm({ ...form, shade: v })}>
+                  <Select
+                    value={form.shade || SIN_TONALIDAD}
+                    onValueChange={(v) => setForm({ ...form, shade: v === SIN_TONALIDAD ? "" : v })}
+                  >
                     <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                     <SelectContent>
+                      {/* No todas las láminas tienen VLT: una decorativa o una
+                          esmerilada no se miden así. Sin esta opción, una vez
+                          elegido un tono no había forma de volver a dejarlo vacío. */}
+                      <SelectItem value={SIN_TONALIDAD}>Sin tonalidad / no aplica</SelectItem>
                       {SHADE_OPTIONS.map((s) => (
                         <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
@@ -347,7 +358,13 @@ export default function NewProductPage() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Máx. instalaciones por rollo</Label>
-                    <Input type="number" min="1" value={form.maxInstallations} onChange={(e) => setForm({ ...form, maxInstallations: e.target.value })} />
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="Sin límite"
+                      value={form.maxInstallations}
+                      onChange={(e) => setForm({ ...form, maxInstallations: e.target.value })}
+                    />
                   </div>
                 </div>
               )}

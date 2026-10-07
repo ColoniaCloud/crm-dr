@@ -87,10 +87,18 @@ function RemitosPageInner() {
     setSigningId(remito.id);
     try {
       const res = await fetch(`/api/remitos/${remito.id}/sign`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
         alert(data.error || "Error al firmar remito");
         return;
+      }
+      // Si la venta estaba pendiente, la firma la confirmó: un producto con
+      // garantía puede haberse quedado sin rollo, y eso hay que avisarlo.
+      if (Array.isArray(data.sinRollo) && data.sinRollo.length > 0) {
+        alert(
+          `Remito firmado, pero estos productos quedaron sin rollo de garantía: ${data.sinRollo.join(", ")}. ` +
+            "El cliente no los va a ver en su Stock hasta que se cargue un rollo."
+        );
       }
       setRemitos((prev) =>
         prev.map((r) =>
