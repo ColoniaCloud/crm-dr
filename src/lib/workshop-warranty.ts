@@ -6,6 +6,7 @@ import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { activateInstallationWarrantyTx, allocateInstallationTx } from "@/lib/warranty";
 import { renderCertificado, type DatosCertificado } from "@/lib/mail-garantia";
 import { cargarDatosCertificado } from "@/lib/warranty-activation-email";
+import { numeroOnull } from "@/lib/obra";
 
 const log = createLogger("lib/workshop-warranty");
 
@@ -75,7 +76,21 @@ export async function generarGarantiasDeOrden(
       warrantyInstallationId: true,
       contactId: true,
       workshopClient: { select: { name: true, email: true, phone: true, dni: true } },
-      asset: { select: { type: true, identifier: true, brand: true, model: true, year: true } },
+      asset: {
+        select: {
+          type: true,
+          identifier: true,
+          brand: true,
+          model: true,
+          year: true,
+          siteAddress: true,
+          areaM2: true,
+          paneCount: true,
+          glassType: true,
+          filmSide: true,
+          buildingUse: true,
+        },
+      },
       items: { select: { rollId: true, squareMetersUsed: true } },
     },
   });
@@ -114,13 +129,13 @@ export async function generarGarantiasDeOrden(
     notes: `Orden de trabajo #${order.orderNumber}${order.notes ? ` — ${order.notes}` : ""}`,
   };
 
-  for (const [rollId] of rollosOrdenados) {
+  for (const [rollId, m2DelRollo] of rollosOrdenados) {
     const roll = await tx.warrantyRoll.findFirst({
       // Se revalida la propiedad acá también: la línea se validó al crearse,
       // pero entre eso y ahora pudo pasar cualquier cosa, y esta función activa
       // garantías. Barato y evita depender de una validación de otro momento.
       where: { id: rollId, saleItem: { sale: { contactId: order.contactId } } },
-      select: { id: true, fullRollCode: true },
+      select: { id: true, fullRollCode: true, product: { select: { category: true } } },
     });
     if (!roll) {
       resultado.problemas.push({ fullRollCode: rollId, motivo: "El rollo ya no figura como tuyo" });
@@ -136,7 +151,31 @@ export async function generarGarantiasDeOrden(
       continue;
     }
 
-    const { expiresAt } = await activateInstallationWarrantyTx(tx, slot.id, datosBase);
+    // Una lámina de arquitectura no va sobre un auto, aunque el activo de la OT
+    // diga VEHICLE: es el default de `WorkshopAsset.type`, y un alta rápida lo
+    // deja así sin que nadie lo haya elegido. Ahí manda el producto del rollo.
+    const esArquitectura = roll.product.category === "ARCHITECTURAL";
+    const datos = {
+      ...datosBase,
+      ...(esArquitectura && datosBase.assetType === "VEHICLE" ? { assetType: "BUILDING" as const } : {}),
+      // Los datos de obra viajan del activo a la garantía. Si el taller no
+      // cargó la superficie, se usa lo que declaró haber puesto de ESTE rollo:
+      // cada rollo genera su propia garantía, y cada una cubre lo suyo.
+      // activateInstallationWarrantyTx los descarta si el rollo no es de
+      // arquitectura.
+      obra: order.asset
+        ? {
+            siteAddress: order.asset.siteAddress,
+            areaM2: numeroOnull(order.asset.areaM2) ?? (m2DelRollo > 0 ? m2DelRollo : null),
+            paneCount: order.asset.paneCount,
+            glassType: order.asset.glassType,
+            filmSide: order.asset.filmSide,
+            buildingUse: order.asset.buildingUse,
+          }
+        : { areaM2: m2DelRollo > 0 ? m2DelRollo : null },
+    };
+
+    const { expiresAt } = await activateInstallationWarrantyTx(tx, slot.id, datos);
     resultado.generadas.push({
       installationId: slot.id,
       installationCode: slot.installationCode,

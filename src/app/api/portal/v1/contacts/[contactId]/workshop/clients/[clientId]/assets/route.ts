@@ -4,6 +4,7 @@ import { requireWorkshopAccess } from "@/lib/workshop-auth";
 import { validateBody } from "@/lib/api-validation";
 import { listWorkshopAssets, createWorkshopAsset } from "@/lib/workshop";
 import { createLogger } from "@/lib/logger";
+import { datosObraSchema } from "@/lib/obra";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/workshop/clients/[clientId]/assets");
 
@@ -38,7 +39,9 @@ const assetSchema = z.object({
   year: z.number().int().min(1900).max(2100).nullish(),
   color: z.string().trim().max(191).nullish(),
   notes: z.string().max(5000).nullish(),
-});
+  // Direccion, m2, panos, vidrio, lado y uso. Solo se guardan si el activo es
+  // WINDOW o BUILDING — ver createWorkshopAsset.
+}).extend(datosObraSchema.shape);
 
 export async function POST(request: Request, { params }: Params) {
   const { contactId, clientId } = await params;

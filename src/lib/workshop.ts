@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import type { Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
+import type { BuildingUse, Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
+import { columnasObra, type DatosObra } from "@/lib/obra";
 import { createLogger } from "@/lib/logger";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { workshopHeroPath } from "@/lib/workshop-hero";
@@ -66,6 +67,13 @@ const ASSET_SELECT = {
   model: true,
   year: true,
   color: true,
+  // Datos de obra: solo en activos de arquitectura (WINDOW/BUILDING).
+  siteAddress: true,
+  areaM2: true,
+  paneCount: true,
+  glassType: true,
+  filmSide: true,
+  buildingUse: true,
   notes: true,
   createdAt: true,
 } satisfies Prisma.WorkshopAssetSelect;
@@ -230,7 +238,7 @@ export async function listWorkshopAssets(contactId: string, clientId: string) {
   });
 }
 
-export interface WorkshopAssetInput {
+export interface WorkshopAssetInput extends DatosObra {
   type?: "VEHICLE" | "WINDOW" | "BUILDING" | "OTHER";
   identifier?: string | null;
   brand?: string | null;
@@ -251,8 +259,16 @@ export async function createWorkshopAsset(
   });
   if (!client) return null;
 
+  // Los datos de obra solo se guardan en un inmueble o una ventana: un auto
+  // con dirección de obra sería una ficha que se contradice.
+  const esObra = data.type === "WINDOW" || data.type === "BUILDING";
+  const { siteAddress, areaM2, paneCount, glassType, filmSide, buildingUse, ...resto } = data;
   return prisma.workshopAsset.create({
-    data: { workshopClientId: clientId, ...data },
+    data: {
+      workshopClientId: clientId,
+      ...resto,
+      ...columnasObra({ siteAddress, areaM2, paneCount, glassType, filmSide, buildingUse }, esObra),
+    },
     select: ASSET_SELECT,
   });
 }
@@ -1729,6 +1745,12 @@ export async function confirmBooking(
             type: "BUILDING",
             // La direccion ES como el taller lo va a reconocer en su lista.
             identifier: booking.siteAddress,
+            // Y es tambien la direccion de la obra que va a figurar en la
+            // garantia. Los m2 y los vidrios del pedido NO se copian: son lo que
+            // el cliente estimo antes de la visita, y en la garantia tiene que
+            // quedar lo que se midio. Siguen en `notes`.
+            siteAddress: booking.siteAddress,
+            buildingUse: usoDelInmueble(booking.propertyType),
             notes: descripcionDelInmueble(booking),
           },
           select: { id: true },
@@ -1788,6 +1810,17 @@ export async function confirmBooking(
  * Se arma con lo que haya: el cliente contesta lo que sabe, y una ficha que
  * dice "12 vidrios" sin metros es mas util que una que dice "12 vidrios, — m2".
  */
+/**
+ * Del tipo de inmueble del pedido al uso de la garantia. EDIFICIO y OTRO
+ * quedan sin dato: un edificio puede ser de departamentos o de oficinas, y
+ * adivinar es peor que preguntar despues.
+ */
+function usoDelInmueble(propertyType: string | null): BuildingUse | null {
+  if (propertyType === "CASA") return "RESIDENTIAL";
+  if (propertyType === "OFICINA" || propertyType === "LOCAL") return "COMMERCIAL";
+  return null;
+}
+
 function descripcionDelInmueble(b: {
   propertyType: string | null;
   glassCount: number | null;

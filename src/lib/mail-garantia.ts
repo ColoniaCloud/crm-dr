@@ -1,4 +1,5 @@
-import type { AssetType, ProductCategory } from "@prisma/client";
+import type { AssetType, FilmSide, GlassType, ProductCategory } from "@prisma/client";
+import { describirSuperficie, FILM_SIDE_LABELS, GLASS_TYPE_LABELS } from "@/lib/obra";
 import { escapeHtml } from "@/lib/notifications";
 import { portalBaseUrl } from "@/lib/portal-tokens";
 import { BRAND } from "@/lib/brand";
@@ -265,6 +266,15 @@ export interface DatosCertificado {
   /** «Renault Clio 2026», o la superficie si no es un vehículo. */
   assetDescription: string | null;
   plate: string | null;
+  /**
+   * Datos de obra (arquitectura). La dirección va COMPLETA: este mail le llega
+   * al titular, no es un link que se reenvía. Ver recortarDireccion en obra.ts.
+   */
+  siteAddress: string | null;
+  areaM2: number | null;
+  paneCount: number | null;
+  glassType: GlassType | null;
+  filmSide: FilmSide | null;
   installedAt: Date | null;
   /** Cuándo quedó registrada. Sin dato se toma el momento del envío. */
   activatedAt: Date | null;
@@ -284,20 +294,50 @@ export interface DatosCertificado {
  */
 export type BotonCertificado = "activacion" | "taller";
 
+/**
+ * Si el certificado habla de un vehículo o de una propiedad.
+ *
+ * Manda el rubro del producto, no `assetType`: una lámina de arquitectura no
+ * va sobre un auto aunque la instalación haya quedado sin tipo —o con
+ * `VEHICLE`, que es el default de `WorkshopAsset.type`—. Antes un trabajo de
+ * arquitectura sin tipo cargado recibía «en tu vehículo». En automotriz y PPF
+ * se respeta lo que se cargó, y sin dato se asume vehículo.
+ */
+function esTrabajoEnVehiculo(d: DatosCertificado): boolean {
+  if (d.categoria === "ARCHITECTURAL") return false;
+  return d.assetType === "VEHICLE" || d.assetType === null;
+}
+
 function tarjeta(d: DatosCertificado): string {
   const anios = d.meses % 12 === 0 ? d.meses / 12 : null;
   const numero = anios ?? d.meses;
   const unidad = anios === null ? "meses de garantía" : anios === 1 ? "año de garantía" : "años de garantía";
-  const esVehiculo = d.assetType === "VEHICLE" || (d.assetType === null && Boolean(d.plate));
+  const esVehiculo = esTrabajoEnVehiculo(d);
   const tipoNombre: Record<AssetType, string> = { VEHICLE: "Vehículo", WINDOW: "Ventana", BUILDING: "Edificio", OTHER: "Otro" };
   const guion = "&mdash;";
 
+  const esObra = d.categoria === "ARCHITECTURAL";
+  const superficie = describirSuperficie(d.areaM2, d.paneCount);
+
+  // Arquitectura: la obra se reconoce por la dirección, como un auto por la
+  // patente. Sin dirección cargada se cae a la descripción libre.
   const celda1 = esVehiculo
     ? dato("Vehículo", d.assetDescription ? escapeHtml(d.assetDescription) : guion)
-    : dato("Instalado en", d.assetDescription ? escapeHtml(d.assetDescription) : guion);
+    : esObra
+      ? dato("Dirección de la obra", escapeHtml(d.siteAddress ?? d.assetDescription ?? "") || guion)
+      : dato("Instalado en", d.assetDescription ? escapeHtml(d.assetDescription) : guion);
   const celda2 = esVehiculo
     ? dato("Patente", d.plate ? escapeHtml(d.plate) : guion)
-    : dato("Tipo", d.assetType ? tipoNombre[d.assetType] : guion);
+    : esObra && superficie
+      ? dato("Superficie", escapeHtml(superficie))
+      : dato("Tipo", d.assetType ? tipoNombre[d.assetType] : guion);
+  // Vidrio y lado solo si hay alguno de los dos: una fila de guiones en cada
+  // certificado de arquitectura viejo sería ruido.
+  const filaVidrio =
+    esObra && (d.glassType || d.filmSide)
+      ? `<tr><td class="stack" width="50%" style="vertical-align:top;padding-top:16px;">${dato("Vidrio", d.glassType ? GLASS_TYPE_LABELS[d.glassType] : guion)}</td>
+          <td class="stack" width="50%" style="vertical-align:top;padding-top:16px;">${dato("Lámina del lado", d.filmSide ? FILM_SIDE_LABELS[d.filmSide] : guion)}</td></tr>`
+      : "";
   const fecha = d.installedAt ?? d.activatedAt;
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.black};border-radius:10px;">
@@ -319,6 +359,7 @@ function tarjeta(d: DatosCertificado): string {
           <td class="stack" width="50%" style="vertical-align:top;padding-bottom:16px;">${celda2}</td></tr>
       <tr><td class="stack" width="50%" style="vertical-align:top;">${dato("Fecha de instalación", fecha ? fechaCorta(fecha) : guion)}</td>
           <td class="stack" width="50%" style="vertical-align:top;">${dato("Lugar de instalación", escapeHtml(d.taller.nombre))}</td></tr>
+      ${filaVidrio}
     </table>
     <div style="height:1px;background:${C.dDiv};margin:16px 0;font-size:0;line-height:0;"></div>
     ${dato("Producto instalado", `<span style="font-size:13px;font-weight:500;color:#FFFFFF;letter-spacing:.03em;">${escapeHtml(d.producto)}</span>`)}
@@ -333,7 +374,7 @@ export function renderCertificado(d: DatosCertificado, boton: BotonCertificado):
   const registrada = d.activatedAt ?? new Date();
   const linkGarantia = `${portalBaseUrl()}/garantia/${encodeURIComponent(d.activationToken)}`;
   const linkReclamo = `${linkGarantia}/reclamo`;
-  const enDonde = d.assetType === "VEHICLE" || d.assetType === null ? "en tu vehículo" : "en tu propiedad";
+  const enDonde = esTrabajoEnVehiculo(d) ? "en tu vehículo" : "en tu propiedad";
 
   const cta =
     boton === "taller"

@@ -5,6 +5,7 @@ import { notifyAdmins } from "@/lib/notifications";
 import { getClientBalance } from "@/lib/account";
 import { isWarrantyClaimable } from "@/lib/warranty";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
+import { numeroOnull } from "@/lib/obra";
 
 /** Contacts of type CLIENT are the only ones exposed to the portal API. */
 export async function findClientContact(contactId: string) {
@@ -238,7 +239,7 @@ export async function getResellerStock(contactId: string) {
  * installerName, notes — straight into the portal's HTML.
  */
 export async function getClientInstallations(contactId: string) {
-  return prisma.warrantyInstallation.findMany({
+  const installations = await prisma.warrantyInstallation.findMany({
     where: { roll: { saleItem: { sale: { contactId } } } },
     select: {
       id: true,
@@ -246,17 +247,30 @@ export async function getClientInstallations(contactId: string) {
       status: true,
       assetType: true,
       assetDescription: true,
+      // Datos de obra (arquitectura). La dirección va COMPLETA: el que pregunta
+      // es el taller que hizo el trabajo, no un link reenviado. Ver
+      // obraPublica() en warranty.ts para la versión recortada.
+      siteAddress: true,
+      areaM2: true,
+      paneCount: true,
+      glassType: true,
+      filmSide: true,
+      buildingUse: true,
       activatedAt: true,
       expiresAt: true,
       roll: {
         select: {
           fullRollCode: true,
-          product: { select: { id: true, name: true, sku: true } },
+          // `category` para que el portal sepa qué ficha dibujar sin adivinar
+          // por qué campos vienen llenos.
+          product: { select: { id: true, name: true, sku: true, category: true } },
         },
       },
     },
     orderBy: { createdAt: "desc" },
   });
+  // Decimal se serializa como string; afuera viaja como número.
+  return installations.map((i) => ({ ...i, areaM2: numeroOnull(i.areaM2) }));
 }
 
 /**

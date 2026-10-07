@@ -17,6 +17,16 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { RollsByLocation } from "@/components/warranty/rolls-by-location";
 
+interface InstallationMatch {
+  id: string;
+  installationCode: string;
+  status: string;
+  siteAddress: string | null;
+  plate: string | null;
+  clientName: string | null;
+  roll: { fullRollCode: string; product: { name: string; category: string } };
+}
+
 interface Claim {
   id: string;
   status: "OPEN" | "IN_REVIEW" | "RESOLVED" | "REJECTED";
@@ -84,6 +94,7 @@ export default function WarrantyClaimsPage() {
   const [roll, setRoll] = useState<RollTrace | null>(null);
   const [rollError, setRollError] = useState("");
   const [searching, setSearching] = useState(false);
+  const [matches, setMatches] = useState<InstallationMatch[]>([]);
 
   const fetchClaims = async () => {
     setLoading(true);
@@ -116,14 +127,31 @@ export default function WarrantyClaimsPage() {
     }
   };
 
+  const openRoll = async (fullRollCode: string) => {
+    const res = await fetch(`/api/warranty-rolls/${encodeURIComponent(fullRollCode)}`);
+    if (res.ok) setRoll(await res.json());
+    else setRollError("Código no encontrado");
+  };
+
+  // Un código abre el rollo directo (el de una instalación, «...-R003-I2», se
+  // recorta al del rollo). Cualquier otra cosa se busca como dirección de obra
+  // o patente: es lo que la gente tiene a mano cuando llama.
   const searchRoll = async () => {
-    if (!code.trim()) return;
+    const term = code.trim();
+    if (!term) return;
     setSearching(true);
     setRollError("");
     setRoll(null);
-    const res = await fetch(`/api/warranty-rolls/${encodeURIComponent(code.trim())}`);
-    if (res.ok) setRoll(await res.json());
-    else setRollError("Código no encontrado");
+    setMatches([]);
+    if (/^LOT-/i.test(term)) {
+      await openRoll(term.toUpperCase().replace(/-I\d+$/, ""));
+    } else {
+      const res = await fetch(`/api/warranty-installations/search?q=${encodeURIComponent(term)}`);
+      const found: InstallationMatch[] = res.ok ? await res.json() : [];
+      if (found.length === 1) await openRoll(found[0].roll.fullRollCode);
+      else if (found.length > 1) setMatches(found);
+      else setRollError("No hay instalaciones con esa dirección, patente o código");
+    }
     setSearching(false);
   };
 
@@ -159,14 +187,13 @@ export default function WarrantyClaimsPage() {
       {/* Buscador de código de rollo */}
       <Card>
         <CardContent className="p-4 space-y-3">
-          <Label>Buscar por código de rollo</Label>
+          <Label>Buscar por código, dirección de obra o patente</Label>
           <div className="flex gap-2">
             <Input
-              placeholder="Ej. LOT-20260705-0001-R003"
+              placeholder="Ej. LOT-20260705-0001-R003, Av. Córdoba 1850, AB123CD"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && searchRoll()}
-              className="font-mono"
             />
             <Button onClick={searchRoll} disabled={searching}>
               <Search className="h-4 w-4 mr-2" />
@@ -174,6 +201,30 @@ export default function WarrantyClaimsPage() {
             </Button>
           </div>
           {rollError && <p className="text-sm text-destructive">{rollError}</p>}
+          {matches.length > 0 && (
+            <div className="rounded-lg border divide-y text-sm">
+              {matches.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted/50"
+                  onClick={() => {
+                    setMatches([]);
+                    openRoll(m.roll.fullRollCode);
+                  }}
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{m.siteAddress ?? m.plate ?? m.installationCode}</p>
+                    <p className="text-muted-foreground text-xs truncate">
+                      <span className="font-mono">{m.installationCode}</span> · {m.roll.product.name}
+                      {m.clientName ? ` · ${m.clientName}` : ""}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          )}
           {roll && (
             <div className="rounded-lg border p-3 space-y-2 text-sm">
               <div className="flex items-center justify-between">

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { activateInstallationWarranty } from "@/lib/warranty";
+import { datosObraSchema } from "@/lib/obra";
 import { notifyWarrantyActivated } from "@/lib/client-portal";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
@@ -42,6 +43,13 @@ export async function POST(
       return NextResponse.json({ error: "assetType, clientName y clientEmail son requeridos" }, { status: 400 });
     }
 
+    // Datos de obra, solo para láminas de arquitectura (el rollo decide, no el
+    // body). Lo que ya precargó el taller no se pisa — ver ActivateWarrantyData.
+    const obra = datosObraSchema.safeParse(body);
+    if (!obra.success) {
+      return NextResponse.json({ error: "Datos de la obra inválidos" }, { status: 400 });
+    }
+
     const { expiresAt } = await activateInstallationWarranty(installation.id, {
       assetType,
       assetDescription,
@@ -52,6 +60,7 @@ export async function POST(
       installedAt: installedAt ? new Date(installedAt) : undefined,
       installerName,
       notes,
+      obra: obra.data,
     });
     await notifyWarrantyActivated(installation.id);
 

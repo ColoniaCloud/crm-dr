@@ -5,6 +5,7 @@ import { addMonths } from "date-fns";
 import type { Prisma } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { workshopLogoPath } from "@/lib/workshop-logo";
+import { columnasObra, numeroOnull, recortarDireccion, type ColumnasObra, type DatosObra } from "@/lib/obra";
 
 type Tx = Prisma.TransactionClient;
 
@@ -171,6 +172,13 @@ const ROLL_TRACE_INCLUDE = {
       clientDni: true,
       assetType: true,
       assetDescription: true,
+      // Datos de obra (arquitectura), completos: esto es trazabilidad interna.
+      siteAddress: true,
+      areaM2: true,
+      paneCount: true,
+      glassType: true,
+      filmSide: true,
+      buildingUse: true,
       installerName: true,
       activatedAt: true,
       expiresAt: true,
@@ -403,7 +411,7 @@ function limpiar(v: string | null | undefined): string | null {
   return t ? t : null;
 }
 
-export interface DatosPrecargados {
+export interface DatosPrecargados extends DatosObra {
   clientName?: string | null;
   clientEmail?: string | null;
   clientPhone?: string | null;
@@ -418,6 +426,8 @@ export interface DatosPrecargados {
    * instalador lo nombra a su manera.
    */
   assetDescription?: string | null;
+  // Más los datos de obra de DatosObra (dirección, m², paños, vidrio, lado,
+  // uso): solo se guardan si el rollo es de arquitectura.
 }
 
 export async function createAdditionalInstallation(
@@ -490,6 +500,7 @@ export async function createAdditionalInstallation(
         // Si el rubro ya esta decidido, no tiene sentido volver a preguntarlo en
         // la pantalla de activacion.
         assetType: esArquitectura ? "BUILDING" : datos.vehicleType ? "VEHICLE" : null,
+        ...columnasObra(datos, esArquitectura),
       },
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
     });
@@ -536,6 +547,13 @@ export interface ActivateWarrantyData {
   installedAt?: Date | null;
   installerName?: string | null;
   notes?: string | null;
+  /**
+   * Datos de obra. Solo se guardan si el rollo es de arquitectura, y **no
+   * pisan lo que ya precargó el taller**: quien tuvo la obra adelante sabe el
+   * vidrio y los paños mejor que quien activa desde el celular. El cliente
+   * solo completa lo que quedó vacío.
+   */
+  obra?: DatosObra | null;
 }
 
 /**
@@ -568,6 +586,16 @@ export async function activateInstallationWarrantyTx(
   const months =
     installation.roll.product.warrantyConfig?.installWarrantyMonths ?? DEFAULT_INSTALL_MONTHS;
   const activatedAt = new Date();
+
+  const nuevos = columnasObra(data.obra, installation.roll.product.category === "ARCHITECTURAL");
+  const obra: ColumnasObra = {
+    siteAddress: installation.siteAddress ?? nuevos.siteAddress,
+    areaM2: numeroOnull(installation.areaM2) ?? nuevos.areaM2,
+    paneCount: installation.paneCount ?? nuevos.paneCount,
+    glassType: installation.glassType ?? nuevos.glassType,
+    filmSide: installation.filmSide ?? nuevos.filmSide,
+    buildingUse: installation.buildingUse ?? nuevos.buildingUse,
+  };
   const expiresAt = addMonths(activatedAt, months);
 
   await tx.warrantyInstallation.update({
@@ -582,6 +610,7 @@ export async function activateInstallationWarrantyTx(
       installedAt: data.installedAt ?? null,
       installerName: data.installerName ?? null,
       notes: data.notes ?? null,
+      ...obra,
       activatedAt,
       expiresAt,
       status: "ACTIVE",
@@ -762,6 +791,14 @@ export async function verifyWarranty(activationToken: string) {
     assetDescription: installation.assetDescription,
     vehicleType: installation.vehicleType,
     plate: installation.plate,
+    // Datos de obra (arquitectura). La dirección sale completa de acá: recortarla
+    // es trabajo de las proyecciones, no de esta función.
+    siteAddress: installation.siteAddress,
+    areaM2: numeroOnull(installation.areaM2),
+    paneCount: installation.paneCount,
+    glassType: installation.glassType,
+    filmSide: installation.filmSide,
+    buildingUse: installation.buildingUse,
     // Cuánto va a durar la garantía cuando se active. `expiresAt` todavía es
     // null mientras está PENDING, así que sin esto no hay forma de decirle a la
     // persona cuánto dura ANTES de activarla.
@@ -840,10 +877,33 @@ export function pickPublicStatus(warranty: WarrantyStatus) {
     vehicleType: warranty.vehicleType,
     plate: warranty.plate,
     clientEmail: warranty.clientEmail,
+    ...obraPublica(warranty),
     // Cuánto dura la garantía una vez activada. Antes solo salía `expiresAt`,
     // que en una garantía PENDING todavía es null — o sea que no había forma de
     // decirle a la persona cuánto va a durar ANTES de activarla.
     warrantyMonths: warranty.warrantyMonths,
+  };
+}
+
+/**
+ * Los datos de obra que pueden salir por un link de garantía.
+ *
+ * **La dirección va recortada** (sin altura, piso ni unidad — ver
+ * recortarDireccion). El link se reenvía, y GET /api/public/warranty/:token se
+ * puede leer desde cualquier navegador: alcanza con «Av. Siempreviva,
+ * Springfield» para que la persona reconozca su obra. La completa la ven el
+ * taller (portal), el CRM y el certificado que se le manda por mail al titular.
+ *
+ * El resto no es dato personal: cuánto se laminó y sobre qué vidrio.
+ */
+function obraPublica(warranty: WarrantyStatus) {
+  return {
+    siteAddress: recortarDireccion(warranty.siteAddress),
+    areaM2: warranty.areaM2,
+    paneCount: warranty.paneCount,
+    glassType: warranty.glassType,
+    filmSide: warranty.filmSide,
+    buildingUse: warranty.buildingUse,
   };
 }
 
@@ -867,6 +927,7 @@ export function pickOwnStatus(warranty: WarrantyStatus) {
     fullRollCode: warranty.fullRollCode,
     assetType: warranty.assetType,
     assetDescription: warranty.assetDescription,
+    ...obraPublica(warranty),
     clientName: warranty.clientName,
     installedAt: warranty.installedAt,
     activatedAt: warranty.activatedAt,

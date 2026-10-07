@@ -37,6 +37,8 @@ import { CreditTierCard } from "@/components/clients/credit-tier-card";
 import { DiscountTagCard } from "@/components/clients/discount-tag-card";
 import { ProductDiscountsCard } from "@/components/clients/product-discounts-card";
 import { ClientAccountStatement } from "@/components/clients/client-account-statement";
+import type { BuildingUse, FilmSide, GlassType } from "@prisma/client";
+import { BUILDING_USE_LABELS, describirSuperficie, FILM_SIDE_LABELS, GLASS_TYPE_LABELS } from "@/lib/obra";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
   ssr: false,
@@ -102,6 +104,13 @@ interface WarrantyInstallationSummary {
   clientDni: string | null;
   assetType: string;
   assetDescription: string;
+  /** Datos de obra: solo en láminas de arquitectura. `areaM2` llega como string (Decimal). */
+  siteAddress: string | null;
+  areaM2: string | number | null;
+  paneCount: number | null;
+  glassType: GlassType | null;
+  filmSide: FilmSide | null;
+  buildingUse: BuildingUse | null;
   installerName: string | null;
   activatedAt: string;
   expiresAt: string;
@@ -965,10 +974,42 @@ export default function ClientDetailPage() {
                       : "Inmueble / superficie"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground text-xs mb-1">Descripción</p>
-                  <p className="font-medium">{selectedInstallation.assetDescription}</p>
-                </div>
+                {selectedInstallation.siteAddress && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Dirección de la obra</p>
+                    <p className="font-medium">{selectedInstallation.siteAddress}</p>
+                  </div>
+                )}
+                {(() => {
+                  const i = selectedInstallation;
+                  const superficie = describirSuperficie(
+                    i.areaM2 != null ? Number(i.areaM2) : null,
+                    i.paneCount
+                  );
+                  const filas: [string, string][] = [
+                    ...(superficie ? [["Superficie", superficie] as [string, string]] : []),
+                    ...(i.glassType ? [["Vidrio", GLASS_TYPE_LABELS[i.glassType]] as [string, string]] : []),
+                    ...(i.filmSide ? [["Lámina del lado", FILM_SIDE_LABELS[i.filmSide]] as [string, string]] : []),
+                    ...(i.buildingUse ? [["Uso", BUILDING_USE_LABELS[i.buildingUse]] as [string, string]] : []),
+                  ];
+                  if (filas.length === 0) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-2">
+                      {filas.map(([etiqueta, valor]) => (
+                        <div key={etiqueta}>
+                          <p className="text-muted-foreground text-xs mb-1">{etiqueta}</p>
+                          <p className="font-medium">{valor}</p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+                {selectedInstallation.assetDescription && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Descripción</p>
+                    <p className="font-medium">{selectedInstallation.assetDescription}</p>
+                  </div>
+                )}
                 {selectedInstallation.installerName && (
                   <div>
                     <p className="text-muted-foreground text-xs mb-1">Instalador</p>

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { workshopLogoPath } from "@/lib/workshop-logo";
+import { numeroOnull } from "@/lib/obra";
 import { crmBaseUrl, renderCertificado, type DatosCertificado, type FirmaDelTaller } from "@/lib/mail-garantia";
 
 const log = createLogger("lib/warranty-activation-email");
@@ -29,6 +30,11 @@ export async function cargarDatosCertificado(
       assetType: true,
       assetDescription: true,
       plate: true,
+      siteAddress: true,
+      areaM2: true,
+      paneCount: true,
+      glassType: true,
+      filmSide: true,
       installedAt: true,
       activatedAt: true,
       expiresAt: true,
@@ -65,6 +71,11 @@ export async function cargarDatosCertificado(
     assetType: inst.assetType,
     assetDescription: inst.assetDescription,
     plate: inst.plate,
+    siteAddress: inst.siteAddress,
+    areaM2: numeroOnull(inst.areaM2),
+    paneCount: inst.paneCount,
+    glassType: inst.glassType,
+    filmSide: inst.filmSide,
     installedAt: inst.installedAt,
     activatedAt: inst.activatedAt,
     expiresAt: inst.expiresAt,

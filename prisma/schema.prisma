@@ -1265,6 +1265,35 @@ enum AssetType {
   OTHER
 }
 
+// ─── Datos de una obra (láminas de arquitectura) ─────────────────────────────
+//
+// Viven en WarrantyInstallation y en WorkshopAsset, y solo se llenan cuando el
+// producto del rollo es ARCHITECTURAL: el producto decide qué campos aplican,
+// nunca el body. Ver GARANTIAS-ARQUITECTURA.md en la raíz de POLARIZADOS.
+//
+// MySQL guarda los ENUM por posición: un valor nuevo va AL FINAL.
+
+/// Sobre qué vidrio se puso la lámina. Es lo primero que se mira ante un
+/// reclamo de rotura por estrés térmico.
+enum GlassType {
+  SIMPLE
+  DVH
+  LAMINADO
+  TEMPLADO
+  OTRO
+}
+
+/// De qué lado del vidrio quedó la lámina.
+enum FilmSide {
+  INTERIOR
+  EXTERIOR
+}
+
+enum BuildingUse {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
 model WarrantyConfig {
   id                    String   @id @default(cuid())
   productId             String   @unique
@@ -1361,6 +1390,17 @@ model WarrantyInstallation {
   vehicleType        String?
   /// Patente/matricula. Se guarda tal cual la escribio el instalador.
   plate              String?
+  /// Arquitectura: dirección de la obra. Es lo que en un auto es la patente.
+  /// Dato personal: la API pública la devuelve recortada (sin altura ni
+  /// piso), ver recortarDireccion() en src/lib/obra.ts.
+  siteAddress        String?
+  /// Arquitectura: superficie cubierta.
+  areaM2             Decimal?                   @db.Decimal(10, 2)
+  /// Arquitectura: cantidad de paños.
+  paneCount          Int?
+  glassType          GlassType?
+  filmSide           FilmSide?
+  buildingUse        BuildingUse?
   installedAt        DateTime?
   activatedAt        DateTime?
   expiresAt          DateTime?
@@ -1727,6 +1767,14 @@ model WorkshopAsset {
   model            String?
   year             Int?
   color            String?
+  /// Arquitectura: los mismos datos de obra que WarrantyInstallation. Al pasar
+  /// la OT a TERMINADA viajan tal cual a la garantía, como type y descripción.
+  siteAddress      String?
+  areaM2           Decimal?       @db.Decimal(10, 2)
+  paneCount        Int?
+  glassType        GlassType?
+  filmSide         FilmSide?
+  buildingUse      BuildingUse?
   notes            String?        @db.Text
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

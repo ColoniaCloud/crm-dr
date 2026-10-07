@@ -7,6 +7,7 @@ import { createLogger } from "@/lib/logger";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { VEHICLE_TYPES } from "@/lib/vehicle-types";
+import { datosObraSchema } from "@/lib/obra";
 
 const log = createLogger("api/portal/v1/contacts/[contactId]/rolls/[fullRollCode]/installations");
 
@@ -30,6 +31,9 @@ const schema = z
      */
     assetDescription: z.string().trim().max(2000).nullish(),
   })
+  // Datos de obra: direccion, m2, panos, vidrio, lado y uso. Misma regla que
+  // `assetDescription`: se descartan si el rollo no es de arquitectura.
+  .extend(datosObraSchema.shape)
   .partial();
 
 export async function POST(
