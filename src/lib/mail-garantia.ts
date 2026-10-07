@@ -189,7 +189,7 @@ function nota(texto: string): string {
 function pie(legal: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.foot};border-top:1px solid ${C.hair};"><tr><td class="px" style="padding:24px 40px;">
   <div style="font-family:${F};font-size:11px;font-weight:600;letter-spacing:.06em;color:${C.text};">KRISTALL<sup style="font-size:7px;line-height:0;">&reg;</sup></div>
-  <div style="font-family:${F};font-size:11px;color:${C.legal};line-height:1.7;padding-bottom:14px;">Performance aplicada al confort<br>Tecnología alemana de láminas de alto rendimiento.<br>
+  <div style="font-family:${F};font-size:11px;color:${C.legal};line-height:1.7;padding-bottom:14px;">Performance aplicada al confort<br>Tecnología alemana en láminas de alto rendimiento.<br>
     <a href="mailto:${BRAND.salesEmail}" style="color:${C.legal};text-decoration:none;">${escapeHtml(BRAND.salesEmail)}</a> &middot; <a href="${BRAND.website}" style="color:${C.legal};text-decoration:none;">${escapeHtml(BRAND.websiteLabel)}</a></div>
   <div style="height:1px;background:${C.hair};margin-bottom:14px;font-size:0;line-height:0;"></div>
   <div style="font-family:${F};font-size:10px;line-height:1.7;color:${C.legal};">${legal}</div>
@@ -229,21 +229,20 @@ function nombreCategoria(c: ProductCategory): string {
 }
 
 /**
- * La cobertura, en las tres líneas del diseño aprobado (cuatro en arquitectura, por la rotura térmica). El texto habla
+ * La cobertura, en las tres líneas del diseño aprobado. El texto habla
  * de «vehículo»; para láminas arquitectónicas se cambia por «superficie», que
  * es lo único que no aplica.
+ *
+ * La rotura térmica del vidrio **no se menciona** en el certificado, aunque
+ * se puede reclamar (ROTURA_VIDRIO en claim-issues.ts): se sacó a pedido el
+ * 2026-10-07. Que esté cubierta se evalúa caso por caso desde el Centro de
+ * Garantías, no se promete por escrito.
  */
 function cobertura(categoria: ProductCategory): string {
   const usoNormal = categoria === "ARCHITECTURAL" ? "de la superficie" : "del vehículo";
   const filas: [boolean, string, string][] = [
     [true, "Defectos de fabricación", `burbujas, desprendimientos, cambios de color o pérdida de adhesión no atribuibles al uso normal ${usoNormal}.`],
     [true, "Degradación prematura", "pérdida de propiedades ópticas o térmicas dentro del período de garantía, bajo condiciones normales de uso."],
-    // Kristall cubre la rotura térmica (decidido en octubre 2026). Solo en
-    // arquitectura: en un auto no es algo que pueda causar la lámina. Se
-    // evalúa con el vidrio y el lado que quedaron registrados en la instalación.
-    ...(categoria === "ARCHITECTURAL"
-      ? [[true, "Rotura térmica del vidrio", "rotura del vidrio por estrés térmico originada en la lámina instalada, evaluada según el tipo de vidrio y la instalación registrados."] as [boolean, string, string]]
-      : []),
     [false, "No cubre", "daños causados por accidentes, vandalismo o daños físicos externos que no correspondan a defectos de fabricación del producto."],
   ];
   return `<div style="font-family:${F};font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${C.ink};padding:28px 0 14px 0;">Cobertura de la garantía</div>
