@@ -86,6 +86,14 @@ interface RollTrace {
   } | null;
   installations: { installationNumber: number; installationCode: string; status: string }[];
   _count: { installations: number };
+  /** Ver saldosDeRollos en rollo-m2.ts. `totalM2` null = el rollo no tiene m² cargados. */
+  saldo: {
+    totalM2: number | null;
+    usedM2: number;
+    reservedM2: number;
+    remainingM2: number | null;
+    availableM2: number | null;
+  } | null;
 }
 
 const statusLabel: Record<string, string> = {
@@ -273,6 +281,11 @@ export default function WarrantyClaimsPage() {
                   Instalaciones activas: <span className="text-foreground">{roll._count.installations} / {roll.installations.length}</span>
                 </div>
               </div>
+              <M2DelRollo
+                roll={roll}
+                puedeEditar={session?.user?.role === "ADMIN" || session?.user?.role === "SUPERADMIN"}
+                onGuardado={(saldo) => setRoll({ ...roll, saldo })}
+              />
             </div>
           )}
         </CardContent>
@@ -525,6 +538,90 @@ function FichaObra({ claim }: { claim: Claim }) {
           La instalación no tiene registrado el tipo de vidrio o el lado de la lámina. Pedíselo al taller
           antes de resolver.
         </p>
+      )}
+    </div>
+  );
+}
+
+const m2 = (n: number) => `${n.toLocaleString("es-AR", { maximumFractionDigits: 2 })} m²`;
+
+/**
+ * Los m² del rollo y su corrección. Un resto o un rollo recortado no mide lo
+ * que dice el producto, y un rollo que nació antes de que el producto tuviera
+ * medidas no tiene m²: en arquitectura, sin m² no genera instalaciones.
+ */
+function M2DelRollo({
+  roll,
+  puedeEditar,
+  onGuardado,
+}: {
+  roll: RollTrace;
+  puedeEditar: boolean;
+  onGuardado: (saldo: RollTrace["saldo"]) => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(roll.saldo?.totalM2 != null ? String(roll.saldo.totalM2) : "");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const s = roll.saldo;
+
+  async function guardar() {
+    setGuardando(true);
+    setError("");
+    const res = await fetch(`/api/warranty-rolls/${encodeURIComponent(roll.fullRollCode)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ totalM2: valor.trim() === "" ? null : Number(valor.replace(",", ".")) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setGuardando(false);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo guardar");
+      return;
+    }
+    onGuardado(data.saldo);
+    setEditando(false);
+  }
+
+  return (
+    <div className="border-t pt-2 space-y-2">
+      {s?.totalM2 == null ? (
+        <p className="text-amber-600 dark:text-amber-400">
+          Este rollo no tiene m² cargados. En arquitectura no puede generar instalaciones hasta tenerlos.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted-foreground">
+          <div>Total: <span className="text-foreground">{m2(s.totalM2)}</span></div>
+          <div>Usado: <span className="text-foreground">{m2(s.usedM2)}</span></div>
+          <div>Reservado: <span className="text-foreground">{m2(s.reservedM2)}</span></div>
+          <div>Disponible: <span className="text-foreground font-medium">{m2(s.availableM2 ?? 0)}</span></div>
+        </div>
+      )}
+      {puedeEditar && !editando && (
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditando(true)}>
+          {s?.totalM2 == null ? "Cargar m² del rollo" : "Corregir m² del rollo"}
+        </Button>
+      )}
+      {editando && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            className="h-8 w-28"
+            inputMode="decimal"
+            placeholder="m²"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+          />
+          <Button size="sm" className="h-8" onClick={guardar} disabled={guardando}>
+            {guardando ? "Guardando..." : "Guardar"}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditando(false)}>
+            Cancelar
+          </Button>
+          <p className="w-full text-xs text-muted-foreground">
+            Vacío vuelve a usar ancho × largo del producto.
+          </p>
+          {error && <p className="w-full text-xs text-destructive">{error}</p>}
+        </div>
       )}
     </div>
   );

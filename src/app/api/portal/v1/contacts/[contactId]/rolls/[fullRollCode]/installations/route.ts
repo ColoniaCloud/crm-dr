@@ -34,6 +34,14 @@ const schema = z
   // Datos de obra: direccion, m2, panos, vidrio, lado y uso. Misma regla que
   // `assetDescription`: se descartan si el rollo no es de arquitectura.
   .extend(datosObraSchema.shape)
+  .extend({
+    /**
+     * Arquitectura, obligatorio: m² de material que salieron del rollo, merma
+     * incluida. Lo controla createAdditionalInstallation contra el saldo del
+     * rollo; en los demás rubros se ignora.
+     */
+    m2Used: z.coerce.number().positive("Los m² tienen que ser mayores a cero").max(100_000).nullish(),
+  })
   .partial();
 
 export async function POST(

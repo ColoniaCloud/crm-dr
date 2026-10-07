@@ -64,6 +64,8 @@ const EMPTY_FORM = {
   brand: "",
   sku: "",
   factoryCode: "",
+  width: "",
+  length: "",
   shade: "",
   stock: "0",
   minStock: "0",
@@ -175,6 +177,8 @@ export default function NewProductPage() {
           brand: form.brand || null,
           sku: form.sku.trim() || null,
           factoryCode: form.factoryCode || null,
+          width: form.width ? parseFloat(form.width) : null,
+          length: form.length ? parseFloat(form.length) : null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
           minStock: parseInt(form.minStock) || 0,
@@ -308,6 +312,36 @@ export default function NewProductPage() {
                 <Label>Código de fábrica</Label>
                 <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
               </div>
+            </div>
+
+            {/* Medidas del rollo. En arquitectura con garantía son obligatorias:
+                los rollos se controlan por m² (ancho × largo), y sin medidas un
+                rollo no puede generar instalaciones. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Ancho del rollo (m){form.category === "ARCHITECTURAL" && form.warrantyEnabled && " *"}</Label>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="Ej: 1.52"
+                  value={form.width}
+                  onChange={(e) => setForm({ ...form, width: e.target.value })}
+                  required={form.category === "ARCHITECTURAL" && form.warrantyEnabled}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Largo del rollo (m){form.category === "ARCHITECTURAL" && form.warrantyEnabled && " *"}</Label>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="Ej: 30"
+                  value={form.length}
+                  onChange={(e) => setForm({ ...form, length: e.target.value })}
+                  required={form.category === "ARCHITECTURAL" && form.warrantyEnabled}
+                />
+              </div>
+              {Number(form.width) > 0 && Number(form.length) > 0 && (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Cada rollo trae {(Number(form.width) * Number(form.length)).toLocaleString("es-AR", { maximumFractionDigits: 2 })} m².
+                  {form.category === "ARCHITECTURAL" && " Las instalaciones se generan hasta agotarlos."}
+                </p>
+              )}
             </div>
 
             {/* Stock + Min Stock */}

@@ -6,6 +6,7 @@ import type { Prisma, ProductCategory } from "@prisma/client";
 import { notifyAdmins } from "@/lib/notifications";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { columnasObra, numeroOnull, recortarDireccion, type ColumnasObra, type DatosObra } from "@/lib/obra";
+import { formatM2, m2DelProducto, saldoDeRollo } from "@/lib/rollo-m2";
 
 type Tx = Prisma.TransactionClient;
 
@@ -98,6 +99,12 @@ export async function ensureWarrantyRolls(
   const config = await tx.warrantyConfig.findUnique({ where: { productId } });
   if (!config?.warrantyEnabled) return;
 
+  // Cada rollo nace con los m² que dice el producto. Se guardan en el rollo y
+  // no se leen del producto cada vez: si mañana cambian las medidas del
+  // producto, los rollos que ya están en la calle siguen midiendo lo que medían.
+  const producto = await tx.product.findUnique({ where: { id: productId }, select: { width: true, length: true } });
+  const totalM2 = m2DelProducto(producto?.width, producto?.length);
+
   const seq = (await tx.warrantyLot.count()) + 1;
   const lotNumber = buildLotNumber(LOT_PREFIX[source.type], seq);
   const depositoId = await getDepositoId(tx);
@@ -114,6 +121,7 @@ export async function ensureWarrantyRolls(
           fullRollCode: `${lotNumber}-R${String(i + 1).padStart(3, "0")}`,
           unitId: source.unitIds?.[i] ?? null,
           currentLocationId: depositoId,
+          totalM2,
         })),
       },
     },
@@ -380,20 +388,60 @@ export async function transferRollLocation(
 const DEFAULT_MAX_INSTALLATIONS = 15;
 
 /**
- * Cuántas instalaciones (sub-códigos) admite un rollo.
+ * Cuántas instalaciones (sub-códigos) admite un rollo, por cantidad.
  *
+ * - **Arquitectura: sin tope por cantidad.** Lo que se agota en un rollo de
+ *   arquitectura son los metros: lo limita el saldo de m² (ver rollo-m2.ts y
+ *   `controlarM2`), no el número de cortes.
  * - `maxInstallations: null` en la config: sin límite (el operador lo dejó vacío).
  * - Sin config: 15, como siempre.
- *
- * Arquitectura va a pasar a controlarse por m² (lo que queda en el rollo) en
- * vez de por cantidad de cortes; mientras tanto vale el mismo tope que el resto.
  */
 export function limiteDeInstalaciones(product: {
   category: ProductCategory;
   warrantyConfig: { maxInstallations: number | null } | null;
 }): number {
+  if (product.category === "ARCHITECTURAL") return Infinity;
   if (!product.warrantyConfig) return DEFAULT_MAX_INSTALLATIONS;
   return product.warrantyConfig.maxInstallations ?? Infinity;
+}
+
+/**
+ * Si un rollo de arquitectura puede dar `m2` más de material.
+ *
+ * Bloquea en tres casos, con un mensaje para el instalador:
+ * - el rollo no tiene m² cargados (ni el rollo ni el producto): no se puede
+ *   controlar, y dejarlo pasar sería el agujero que esto viene a cerrar;
+ * - no se indicaron los m²;
+ * - los m² superan lo disponible (total − usado − reservado en órdenes abiertas).
+ *
+ * `contarReservado: false` es para una OT que se está terminando: sus propias
+ * líneas ya pasaron a contar como usado, así que se mira lo que queda en el
+ * rollo y no lo disponible.
+ */
+export async function controlarM2(
+  db: Tx,
+  rollId: string,
+  m2: number | null | undefined,
+  opciones: { contarReservado?: boolean } = {}
+): Promise<{ ok: true; saldoDespues: number } | { ok: false; error: string }> {
+  const saldo = await saldoDeRollo(db, rollId);
+  if (!saldo || saldo.totalM2 == null) {
+    return {
+      ok: false,
+      error: "Este rollo no tiene los m² cargados. Pedile a Kristall que los cargue para poder generar instalaciones.",
+    };
+  }
+  const libre = (opciones.contarReservado ?? true) ? saldo.availableM2! : saldo.remainingM2!;
+  if (m2 == null) {
+    return { ok: false, error: "Indicá cuántos m² de material usaste del rollo." };
+  }
+  if (m2 > libre + 0.005) {
+    return {
+      ok: false,
+      error: `Al rollo le quedan ${formatM2(Math.max(libre, 0))} disponibles y pediste ${formatM2(m2)}.`,
+    };
+  }
+  return { ok: true, saldoDespues: Math.round((saldo.remainingM2! - m2) * 100) / 100 };
 }
 /**
  * Meses de garantia cuando el producto no tiene `warrantyConfig`.
@@ -445,6 +493,12 @@ export interface DatosPrecargados extends DatosObra {
   assetDescription?: string | null;
   // Más los datos de obra de DatosObra (dirección, m², paños, vidrio, lado,
   // uso): solo se guardan si el rollo es de arquitectura.
+  /**
+   * Arquitectura, **obligatorio**: m² de material que salieron del rollo,
+   * merma incluida. Es lo que se descuenta del saldo. Se ignora en los demás
+   * rubros, que siguen con el tope por cantidad.
+   */
+  m2Used?: number | null;
 }
 
 export async function createAdditionalInstallation(
@@ -496,6 +550,15 @@ export async function createAdditionalInstallation(
       return { ok: false as const, error: "Este rollo ya no admite más instalaciones", status: 400 };
     }
 
+    // Arquitectura se controla por m²: el código sale solo si el material
+    // entra en lo que queda del rollo.
+    let saldoDespues: number | null = null;
+    if (esArquitectura) {
+      const control = await controlarM2(tx, roll.id, datos.m2Used);
+      if (!control.ok) return { ok: false as const, error: control.error, status: 400 };
+      saldoDespues = control.saldoDespues;
+    }
+
     const installation = await tx.warrantyInstallation.create({
       data: {
         rollId: roll.id,
@@ -518,11 +581,14 @@ export async function createAdditionalInstallation(
         // la pantalla de activacion.
         assetType: esArquitectura ? "BUILDING" : datos.vehicleType ? "VEHICLE" : null,
         ...columnasObra(datos, esArquitectura),
+        m2Used: esArquitectura ? (datos.m2Used ?? null) : null,
       },
       select: { id: true, installationNumber: true, installationCode: true, activationToken: true, status: true },
     });
 
-    const rollStatus = nextNumber >= maxInstallations ? "EXHAUSTED" : roll.status;
+    // Se agota por cantidad (auto/PPF) o porque no queda material (arquitectura).
+    const agotado = nextNumber >= maxInstallations || (saldoDespues != null && saldoDespues <= 0.005);
+    const rollStatus = agotado ? "EXHAUSTED" : roll.status;
     if (rollStatus === "EXHAUSTED") {
       await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
     }

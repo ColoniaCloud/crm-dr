@@ -7,6 +7,7 @@ import { activateInstallationWarrantyTx, allocateInstallationTx } from "@/lib/wa
 import { renderCertificado, type DatosCertificado } from "@/lib/mail-garantia";
 import { cargarDatosCertificado } from "@/lib/warranty-activation-email";
 import { numeroOnull } from "@/lib/obra";
+import { formatM2, saldoDeRollo } from "@/lib/rollo-m2";
 
 const log = createLogger("lib/workshop-warranty");
 
@@ -142,6 +143,41 @@ export async function generarGarantiasDeOrden(
       continue;
     }
 
+    // Una lámina de arquitectura no va sobre un auto, aunque el activo de la OT
+    // diga VEHICLE: es el default de `WorkshopAsset.type`, y un alta rápida lo
+    // deja así sin que nadie lo haya elegido. Ahí manda el producto del rollo.
+    const esArquitectura = roll.product.category === "ARCHITECTURAL";
+
+    // Arquitectura se controla por m². La orden ya pasó a TERMINADA en esta
+    // misma transacción, así que sus líneas ya cuentan como usado: alcanza con
+    // que el rollo no quede en negativo (m2 = 0 extra, sin contar reservado).
+    // El consumo NO se anota en la garantía (m2Used queda null): ya está en las
+    // líneas de la orden, y anotarlo de nuevo lo contaría dos veces.
+    if (esArquitectura) {
+      if (m2DelRollo <= 0) {
+        resultado.problemas.push({
+          fullRollCode: roll.fullRollCode,
+          motivo: "Falta indicar en la orden cuántos m² se usaron de este rollo",
+        });
+        continue;
+      }
+      const saldo = await saldoDeRollo(tx, roll.id);
+      if (!saldo || saldo.totalM2 == null) {
+        resultado.problemas.push({
+          fullRollCode: roll.fullRollCode,
+          motivo: "El rollo no tiene los m² cargados. Pedile a Kristall que los cargue",
+        });
+        continue;
+      }
+      if (saldo.remainingM2! < -0.005) {
+        resultado.problemas.push({
+          fullRollCode: roll.fullRollCode,
+          motivo: `Al rollo no le alcanza el material: con esta orden se pasa por ${formatM2(-saldo.remainingM2!)}`,
+        });
+        continue;
+      }
+    }
+
     const slot = await allocateInstallationTx(tx, roll.id);
     if (!slot) {
       resultado.problemas.push({
@@ -150,11 +186,6 @@ export async function generarGarantiasDeOrden(
       });
       continue;
     }
-
-    // Una lámina de arquitectura no va sobre un auto, aunque el activo de la OT
-    // diga VEHICLE: es el default de `WorkshopAsset.type`, y un alta rápida lo
-    // deja así sin que nadie lo haya elegido. Ahí manda el producto del rollo.
-    const esArquitectura = roll.product.category === "ARCHITECTURAL";
     const datos = {
       ...datosBase,
       ...(esArquitectura && datosBase.assetType === "VEHICLE" ? { assetType: "BUILDING" as const } : {}),

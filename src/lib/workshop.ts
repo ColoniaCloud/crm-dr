@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import type { BuildingUse, Prisma, ServiceCategory, WorkOrderStatus } from "@prisma/client";
 import { columnasObra, type DatosObra } from "@/lib/obra";
+import { saldosDeRollos } from "@/lib/rollo-m2";
 import { createLogger } from "@/lib/logger";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { workshopHeroPath } from "@/lib/workshop-hero";
@@ -793,8 +794,9 @@ export async function getAgenda(contactId: string, from: Date, to: Date) {
 /**
  * El stock del instalador, con cuánto queda adentro de cada rollo.
  *
- * El sobrante se DERIVA, no se guarda: `width × length − Σ(squareMetersUsed)`
- * de las líneas que declararon ese rollo. Es una consulta agrupada aparte en
+ * El sobrante se DERIVA, no se guarda: m² del rollo − Σ(squareMetersUsed) de
+ * las líneas que declararon ese rollo − Σ(m2Used) de las instalaciones que se
+ * generaron desde Stock (ver saldosDeRollos en rollo-m2.ts). Es una consulta agrupada aparte en
  * vez de un campo denormalizado, para que no haya dos números que puedan
  * discrepar. Si algún día se pone lento, ahí se denormaliza — con la evidencia
  * a la vista.
@@ -878,46 +880,21 @@ export async function getWorkshopStock(contactId: string) {
 
   if (rolls.length === 0) return [];
 
-  const ids = rolls.map((r) => r.id);
-  const [consumido, reservado] = await Promise.all([
-    prisma.workOrderItem.groupBy({
-      by: ["rollId"],
-      where: {
-        rollId: { in: ids },
-        workOrder: { status: { in: ["TERMINADA", "ENTREGADA"] } },
-      },
-      _sum: { squareMetersUsed: true },
+  // El saldo sale del contador único de rollo-m2.ts: suma las líneas de las
+  // órdenes y las instalaciones generadas desde Stock. Antes acá se contaban
+  // solo las órdenes, y un rollo del que se habían sacado instalaciones desde
+  // Stock figuraba entero.
+  const saldos = await saldosDeRollos(prisma, rolls.map((r) => r.id));
+  return rolls.map((roll) => ({
+    ...roll,
+    ...(saldos.get(roll.id) ?? {
+      totalM2: null,
+      usedM2: 0,
+      reservedM2: 0,
+      remainingM2: null,
+      availableM2: null,
     }),
-    prisma.workOrderItem.groupBy({
-      by: ["rollId"],
-      where: {
-        rollId: { in: ids },
-        workOrder: { status: { in: ["PRESUPUESTADA", "AGENDADA", "EN_PROCESO"] } },
-      },
-      _sum: { squareMetersUsed: true },
-    }),
-  ]);
-
-  const suma = (filas: typeof consumido) =>
-    new Map(filas.map((c) => [c.rollId, Number(c._sum.squareMetersUsed ?? 0)]));
-  const usadoPorRollo = suma(consumido);
-  const reservadoPorRollo = suma(reservado);
-  const redondear = (n: number) => Math.round(n * 100) / 100;
-
-  return rolls.map((roll) => {
-    const { width, length } = roll.product;
-    const totalM2 = width != null && length != null ? Number(width) * Number(length) : null;
-    const usedM2 = redondear(usadoPorRollo.get(roll.id) ?? 0);
-    const reservedM2 = redondear(reservadoPorRollo.get(roll.id) ?? 0);
-    return {
-      ...roll,
-      totalM2,
-      usedM2,
-      reservedM2,
-      remainingM2: totalM2 == null ? null : redondear(totalM2 - usedM2),
-      availableM2: totalM2 == null ? null : redondear(totalM2 - usedM2 - reservedM2),
-    };
-  });
+  }));
 }
 
 // ─── Resumen para el dashboard ───────────────────────────────────────────────

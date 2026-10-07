@@ -1353,6 +1353,14 @@ model WarrantyRoll {
   // ver PORTAL_ROLL_SELECT en src/lib/client-portal.ts.
   currentLocationId String?
   currentLocation   Location?          @relation(fields: [currentLocationId], references: [id])
+  /// m² de lámina que trae el rollo. Se fija al crearlo (ancho × largo del
+  /// producto) y se puede corregir por rollo desde el CRM: un resto o un rollo
+  /// recortado no mide lo que dice el producto.
+  ///
+  /// En arquitectura es lo que limita las instalaciones: no se genera un código
+  /// si los m² pedidos superan el saldo, y un rollo sin este dato no genera
+  /// ninguno. El saldo se calcula, no se guarda — ver src/lib/rollo-m2.ts.
+  totalM2           Decimal?           @db.Decimal(10, 2)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -1403,6 +1411,14 @@ model WarrantyInstallation {
   glassType          GlassType?
   filmSide           FilmSide?
   buildingUse        BuildingUse?
+  /// Material que salió del rollo para esta instalación, merma incluida (no la
+  /// superficie pegada, que es `areaM2`). Lo carga el instalador al generar la
+  /// instalación desde Stock.
+  ///
+  /// Las instalaciones que salen de una OT lo dejan en null a propósito: su
+  /// consumo ya está en las líneas de la orden (WorkOrderItem.squareMetersUsed),
+  /// y anotarlo acá también lo contaría dos veces. Ver src/lib/rollo-m2.ts.
+  m2Used             Decimal?                   @db.Decimal(10, 2)
   installedAt        DateTime?
   activatedAt        DateTime?
   expiresAt          DateTime?

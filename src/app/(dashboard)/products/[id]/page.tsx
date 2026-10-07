@@ -131,6 +131,9 @@ interface ProductDetail {
   sku: string | null;
   factoryCode: string | null;
   shade: string | null;
+  /** Metros. Prisma los manda como string (Decimal). */
+  width: string | number | null;
+  length: string | number | null;
   stock: number;
   minStock: number;
   price: number;
@@ -160,7 +163,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({
-    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "", sku: "", factoryCode: "",
+    name: "", category: "AUTOMOTIVE", subcategory: "", brand: "", sku: "", factoryCode: "", width: "", length: "",
     shade: "", stock: "0", minStock: "0", price: "", cost: "", description: "", imageUrl: "",
     warrantyEnabled: false, rollWarrantyMonths: "24", installWarrantyMonths: "12", maxInstallations: "15",
   });
@@ -201,6 +204,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       brand: data.brand ?? "",
       sku: data.sku ?? "",
       factoryCode: data.factoryCode ?? "",
+      width: data.width != null ? String(data.width) : "",
+      length: data.length != null ? String(data.length) : "",
       shade: data.shade ?? "",
       stock: String(data.stock),
       minStock: String(data.minStock),
@@ -243,6 +248,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           brand: form.brand || null,
           sku: form.sku.trim() || null,
           factoryCode: form.factoryCode || null,
+          width: form.width ? parseFloat(form.width) : null,
+          length: form.length ? parseFloat(form.length) : null,
           shade: form.shade || null,
           stock: parseInt(form.stock) || 0,
           minStock: parseInt(form.minStock) || 0,
@@ -910,6 +917,36 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <Label>Código de fábrica</Label>
                 <Input value={form.factoryCode} onChange={(e) => setForm({ ...form, factoryCode: e.target.value })} placeholder="Código con el que el proveedor identifica el producto" />
               </div>
+            </div>
+
+            {/* Medidas del rollo. En arquitectura con garantía son obligatorias:
+                los rollos se controlan por m² (ancho × largo), y sin medidas un
+                rollo no puede generar instalaciones. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Ancho del rollo (m){form.category === "ARCHITECTURAL" && form.warrantyEnabled && " *"}</Label>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="Ej: 1.52"
+                  value={form.width}
+                  onChange={(e) => setForm({ ...form, width: e.target.value })}
+                  required={form.category === "ARCHITECTURAL" && form.warrantyEnabled}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Largo del rollo (m){form.category === "ARCHITECTURAL" && form.warrantyEnabled && " *"}</Label>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="Ej: 30"
+                  value={form.length}
+                  onChange={(e) => setForm({ ...form, length: e.target.value })}
+                  required={form.category === "ARCHITECTURAL" && form.warrantyEnabled}
+                />
+              </div>
+              {Number(form.width) > 0 && Number(form.length) > 0 && (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Cada rollo trae {(Number(form.width) * Number(form.length)).toLocaleString("es-AR", { maximumFractionDigits: 2 })} m².
+                  {form.category === "ARCHITECTURAL" && " Las instalaciones se generan hasta agotarlos."}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

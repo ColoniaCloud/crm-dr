@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
 import { logOperatorAction } from "@/lib/notifications";
+import { completarM2DeRollos, faltanMedidas } from "@/lib/product-medidas";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
@@ -70,8 +71,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json();
     const { discounts, priceTiers, warrantyConfig, ...productData } = body;
 
+    // Un PATCH puede ser parcial: lo que no viene, se toma de lo guardado.
+    const actual = await prisma.product.findUnique({
+      where: { id },
+      select: { category: true, width: true, length: true, warrantyConfig: { select: { warrantyEnabled: true } } },
+    });
+    if (!actual) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
+    // Solo se valida si el pedido toca algo de lo que depende: un PATCH que
+    // desactiva el producto o le cambia el precio no puede rebotar porque al
+    // producto le falten medidas desde antes.
+    const tocaMedidas =
+      warrantyConfig !== undefined || "category" in productData || "width" in productData || "length" in productData;
+    const falta = tocaMedidas && faltanMedidas({
+      category: productData.category ?? actual.category,
+      conGarantia:
+        warrantyConfig === undefined ? Boolean(actual.warrantyConfig?.warrantyEnabled) : warrantyConfig !== null,
+      width: "width" in productData ? productData.width : actual.width,
+      length: "length" in productData ? productData.length : actual.length,
+    });
+    if (falta) return NextResponse.json({ error: falta }, { status: 400 });
+
     const product = await prisma.$transaction(async (tx) => {
       const updated = await tx.product.update({ where: { id }, data: productData });
+      // Con medidas cargadas, los rollos que nacieron sin m² los toman ahora.
+      await completarM2DeRollos(tx, id);
 
       if (warrantyConfig !== undefined) {
         if (warrantyConfig === null) {

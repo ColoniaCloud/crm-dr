@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
+import { faltanMedidas } from "@/lib/product-medidas";
 const log = createLogger("api/products");
 
 export async function GET(request: Request) {
@@ -76,6 +77,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { discounts, priceTiers, warrantyConfig, ...productData } = body;
+
+    const falta = faltanMedidas({
+      category: productData.category,
+      conGarantia: Boolean(warrantyConfig),
+      width: productData.width,
+      length: productData.length,
+    });
+    if (falta) return NextResponse.json({ error: falta }, { status: 400 });
 
     const product = await prisma.$transaction(async (tx) => {
       const created = await tx.product.create({ data: productData });
