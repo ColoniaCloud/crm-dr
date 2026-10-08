@@ -22,7 +22,7 @@ import { takeSaleFlash } from "@/lib/sale-flash";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
-  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine, Link2, ExternalLink,
+  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine, Send,
 } from "lucide-react";
 
 interface SaleItem {
@@ -168,10 +168,6 @@ export default function SaleDetailPage() {
   const [deliverDialogOpen, setDeliverDialogOpen] = useState(false);
   /** Lo que la creación de la venta dejó a medias (ver src/lib/sale-flash.ts). */
   const [flash, setFlash] = useState<string[]>([]);
-  /** El link público para que el cliente firme el remito (`/r/<token>`). */
-  const [signLink, setSignLink] = useState<string | null>(null);
-  const [signLinkCopied, setSignLinkCopied] = useState(false);
-  const [signLinkLoading, setSignLinkLoading] = useState(false);
 
   // Register payment dialog
   const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
@@ -447,25 +443,6 @@ export default function SaleDetailPage() {
     window.location.assign(`/api/remitos/${sale.remito.id}/pdf`);
   }
 
-  /** Genera (la primera vez) y copia el link para que el cliente firme online. */
-  async function copySignLink() {
-    if (!sale?.remito) return;
-    setSignLinkLoading(true);
-    setStatusActionError("");
-    try {
-      const res = await fetch(`/api/remitos/${sale.remito.id}/link`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) throw new Error(data.error || "No se pudo generar el link");
-      setSignLink(data.url);
-      await navigator.clipboard.writeText(data.url).catch(() => {});
-      setSignLinkCopied(true);
-      setTimeout(() => setSignLinkCopied(false), 2000);
-    } catch (err) {
-      setStatusActionError(err instanceof Error ? err.message : "No se pudo generar el link");
-    } finally {
-      setSignLinkLoading(false);
-    }
-  }
 
   async function toggleAuditLogs() {
     if (!auditExpanded) {
@@ -674,22 +651,13 @@ export default function SaleDetailPage() {
                   <Button variant="outline" size="sm" onClick={handleDownloadRemito}>
                     <Download className="h-4 w-4 mr-1" />{sale.remito.signedAt ? "PDF firmado" : "Descargar PDF"}
                   </Button>
-                  {/* Firmar online es entregar: no se ofrece sobre una venta anulada. */}
-                  {isAdmin && !sale.remito.signedAt && sale.status !== "CANCELLED" && (
-                    <Button variant="outline" size="sm" onClick={copySignLink} disabled={signLinkLoading}>
-                      {signLinkCopied ? <Check className="h-4 w-4 mr-1 text-green-600" /> : <Link2 className="h-4 w-4 mr-1" />}
-                      {signLinkCopied ? "Link copiado" : "Link para firmar"}
+                  {/* Firmar es entregar: sobre una venta anulada sin firma no hay nada que mandar. */}
+                  {isAdmin && !(sale.status === "CANCELLED" && !sale.remito.signedAt) && (
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/sales/${sale.id}/remito`)}>
+                      <Send className="h-4 w-4 mr-1" />{sale.remito.signedAt ? "Mandar copia" : "Firmar o enviar"}
                     </Button>
                   )}
                 </div>
-                {signLink && !sale.remito.signedAt && (
-                  <div className="flex items-center gap-2 rounded-md border p-2 text-xs">
-                    <span className="truncate text-muted-foreground">{signLink}</span>
-                    <a href={signLink} target="_blank" rel="noreferrer" className="shrink-0 text-primary" aria-label="Abrir el link">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  </div>
-                )}
               </>
             ) : (
               <p className="text-muted-foreground">Sin remito generado</p>
@@ -1274,7 +1242,7 @@ export default function SaleDetailPage() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             ¿El cliente firmó el remito{sale.remito ? ` #${sale.remito.number}` : ""} en papel? Si todavía no, la venta
-            queda como entregada sin firma: podés mandarle el link para que firme online, o registrar la firma después.
+            queda como entregada sin firma: desde &laquo;Firmar o enviar&raquo; podés hacerlo firmar en pantalla o mandarle el link.
           </p>
           {statusActionError && <p className="text-sm text-destructive">{statusActionError}</p>}
           <DialogFooter className="gap-2">

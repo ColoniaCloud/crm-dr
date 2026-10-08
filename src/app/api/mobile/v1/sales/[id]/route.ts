@@ -25,9 +25,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sale = await prisma.sale.findUnique({
       where: { id },
       include: {
-        contact: { select: { id: true, firstName: true, lastName: true, company: true, cuit: true } },
+        contact: { select: { id: true, firstName: true, lastName: true, company: true, cuit: true, email: true, phone: true } },
         items: { include: { product: { select: { id: true, name: true, sku: true } } } },
         payments: { orderBy: { createdAt: "desc" } },
+        remito: { select: { number: true, signedAt: true, signedVia: true } },
       },
     });
 

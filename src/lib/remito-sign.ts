@@ -58,6 +58,7 @@ export interface SignRemitoResult {
   /** Productos con garantía que se quedaron sin rollo al confirmar. */
   sinRollo: string[];
   requiresFactura: boolean;
+  contactId: string;
   contactEmail: string | null;
   document: RemitoDocument;
   signature: RemitoSignature;
@@ -106,7 +107,7 @@ export async function signRemito(input: SignRemitoInput): Promise<SignRemitoResu
     // pudo confirmar, anular o firmar la venta.
     const remito = await tx.remito.findUnique({
       where: { id: input.remitoId },
-      include: { sale: { select: { id: true, number: true, status: true, userId: true, requiresFactura: true, contact: { select: { email: true } } } } },
+      include: { sale: { select: { id: true, number: true, status: true, userId: true, requiresFactura: true, contact: { select: { id: true, email: true } } } } },
     });
     if (!remito) throw new FirmaRechazada("Remito no encontrado", 404);
     if (remito.signedAt) throw new FirmaRechazada("Este remito ya fue firmado", 409);
@@ -167,6 +168,7 @@ export async function signRemito(input: SignRemitoInput): Promise<SignRemitoResu
       confirmada,
       sinRollo,
       requiresFactura: remito.sale.requiresFactura,
+      contactId: remito.sale.contact.id,
       contactEmail: remito.sale.contact.email,
       document,
       signature: { ...firma, hash },
@@ -225,4 +227,51 @@ export async function afterRemitoSigned(r: SignRemitoResult, opts: { emailTo: st
     log.error({ err, remitoId: r.remitoId }, "No se pudo mandar el remito firmado");
     return { sentTo: null };
   }
+}
+
+/**
+ * La firma presencial: el cliente firma en el dispositivo de quien vende —el
+ * "Firmar acá" de la pantalla del remito en el CRM, o el teléfono del vendedor
+ * en el POS—. Queda como `POS` ("en el punto de venta").
+ *
+ * La copia firmada va al email del contacto; si no tiene, al que se escribió en
+ * el momento, y con `saveEmail` ese email se guarda en la ficha. Solo si la
+ * ficha no tenía uno: un formulario apurado de mostrador no pisa un dato que ya
+ * estaba.
+ */
+export async function signRemitoInPerson(o: {
+  remitoId: string;
+  actorUserId: string;
+  name: string;
+  dni?: string | null;
+  image: string;
+  email?: string | null;
+  saveEmail?: boolean;
+  ip?: string | null;
+  userAgent?: string | null;
+}): Promise<{ result: SignRemitoResult; sentTo: string | null; emailSaved: boolean }> {
+  const result = await signRemito({
+    remitoId: o.remitoId,
+    via: "POS",
+    actorUserId: o.actorUserId,
+    name: o.name,
+    dni: o.dni,
+    image: o.image,
+    ip: o.ip,
+    userAgent: o.userAgent,
+  });
+
+  const typed = o.email?.trim() || null;
+  let emailSaved = false;
+  if (o.saveEmail && typed && !result.contactEmail) {
+    try {
+      const { count } = await prisma.contact.updateMany({ where: { id: result.contactId, OR: [{ email: null }, { email: "" }] }, data: { email: typed } });
+      emailSaved = count === 1;
+    } catch (err) {
+      log.error({ err, contactId: result.contactId }, "No se pudo guardar el email del contacto al firmar");
+    }
+  }
+
+  const { sentTo } = await afterRemitoSigned(result, { emailTo: result.contactEmail || typed });
+  return { result, sentTo, emailSaved };
 }

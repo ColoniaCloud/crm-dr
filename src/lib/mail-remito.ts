@@ -59,3 +59,52 @@ export function renderRemitoFirmado(
     }),
   };
 }
+
+const LEGAL_PARA_FIRMAR =
+  "Recibís este correo porque tenés una entrega de Kristall Film. Si no reconocés este pedido, respondé a ventas@kristallfilm.com.";
+
+/**
+ * El mail que manda quien vende ANTES de la firma: el remito en PDF y el botón
+ * para firmarlo online. Firmar es confirmar que se recibió, así que el texto lo
+ * dice: se firma cuando llega el pedido, no antes.
+ */
+export function renderRemitoParaFirmar(d: RemitoDocument, firmarUrl: string): { subject: string; html: string } {
+  const asunto = `Tu remito N° ${d.remito.number} de Kristall Film`;
+  const unidades = d.items.reduce((s, i) => s + i.quantity, 0);
+  const lista = d.items
+    .map(
+      (i) =>
+        `<tr><td style="padding:8px 0;border-bottom:1px solid ${C.hair};font-family:${F};font-size:13px;color:${C.ink};">${escapeHtml(i.name)}${
+          i.rollCode ? `<div style="font-size:11px;color:${C.muted};padding-top:2px;">Rollo ${escapeHtml(i.rollCode)}</div>` : ""
+        }</td><td align="right" style="padding:8px 0;border-bottom:1px solid ${C.hair};font-family:${F};font-size:13px;color:${C.ink};white-space:nowrap;">&times; ${i.quantity}</td></tr>`
+    )
+    .join("");
+
+  return {
+    subject: asunto,
+    html: documento({
+      asunto,
+      preheader: "Revisá los productos y firmá el remito cuando recibas el pedido.",
+      contenido:
+        cabecera("Remito &middot; Para firmar") +
+        banda({
+          eyebrow: `Remito de entrega &middot; N° ${d.remito.number}`,
+          titulo: "Tu remito de entrega",
+          bajada: "Cuando recibas el pedido, revisá que esté todo y firmá el remito desde el celular. Te lo adjuntamos también en PDF.",
+          boton: { texto: "Revisar y firmar", href: firmarUrl },
+        }) +
+        cuerpo(
+          saludo(d.contact.name || null, `El remito detalla ${unidades} ${unidades === 1 ? "unidad" : "unidades"}:`) +
+            espacio(12) +
+            `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${lista}</table>` +
+            `<div style="font-family:${F};font-size:12px;line-height:1.7;color:${C.muted};padding-top:16px;">Venta N° ${d.sale.number}</div>` +
+            espacio(20) +
+            llamado({
+              texto: "Firmar es confirmar que recibiste los productos. Te mandamos una copia firmada al terminar.",
+              boton: { texto: "Revisar y firmar", href: firmarUrl },
+            })
+        ) +
+        pie(LEGAL_PARA_FIRMAR),
+    }),
+  };
+}

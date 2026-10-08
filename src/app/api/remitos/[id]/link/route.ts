@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
 import { createLogger } from "@/lib/logger";
-import { ensureRemitoPublicToken, remitoPublicUrl } from "@/lib/remito-document";
+import { buildRemitoShareInfo } from "@/lib/remito-share";
 
 const log = createLogger("api/remitos/link");
 
 /**
- * El link público del remito (`/r/<token>`), generándolo la primera vez.
+ * El link público del remito (`/r/<token>`), generándolo la primera vez, con
+ * todo lo que la pantalla del remito necesita para mandarlo: QR, WhatsApp
+ * armado y los datos de contacto (ver src/lib/remito-share.ts).
  *
  * POST y no GET porque puede escribir (crear el token). El token no se crea al
  * crear la venta a propósito: así un remito que nunca se manda nunca tiene una
@@ -22,8 +24,7 @@ export async function POST(
 
   const { id } = await params;
   try {
-    const token = await ensureRemitoPublicToken(prisma, id);
-    return NextResponse.json({ url: remitoPublicUrl(token) });
+    return NextResponse.json(await buildRemitoShareInfo(prisma, id));
   } catch (error) {
     if (error instanceof Error && error.message === "Remito no encontrado") {
       return NextResponse.json({ error: error.message }, { status: 404 });

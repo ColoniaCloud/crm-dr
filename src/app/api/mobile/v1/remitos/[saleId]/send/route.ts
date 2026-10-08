@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 import { requireMobileAuth } from "@/lib/mobile-auth";
 import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { validateBody } from "@/lib/api-validation";
-import { transporter, FROM } from "@/lib/mailer";
-import { BRAND } from "@/lib/brand";
-import { buildRemitoPdfBuffer, remitoPdfFilename } from "@/lib/remito-pdf-server";
-import { loadRemitoBySaleId, remitoPublicUrl, REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
-import { escapeHtml, logOperatorAction } from "@/lib/notifications";
+import { isSmtpConfigured } from "@/lib/mailer";
+import { sendRemitoEmail } from "@/lib/remito-share";
+import { logOperatorAction } from "@/lib/notifications";
 import { rateLimit } from "@/lib/rate-limit";
 import { createLogger } from "@/lib/logger";
 
@@ -21,6 +18,11 @@ export function OPTIONS() {
   return mobileCorsPreflight();
 }
 
+/**
+ * Manda el remito por mail desde el POS. Mismo mail que desde el CRM
+ * (src/lib/remito-share.ts): sin firmar, con el botón para firmarlo online;
+ * firmado, la copia firmada.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ saleId: string }> }) {
   const gate = await requireMobileAuth(request);
   if (!gate.success) return withMobileCors(gate.response);
@@ -34,10 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
 
     const sale = await prisma.sale.findUnique({
       where: { id: saleId },
-      include: {
-        contact: true,
-        remito: { select: REMITO_SUMMARY_SELECT },
-      },
+      select: { id: true, number: true, contact: { select: { email: true } }, remito: { select: { id: true, number: true } } },
     });
 
     if (!sale) {
@@ -54,7 +53,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
       );
     }
 
-    if (!process.env.SMTP_USER) {
+    if (!isSmtpConfigured()) {
       return withMobileCors(NextResponse.json({ error: "SMTP no configurado" }, { status: 500 }));
     }
 
@@ -66,40 +65,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
       );
     }
 
-    // Firmado sale del snapshot con la firma; sin firmar, con el link para
-    // firmarlo online si ya se generó.
-    const loaded = (await loadRemitoBySaleId(prisma, saleId))!;
-    const pdfBuffer = buildRemitoPdfBuffer(loaded.document, {
-      signature: loaded.signature,
-      signUrl: !loaded.signature && loaded.publicToken ? remitoPublicUrl(loaded.publicToken) : null,
-    });
-
-    const contactName = `${sale.contact.firstName ?? ""} ${sale.contact.lastName ?? ""}`.trim();
-    const displayName = contactName || sale.contact.company || "estimado cliente";
-    const docLabel = sale.requiresFactura ? "el remito y los datos de tu factura" : "tu remito";
-    const html = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#ffffff;">
-  <p style="color:#333;font-size:15px;line-height:1.6;">
-    Hola, <strong>${escapeHtml(displayName)}</strong>.<br/>
-    Te enviamos ${docLabel} de la venta #${sale.number}, adjunto en PDF.
-  </p>
-  <hr style="margin:24px 0;border:none;border-top:1px solid #e5e5e5;" />
-  <p style="color:#666;font-size:13px;line-height:1.5;">
-    <strong>${BRAND.name}</strong> - ${BRAND.tagline}<br/>
-    <a href="${BRAND.website}" style="color:#2563eb;">${BRAND.websiteLabel}</a><br/>
-    <a href="mailto:${BRAND.salesEmail}" style="color:#2563eb;">${BRAND.salesEmail}</a>
-  </p>
-</div>`;
-
-    const mailOptions: nodemailer.SendMailOptions = {
-      from: FROM(),
-      to: email,
-      subject: `Remito #${sale.remito.number} - Venta #${sale.number} - ${BRAND.name}`,
-      html,
-      attachments: [{ filename: remitoPdfFilename(loaded.document, !!loaded.signature), content: pdfBuffer }],
-    };
-
-    await transporter.sendMail(mailOptions);
+    await sendRemitoEmail(prisma, sale.remito.id, email);
 
     await logOperatorAction({
       userId: gate.user.sub,

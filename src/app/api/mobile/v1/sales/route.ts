@@ -260,6 +260,8 @@ export async function POST(request: Request) {
             company: true,
             cuit: true,
             type: true,
+            email: true,
+            phone: true,
             assignedTo: { select: { id: true, name: true, email: true } },
           },
         },

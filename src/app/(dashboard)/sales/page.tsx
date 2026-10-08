@@ -420,10 +420,11 @@ function SalesPage() {
         );
       }
 
-      // A la ficha y no a la lista: es donde sigue el circuito (links de
-      // garantía, remito, cobro). Los avisos viajan con ella.
+      // No a la lista: a donde sigue el circuito. Confirmada, a la pantalla del
+      // remito (firmar acá o mandar el link); pendiente, a la ficha, donde se
+      // confirma cuando haya stock. Los avisos viajan con ella.
       setSaleFlash(created.id, avisos);
-      router.push(`/sales/${created.id}`);
+      router.push(action === "save" ? `/sales/${created.id}` : `/sales/${created.id}/remito`);
     } catch (err) {
       console.error("[sales] create", err);
       setError(err instanceof Error ? err.message : "Error al crear venta");

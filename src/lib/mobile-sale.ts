@@ -1,7 +1,10 @@
 import type { Contact, Payment, Sale, SaleItem } from "@prisma/client";
 
 type SaleForSerialization = Sale & {
-  contact: Pick<Contact, "id" | "firstName" | "lastName" | "company" | "cuit">;
+  contact: Pick<Contact, "id" | "firstName" | "lastName" | "company" | "cuit"> &
+    Partial<Pick<Contact, "email" | "phone">>;
+  /** Para que el POS sepa si falta la firma. Opcional: no todas las rutas lo piden. */
+  remito?: { number: number; signedAt: Date | null; signedVia: string | null } | null;
   items: (SaleItem & { product: { id: string; name: string; sku: string | null } })[];
   payments: Payment[];
 };
@@ -40,6 +43,9 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
     totalPaid,
     remaining: Number(sale.total) - totalPaid,
     createdAt: sale.createdAt.toISOString(),
+    remito: sale.remito
+      ? { number: sale.remito.number, signedAt: sale.remito.signedAt?.toISOString() ?? null, signedVia: sale.remito.signedVia }
+      : null,
     items: sale.items.map((item) => ({
       id: item.id,
       productName: item.product.name,
