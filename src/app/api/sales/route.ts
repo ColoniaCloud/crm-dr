@@ -5,10 +5,15 @@ import { sendNotification, escapeHtml, logOperatorAction, notifyAdmins } from "@
 import { notifyNewPurchase } from "@/lib/client-portal";
 import { checkConsignmentCredit } from "@/lib/credit";
 import { resolveSaleDiscount } from "@/lib/discount-tags";
+import { confirmSale } from "@/lib/sales";
+import { avisarFacturaPendiente } from "@/lib/factura-notify";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/sales");
+
+/** confirmSale no pudo descontar: la venta no se crea, y la pantalla ofrece guardarla pendiente. */
+class StockInsuficiente extends Error {}
 
 const saleItemSchema = z.object({
   productId: z.string().min(1),
@@ -32,6 +37,20 @@ const createSaleSchema = z.object({
   discount: z.number().nonnegative().default(0),
   notes: z.string().optional(),
   requiresFactura: z.boolean().default(false),
+  /**
+   * Qué hacer con la venta además de crearla, todo en la misma transacción:
+   * - `save`: queda PENDING, no mueve stock (la venta sin stock, o la que se
+   *   confirma después). Es el default para que quien no lo mande —conversión
+   *   de presupuestos, scripts— siga igual que antes.
+   * - `confirm`: la confirma (descuenta stock, asigna rollos).
+   * - `deliver`: la confirma y la marca entregada. El remito queda SIN firmar:
+   *   firmar es un paso aparte, con su propia ruta.
+   *
+   * Va en el mismo request y no como un PUT después a propósito: si el segundo
+   * paso fallaba (falta de stock) quedaba creada una venta PENDING que el
+   * operador no pidió.
+   */
+  action: z.enum(["save", "confirm", "deliver"]).default("save"),
 });
 
 export async function GET(request: Request) {
@@ -109,7 +128,7 @@ export async function POST(request: Request) {
     // `discount` del body es la concesion que cargo a mano quien vende. El
     // descuento de la etiqueta del contacto lo calcula el servidor mas abajo y
     // se suma a este — ver src/lib/discount-tags.ts.
-    const { contactId, type, discount: manualDiscount, notes, requiresFactura } = parsed.data;
+    const { contactId, type, discount: manualDiscount, notes, requiresFactura, action } = parsed.data;
 
     // A specific traced roll (productUnitId) is always exactly 1 unit —
     // ignore whatever quantity the client sent for those items.
@@ -159,6 +178,9 @@ export async function POST(request: Request) {
         );
       }
     }
+
+    // Productos con garantía que se quedaron sin rollo al confirmar.
+    let sinRollo: string[] = [];
 
     const result = await prisma.$transaction(async (tx) => {
       // Validate any traced units (rollos) being sold: must exist, belong to
@@ -221,10 +243,23 @@ export async function POST(request: Request) {
         },
       });
 
-      // Stock doesn't move and no warranty roll gets assigned here anymore —
-      // that only happens when the sale is CONFIRMED (see confirmSale() in
-      // src/lib/sales.ts). A PENDING sale reserves nothing; it's just a
-      // record waiting to be confirmed once there's stock for it.
+      // Stock only moves and warranty rolls only get assigned when the sale is
+      // CONFIRMED (confirmSale() in src/lib/sales.ts). With `save` it stays
+      // PENDING and reserves nothing; with `confirm`/`deliver` it's confirmed
+      // here, and if stock is short the whole transaction rolls back — the
+      // sale isn't created at all.
+      if (action !== "save") {
+        try {
+          ({ sinRollo } = await confirmSale(tx, sale.id, session.user.id));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "";
+          if (message.startsWith("Stock insuficiente")) throw new StockInsuficiente(message);
+          throw err;
+        }
+        if (action === "deliver") {
+          await tx.sale.update({ where: { id: sale.id }, data: { status: "DELIVERED" } });
+        }
+      }
 
       // Auto-convert lead to client
       if (sale.contact.type === "LEAD") {
@@ -254,6 +289,25 @@ export async function POST(request: Request) {
     });
 
     const contactName = sale?.contact.company || `${sale?.contact.firstName} ${sale?.contact.lastName}`.trim() || "";
+
+    // Lo mismo que hace la confirmación desde la ficha (sales/[id]/route.ts),
+    // después del commit: el aviso a quien factura y el de venta sin rollo.
+    if (action !== "save" && requiresFactura) {
+      await avisarFacturaPendiente(result.id);
+    }
+    if (sinRollo.length > 0) {
+      await notifyAdmins({
+        type: "SALE_WITHOUT_ROLL",
+        title: "Una venta quedó sin rollo de garantía",
+        message:
+          `La venta #${result.number} de "${contactName}" se confirmó, pero no había rollos libres de: ` +
+          `${sinRollo.join(", ")}. El Cliente no va a ver esos rollos en su panel. ` +
+          `Revisá que el stock de garantías esté cargado.`,
+        link: `/sales/${result.id}`,
+        email: true,
+      });
+    }
+
     const operatorName = session.user.name || "Operador";
     const wasConverted = result.contact.type === "LEAD";
 
@@ -280,8 +334,10 @@ export async function POST(request: Request) {
       action: "SALE_CREATED",
       entityType: "SALE",
       entityId: result.id,
-      description: `Registró una venta a "${contactName}" por $${result.total}`,
-      link: "/sales",
+      description:
+        `Registró una venta a "${contactName}" por $${result.total}` +
+        (action === "deliver" ? " (confirmada y entregada)" : action === "confirm" ? " (confirmada)" : ""),
+      link: `/sales/${result.id}`,
     });
 
     if (wasConverted) {
@@ -304,8 +360,11 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json(sale, { status: 201 });
+    return NextResponse.json(sinRollo.length > 0 ? { ...sale, sinRollo } : sale, { status: 201 });
   } catch (error) {
+    if (error instanceof StockInsuficiente) {
+      return NextResponse.json({ error: error.message, code: "INSUFFICIENT_STOCK" }, { status: 409 });
+    }
     log.error({ err: error }, "Error creating sale");
     return NextResponse.json(
       { error: "Error creating sale" },

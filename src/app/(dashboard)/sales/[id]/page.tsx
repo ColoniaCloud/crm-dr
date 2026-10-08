@@ -17,10 +17,13 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import PaymentPlanCard from "@/components/sales/payment-plan-card";
 import SaleReturnsCard from "@/components/sales/sale-returns-card";
+import { downloadRemitoPDF } from "@/components/remito-pdf";
+import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
+import { takeSaleFlash } from "@/lib/sale-flash";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
-  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck,
+  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine,
 } from "lucide-react";
 
 interface SaleItem {
@@ -55,6 +58,7 @@ interface Remito {
   issuedAt: string;
   signedAt: string | null;
   notes: string | null;
+  facturaInfo: string | null;
 }
 
 interface SaleDetail {
@@ -70,6 +74,9 @@ interface SaleDetail {
     phone: string | null;
     cuit: string | null;
     type: string;
+    address: string | null;
+    city: string | null;
+    state: string | null;
   };
   user: { id: string; name: string };
   type: string;
@@ -126,20 +133,6 @@ const saleTypeLabel: Record<string, string> = {
   CONSIGNMENT: "Consignación",
 };
 
-const saleStatusLabel: Record<string, string> = {
-  PENDING: "Por confirmar",
-  CONFIRMED: "Confirmada",
-  DELIVERED: "Entregada",
-  CANCELLED: "Cancelada",
-};
-
-const saleStatusBadgeClass: Record<string, string> = {
-  PENDING: "bg-amber-100 text-amber-800 border-0",
-  CONFIRMED: "bg-blue-100 text-blue-800 border-0",
-  DELIVERED: "bg-green-100 text-green-800 border-0",
-  CANCELLED: "bg-red-100 text-red-800 border-0",
-};
-
 export default function SaleDetailPage() {
   const { data: session } = useSession();
   const { format: formatCurrency } = useCurrency();
@@ -163,6 +156,10 @@ export default function SaleDetailPage() {
   const [statusActionError, setStatusActionError] = useState("");
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  /** "Marcar entregado": con o sin firma del remito. */
+  const [deliverDialogOpen, setDeliverDialogOpen] = useState(false);
+  /** Lo que la creación de la venta dejó a medias (ver src/lib/sale-flash.ts). */
+  const [flash, setFlash] = useState<string[]>([]);
 
   // Register payment dialog
   const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
@@ -193,6 +190,7 @@ export default function SaleDetailPage() {
   const [auditExpanded, setAuditExpanded] = useState(false);
 
   useEffect(() => { fetchSale(); }, [saleId]);
+  useEffect(() => { setFlash(takeSaleFlash(saleId)); }, [saleId]);
 
   async function fetchSale() {
     setLoading(true);
@@ -380,7 +378,8 @@ export default function SaleDetailPage() {
     }
   }
 
-  async function changeSaleStatus(status: "CONFIRMED" | "DELIVERED" | "CANCELLED") {
+  /** Devuelve si salió bien, para que el diálogo que la llamó sepa si cerrarse. */
+  async function changeSaleStatus(status: "CONFIRMED" | "DELIVERED" | "CANCELLED"): Promise<boolean> {
     setStatusActionLoading(true);
     setStatusActionError("");
     try {
@@ -393,11 +392,57 @@ export default function SaleDetailPage() {
       if (!res.ok) throw new Error(data.error || "Error al actualizar la venta");
       setCancelDialogOpen(false);
       await fetchSale();
+      return true;
     } catch (err) {
       setStatusActionError(err instanceof Error ? err.message : "Error al actualizar la venta");
+      return false;
     } finally {
       setStatusActionLoading(false);
     }
+  }
+
+  /**
+   * Registra la firma del remito, que también marca la venta entregada (y la
+   * confirma si seguía pendiente). Es la misma ruta que usa la lista de Remitos:
+   * entregar CON firma pasa siempre por acá, no por el PUT de estado.
+   */
+  async function signRemito() {
+    if (!sale?.remito) return;
+    setStatusActionLoading(true);
+    setStatusActionError("");
+    try {
+      const res = await fetch(`/api/remitos/${sale.remito.id}/sign`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Error al registrar la firma");
+      if (Array.isArray(data.sinRollo) && data.sinRollo.length > 0) {
+        setFlash([
+          `Estos productos quedaron sin rollo de garantía: ${data.sinRollo.join(", ")}. ` +
+            "El cliente no los va a ver en su Stock hasta que se cargue un rollo.",
+        ]);
+      }
+      setDeliverDialogOpen(false);
+      await fetchSale();
+    } catch (err) {
+      setStatusActionError(err instanceof Error ? err.message : "Error al registrar la firma");
+    } finally {
+      setStatusActionLoading(false);
+    }
+  }
+
+  function handleDownloadRemito() {
+    if (!sale?.remito) return;
+    downloadRemitoPDF({
+      ...sale.remito,
+      sale: {
+        number: sale.number,
+        requiresFactura: sale.requiresFactura,
+        contact: sale.contact,
+        items: sale.items.map((i) => ({
+          quantity: i.quantity,
+          product: { name: i.product.name, category: i.product.category ?? undefined },
+        })),
+      },
+    });
   }
 
   async function toggleAuditLogs() {
@@ -426,6 +471,7 @@ export default function SaleDetailPage() {
   const totalNum = parseFloat(sale.total);
   const remaining = totalNum - totalPaid;
   const isPaid = remaining <= 0;
+  const progress = saleProgress(sale.status, sale.remito);
 
   return (
     <div className="space-y-6 p-1">
@@ -441,8 +487,8 @@ export default function SaleDetailPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <Badge className={saleStatusBadgeClass[sale.status] ?? ""}>
-            {saleStatusLabel[sale.status] ?? sale.status}
+          <Badge className={SALE_PROGRESS_BADGE_CLASS[progress]}>
+            {SALE_PROGRESS_LABEL[progress]}
           </Badge>
           <Badge className={isPaid ? "bg-green-100 text-green-800 border-0" : "bg-amber-100 text-amber-800 border-0"}>
             {isPaid ? "Pagado" : "Pendiente de pago"}
@@ -456,9 +502,21 @@ export default function SaleDetailPage() {
             </Button>
           )}
           {isAdmin && sale.status === "CONFIRMED" && (
-            <Button size="sm" variant="outline" onClick={() => changeSaleStatus("DELIVERED")} disabled={statusActionLoading}>
-              <PackageCheck className="h-4 w-4 mr-1" />
-              {statusActionLoading ? "Guardando..." : "Marcar entregado"}
+            <Button size="sm" variant="outline" onClick={() => setDeliverDialogOpen(true)} disabled={statusActionLoading}>
+              <PackageCheck className="h-4 w-4 mr-1" />Marcar entregado
+            </Button>
+          )}
+          {isAdmin && progress === "DELIVERED_UNSIGNED" && sale.remito && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (confirm(`¿Registrar que el cliente firmó el Remito #${sale.remito!.number}?`)) signRemito();
+              }}
+              disabled={statusActionLoading}
+            >
+              <PenLine className="h-4 w-4 mr-1" />
+              {statusActionLoading ? "Guardando..." : "Registrar firma"}
             </Button>
           )}
           {isAdmin && (sale.status === "PENDING" || sale.status === "CONFIRMED") && (
@@ -476,6 +534,12 @@ export default function SaleDetailPage() {
 
       {error && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>}
       {statusActionError && <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{statusActionError}</div>}
+      {flash.map((aviso, i) => (
+        <div key={i} className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {aviso}
+        </div>
+      ))}
 
       {sale.status !== "PENDING" && sale.items.some((i) => i.warrantyRoll?.installations.some((inst) => inst.status === "PENDING")) && (
         <Card>
@@ -577,6 +641,9 @@ export default function SaleDetailPage() {
                   {sale.remito.signedAt ? formatDate(sale.remito.signedAt) : <span className="text-amber-600">Pendiente</span>}
                 </p>
                 {sale.remito.notes && <p className="text-muted-foreground mt-2">{sale.remito.notes}</p>}
+                <Button variant="outline" size="sm" className="mt-2" onClick={handleDownloadRemito}>
+                  <Download className="h-4 w-4 mr-1" />Descargar PDF
+                </Button>
               </>
             ) : (
               <p className="text-muted-foreground">Sin remito generado</p>
@@ -1149,6 +1216,27 @@ export default function SaleDetailPage() {
               disabled={deleting || deleteConfirmName.trim().toLowerCase() !== contactName.toLowerCase()}
             >
               {deleting ? "Eliminando..." : "Eliminar Venta"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deliverDialogOpen} onOpenChange={(o) => !o && setDeliverDialogOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><PackageCheck className="h-5 w-5" />Marcar entregada</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            ¿El cliente firmó el remito{sale.remito ? ` #${sale.remito.number}` : ""}? Si todavía no, la venta queda
+            como entregada sin firma y la firma se registra después desde acá o desde Remitos.
+          </p>
+          {statusActionError && <p className="text-sm text-destructive">{statusActionError}</p>}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={async () => { if (await changeSaleStatus("DELIVERED")) setDeliverDialogOpen(false); }} disabled={statusActionLoading}>
+              Entregada, falta la firma
+            </Button>
+            <Button onClick={signRemito} disabled={statusActionLoading || !sale.remito}>
+              <PenLine className="h-4 w-4 mr-1" />El cliente firmó el remito
             </Button>
           </DialogFooter>
         </DialogContent>

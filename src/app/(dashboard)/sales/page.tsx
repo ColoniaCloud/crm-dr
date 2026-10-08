@@ -14,11 +14,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight, Copy, Check, ShieldCheck, CreditCard, Tag, Pencil } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, CreditCard, Tag, Pencil, PackageCheck, CheckCircle2, Save } from "lucide-react";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
 import { calcItemTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";
 import { DiscountTagDialog, type TagEditable } from "@/components/sales/discount-tag-dialog";
+import {
+  saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS, SALE_PROGRESS_ORDER, type SaleProgress,
+} from "@/lib/sale-progress";
+import { setSaleFlash } from "@/lib/sale-flash";
+
+/** Lo que el operador eligió hacer al crear la venta. Ver `action` en POST /api/sales. */
+type CreateAction = "save" | "confirm" | "deliver";
 
 function defaultFirstDueDate(): string {
   const hoy = new Date();
@@ -37,6 +44,7 @@ interface Sale {
   total: string;
   createdAt: string;
   payments: Array<{ amount: string }>;
+  remito: { signedAt: string | null } | null;
 }
 
 interface Product { id: string; name: string; price: string; stock: number; }
@@ -49,14 +57,7 @@ interface DiscountTagInfo {
 }
 interface Contact { id: string; firstName: string; lastName: string; company: string | null; cuit?: string | null; type: string; discountTag?: ContactDiscountTag | null; }
 
-interface CreatedSaleItem {
-  product: { name: string };
-  warrantyRoll: {
-    fullRollCode: string;
-    installations: { activationToken: string; status: string }[];
-  } | null;
-}
-interface CreatedSale { id: string; number: number; items: CreatedSaleItem[]; }
+interface CreatedSale { id: string; number: number; sinRollo?: string[]; }
 
 export default function SalesPageWrapper() {
   return (
@@ -133,9 +134,16 @@ function SalesPage() {
    * desplegable es la mitad del trabajo hecho.
    */
   const [tagDialog, setTagDialog] = useState<{ linea: number; tag: TagEditable | null } | null>(null);
-  const [createdSale, setCreatedSale] = useState<CreatedSale | null>(null);
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [planWarning, setPlanWarning] = useState("");
+  const [creating, setCreating] = useState(false);
+  /**
+   * La acción con la que se intentó crear la venta. La necesita el reintento
+   * después de asignar un escalafón: tiene que repetir lo que el operador eligió,
+   * no caer en "guardar".
+   */
+  const [lastAction, setLastAction] = useState<CreateAction>("save");
+  /** Faltó stock al confirmar: el mensaje del servidor, y se ofrece guardarla pendiente. */
+  const [stockPrompt, setStockPrompt] = useState<string | null>(null);
+  const [progressFilter, setProgressFilter] = useState<SaleProgress | "ALL">("ALL");
 
   // Escalafón de crédito faltante al crear una venta a consignación
   const [creditTierPrompt, setCreditTierPrompt] = useState(false);
@@ -307,6 +315,14 @@ function SalesPage() {
     return { subtotal, perLine, ...split, tax: 0, total: subtotal - split.discount };
   }, [form.items, form.discount, lineTags]);
 
+  const visibleSales = useMemo(
+    () =>
+      progressFilter === "ALL"
+        ? sales
+        : sales.filter((s) => saleProgress(s.status, s.remito) === progressFilter),
+    [sales, progressFilter]
+  );
+
   const installmentPreview = useMemo(() => {
     if (form.type !== "CONSIGNMENT" || !form.buildPlan || !form.firstDueDate) return [];
     const n = parseInt(form.installmentCount, 10);
@@ -333,8 +349,11 @@ function SalesPage() {
     setForm({ ...form, items });
   }
 
-  async function handleCreate() {
-    setPlanWarning("");
+  async function handleCreate(action: CreateAction) {
+    if (creating) return;
+    setCreating(true);
+    setLastAction(action);
+    setError("");
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
@@ -346,6 +365,7 @@ function SalesPage() {
           discount: form.discount,
           notes: form.notes,
           requiresFactura: form.requiresFactura,
+          action,
         }),
       });
       if (!res.ok) {
@@ -359,9 +379,16 @@ function SalesPage() {
           setCreditTierPrompt(true);
           return;
         }
+        // La venta NO se creó (la transacción se revirtió entera). Se ofrece
+        // guardarla pendiente, que es justamente para lo que existe PENDING.
+        if (data?.code === "INSUFFICIENT_STOCK") {
+          setStockPrompt(data.error || "No hay stock suficiente para confirmar la venta.");
+          return;
+        }
         throw new Error(data?.error || "Error al crear venta");
       }
       const created: CreatedSale = await res.json();
+      const avisos: string[] = [];
 
       // Consignación + "Armar plan de cuotas" tildado: la venta ya existe,
       // ahora se arma el plan en el mismo paso reusando el endpoint que ya
@@ -380,26 +407,28 @@ function SalesPage() {
           });
           if (!planRes.ok) {
             const planData = await planRes.json().catch(() => ({}));
-            setPlanWarning(
-              `La venta #${created.number} se creó, pero no se pudo armar el plan de cuotas: ${planData.error || "error desconocido"}. Podés armarlo desde el detalle de la venta.`
+            avisos.push(
+              `No se pudo armar el plan de cuotas: ${planData.error || "error desconocido"}. Podés armarlo desde la tarjeta de plan de cuotas.`
             );
           }
         }
       }
+      if (created.sinRollo && created.sinRollo.length > 0) {
+        avisos.push(
+          `Estos productos quedaron sin rollo de garantía: ${created.sinRollo.join(", ")}. ` +
+            "El cliente no los va a ver en su Stock hasta que se cargue un rollo."
+        );
+      }
 
-      const hasWarrantyLink = created.items.some((i) => i.warrantyRoll?.installations.some((inst) => inst.status === "PENDING"));
-      setCreatedSale(hasWarrantyLink ? created : null);
-      setShowForm(false);
-      setForm({
-        contactId: "", type: "REGULAR",
-        items: [{ productId: "", quantity: 1, unitPrice: 0 }],
-        discount: 0, notes: "", requiresFactura: false,
-        buildPlan: false, installmentCount: "3", frequency: "MONTHLY", firstDueDate: defaultFirstDueDate(),
-      });
-      fetchAll();
+      // A la ficha y no a la lista: es donde sigue el circuito (links de
+      // garantía, remito, cobro). Los avisos viajan con ella.
+      setSaleFlash(created.id, avisos);
+      router.push(`/sales/${created.id}`);
     } catch (err) {
       console.error("[sales] create", err);
       setError(err instanceof Error ? err.message : "Error al crear venta");
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -421,7 +450,7 @@ function SalesPage() {
       }
       setCreditTierPrompt(false);
       setSelectedTierId("");
-      await handleCreate();
+      await handleCreate(lastAction);
     } catch (err) {
       setTierError(err instanceof Error ? err.message : "No se pudo asignar el escalafón");
     } finally {
@@ -500,57 +529,6 @@ function SalesPage() {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {planWarning && (
-        <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-600">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {planWarning}
-        </div>
-      )}
-
-      {createdSale && (
-        <Card className="border-primary/30">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Venta #{createdSale.number} — links de garantía generados
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {createdSale.items.map((item, idx) => {
-              const pending = item.warrantyRoll?.installations.find((i) => i.status === "PENDING");
-              if (!pending) return null;
-              const url = `${window.location.origin}/garantia/${pending.activationToken}`;
-              return (
-                <div key={idx} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{item.product.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{url}</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      navigator.clipboard.writeText(url).catch(() => {});
-                      setCopiedToken(pending.activationToken);
-                      setTimeout(() => setCopiedToken(null), 2000);
-                    }}
-                  >
-                    {copiedToken === pending.activationToken ? (
-                      <Check className="h-4 w-4 mr-1 text-green-600" />
-                    ) : (
-                      <Copy className="h-4 w-4 mr-1" />
-                    )}
-                    {copiedToken === pending.activationToken ? "Copiado" : "Copiar link"}
-                  </Button>
-                </div>
-              );
-            })}
-            <Button variant="ghost" size="sm" onClick={() => setCreatedSale(null)}>Cerrar</Button>
-          </CardContent>
-        </Card>
-      )}
-
       {showForm && (
         <Card>
           <CardHeader><CardTitle>Crear Venta</CardTitle></CardHeader>
@@ -795,9 +773,25 @@ function SalesPage() {
                 ? "Los precios de lista ya incluyen el IVA (21%), así que el total no cambia. Al confirmar la venta le llega el aviso a quien factura."
                 : "Los precios expresados en la lista incluyen el IVA (21%)."}
             </div>
-            <div className="flex gap-2">
-              <Button onClick={handleCreate}>Crear Venta</Button>
-              <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+            {/* Qué pasa con la venta además de crearla. Todo se resuelve en el
+                mismo request (ver `action` en POST /api/sales). */}
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => handleCreate("deliver")} disabled={creating || !form.contactId}>
+                  <PackageCheck className="h-4 w-4 mr-2" />Confirmar y entregar
+                </Button>
+                <Button variant="outline" onClick={() => handleCreate("confirm")} disabled={creating || !form.contactId}>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />Confirmar sin entregar
+                </Button>
+                <Button variant="ghost" onClick={() => handleCreate("save")} disabled={creating || !form.contactId}>
+                  <Save className="h-4 w-4 mr-2" />Guardar pendiente
+                </Button>
+                <Button variant="ghost" className="ml-auto" onClick={() => setShowForm(false)} disabled={creating}>Cancelar</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Confirmar descuenta el stock y asigna los rollos de garantía. Pendiente no mueve stock: sirve para
+                una venta sin stock todavía, que se confirma después desde su ficha.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -805,12 +799,25 @@ function SalesPage() {
 
       <Card>
         <CardContent className="pt-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Label htmlFor="saleProgressFilter" className="text-sm text-muted-foreground">Venta</Label>
+            <Select value={progressFilter} onValueChange={(v) => setProgressFilter(v as SaleProgress | "ALL")}>
+              <SelectTrigger id="saleProgressFilter" className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todas</SelectItem>
+                {SALE_PROGRESS_ORDER.map((p) => (
+                  <SelectItem key={p} value={p}>{SALE_PROGRESS_LABEL[p]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {loading ? <p>Cargando...</p> : (
             <>
             {/* ── Vista móvil ── */}
             <div className="md:hidden space-y-2">
-              {sales.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No hay ventas</p>}
-              {sales.map((sale) => {
+              {visibleSales.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No hay ventas</p>}
+              {visibleSales.map((sale) => {
+                const progress = saleProgress(sale.status, sale.remito);
                 const paid = sale.payments?.reduce((s, p) => s + parseFloat(p.amount), 0) || 0;
                 const total = parseFloat(sale.total);
                 return (
@@ -822,7 +829,8 @@ function SalesPage() {
                       </p>
                       <div className="flex items-center gap-2 text-xs">
                         <Badge variant={sale.type === "CONSIGNMENT" ? "outline" : "default"} className="text-[10px] px-1.5 py-0">{sale.type === "CONSIGNMENT" ? "Consignación" : "Regular"}</Badge>
-                        <Badge variant={paid >= total ? "default" : "destructive"} className="text-[10px] px-1.5 py-0">{paid >= total ? "Pagado" : "Pendiente"}</Badge>
+                        <Badge className={`${SALE_PROGRESS_BADGE_CLASS[progress]} text-[10px] px-1.5 py-0`}>{SALE_PROGRESS_LABEL[progress]}</Badge>
+                        <Badge variant={paid >= total ? "default" : "destructive"} className="text-[10px] px-1.5 py-0">{paid >= total ? "Pagado" : "Sin cobrar"}</Badge>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="font-medium text-foreground">{formatCurrency(sale.total)}</span>
@@ -839,10 +847,11 @@ function SalesPage() {
             <div className="hidden md:block">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>#</TableHead><TableHead>Cliente</TableHead><TableHead>Tipo</TableHead><TableHead>Total</TableHead><TableHead>Pagado</TableHead><TableHead>Estado</TableHead><TableHead>Fecha</TableHead>
+                <TableHead>#</TableHead><TableHead>Cliente</TableHead><TableHead>Tipo</TableHead><TableHead>Total</TableHead><TableHead>Pagado</TableHead><TableHead>Venta</TableHead><TableHead>Cobro</TableHead><TableHead>Fecha</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {sales.map((sale) => {
+                {visibleSales.map((sale) => {
+                  const progress = saleProgress(sale.status, sale.remito);
                   const paid = sale.payments?.reduce((s, p) => s + parseFloat(p.amount), 0) || 0;
                   const total = parseFloat(sale.total);
                   return (
@@ -852,12 +861,13 @@ function SalesPage() {
                       <TableCell><Badge variant={sale.type === "CONSIGNMENT" ? "outline" : "default"}>{sale.type === "CONSIGNMENT" ? "Consignación" : "Regular"}</Badge></TableCell>
                       <TableCell>{formatCurrency(sale.total)}</TableCell>
                       <TableCell>{formatCurrency(paid)}</TableCell>
-                      <TableCell><Badge variant={paid >= total ? "default" : "destructive"}>{paid >= total ? "Pagado" : "Pendiente"}</Badge></TableCell>
+                      <TableCell><Badge className={SALE_PROGRESS_BADGE_CLASS[progress]}>{SALE_PROGRESS_LABEL[progress]}</Badge></TableCell>
+                      <TableCell><Badge variant={paid >= total ? "default" : "destructive"}>{paid >= total ? "Pagado" : "Sin cobrar"}</Badge></TableCell>
                       <TableCell>{formatDate(sale.createdAt)}</TableCell>
                     </TableRow>
                   );
                 })}
-                {sales.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No hay ventas</TableCell></TableRow>}
+                {visibleSales.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No hay ventas</TableCell></TableRow>}
               </TableBody>
             </Table>
             </div>
@@ -892,6 +902,27 @@ function SalesPage() {
           setTagDialog(null);
         }}
       />
+
+      <Dialog open={stockPrompt !== null} onOpenChange={(o) => !o && setStockPrompt(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5" />No se pudo confirmar</DialogTitle>
+            <DialogDescription>
+              {stockPrompt} La venta no se creó. ¿La guardo como pendiente? Queda registrada sin mover stock, y se
+              confirma desde su ficha cuando entre la mercadería.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStockPrompt(null)}>Volver al formulario</Button>
+            <Button
+              onClick={() => { setStockPrompt(null); handleCreate("save"); }}
+              disabled={creating}
+            >
+              <Save className="h-4 w-4 mr-2" />Guardar pendiente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={creditTierPrompt} onOpenChange={(o) => !o && setCreditTierPrompt(false)}>
         <DialogContent>

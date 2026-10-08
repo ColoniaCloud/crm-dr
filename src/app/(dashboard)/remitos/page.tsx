@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 import { downloadRemitoPDF } from "@/components/remito-pdf";
+import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
 import { Download, CheckCircle2, Clock, PenLine } from "lucide-react";
 
 interface RemitoRaw {
@@ -152,10 +153,15 @@ function RemitosPageInner() {
                       </Badge>
                     )}
                     <span className="text-muted-foreground">Venta #{remito.sale?.number}</span>
+                    {remito.sale && (
+                      <Badge className={`${SALE_PROGRESS_BADGE_CLASS[saleProgress(remito.sale.status, remito)]} text-[10px] px-1.5 py-0`}>
+                        {SALE_PROGRESS_LABEL[saleProgress(remito.sale.status, remito)]}
+                      </Badge>
+                    )}
                     <span className="text-muted-foreground">{formatDate(remito.issuedAt)}</span>
                   </div>
                   <div className="flex gap-2 pt-0.5">
-                    {!remito.signedAt && (
+                    {!remito.signedAt && remito.sale?.status !== "CANCELLED" && (
                       <Button variant="outline" size="sm" onClick={() => handleSign(remito)} disabled={signingId === remito.id} className="h-7 text-xs text-green-400 border-green-600/30 hover:bg-green-600/10">
                         <PenLine className="h-3 w-3 mr-1" />{signingId === remito.id ? "Firmando..." : "Firmar"}
                       </Button>
@@ -175,6 +181,7 @@ function RemitosPageInner() {
                 <TableRow>
                   <TableHead>#Remito</TableHead>
                   <TableHead>#Venta</TableHead>
+                  <TableHead>Venta</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Estado</TableHead>
@@ -187,6 +194,13 @@ function RemitosPageInner() {
                   <TableRow key={remito.id}>
                     <TableCell className="font-medium">{remito.number}</TableCell>
                     <TableCell>{remito.sale?.number}</TableCell>
+                    <TableCell>
+                      {remito.sale && (
+                        <Badge className={SALE_PROGRESS_BADGE_CLASS[saleProgress(remito.sale.status, remito)]}>
+                          {SALE_PROGRESS_LABEL[saleProgress(remito.sale.status, remito)]}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {remito.sale?.contact
                         ? `${remito.sale.contact.firstName} ${remito.sale.contact.lastName}${remito.sale.contact.company ? ` (${remito.sale.contact.company})` : ""}`
@@ -211,7 +225,7 @@ function RemitosPageInner() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        {!remito.signedAt && (
+                        {!remito.signedAt && remito.sale?.status !== "CANCELLED" && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -238,7 +252,7 @@ function RemitosPageInner() {
                 ))}
                 {remitos.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       No hay remitos registrados
                     </TableCell>
                   </TableRow>

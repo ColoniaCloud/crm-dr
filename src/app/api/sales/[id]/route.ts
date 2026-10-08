@@ -34,6 +34,10 @@ export async function GET(
             phone: true,
             cuit: true,
             type: true,
+            // Para el PDF del remito, que se descarga desde la ficha.
+            address: true,
+            city: true,
+            state: true,
           },
         },
         user: {
