@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
+import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 const log = createLogger("api/remitos");
 
 export async function GET() {
@@ -11,7 +12,9 @@ export async function GET() {
   if (role !== "ADMIN" && role !== "SUPERADMIN") return NextResponse.json({ error: "Acceso restringido" }, { status: 403 });
   try {
     const remitos = await prisma.remito.findMany({
-      include: {
+      // Sin el trazo ni el snapshot (ver REMITO_SUMMARY_SELECT).
+      select: {
+        ...REMITO_SUMMARY_SELECT,
         sale: {
           select: {
             id: true,

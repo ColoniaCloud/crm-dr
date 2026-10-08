@@ -28,7 +28,7 @@ import { BRAND } from "@/lib/brand";
 // La del diseño aprobado, con el contraste corregido: las etiquetas sobre
 // negro estaban al 25 % de blanco (2,1:1) y el texto legal del pie era casi
 // invisible. Los grises de acá pasan 4,5:1 sobre su fondo.
-const C = {
+export const C = {
   bg: "#E8E8E6",
   black: "#0A0A0A",
   ink: "#0A0A0A",
@@ -55,7 +55,7 @@ const C = {
   no: "#C62828",
 } as const;
 
-const F = "'DM Sans', Arial, Helvetica, sans-serif";
+export const F = "'DM Sans', Arial, Helvetica, sans-serif";
 
 /**
  * Base pública del propio CRM. Es de donde salen las imágenes del mail: el logo
@@ -89,6 +89,9 @@ export function fechaLarga(d: Date): string {
 }
 
 // ─── Piezas ───────────────────────────────────────────────────────────────
+//
+// Las exportadas también arman el mail del remito firmado (src/lib/mail-remito.ts):
+// misma familia visual. Cambiarlas acá cambia los dos.
 
 /** Las tres barritas de «tecnología alemana» que acompañan al eyebrow. */
 function bandera(): string {
@@ -97,7 +100,7 @@ function bandera(): string {
   return `<td style="vertical-align:middle;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${barra("#4A4A4A")}${barra(C.red)}${barra(C.gold)}</tr></table></td>`;
 }
 
-function cabecera(etiqueta: string): string {
+export function cabecera(etiqueta: string): string {
   const logo = `${crmBaseUrl()}${BRAND.emailLogoOnDark}`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.black};">
   <tr><td class="px" style="padding:26px 40px 0 40px;">
@@ -110,7 +113,7 @@ function cabecera(etiqueta: string): string {
 </table>`;
 }
 
-function banda(o: { eyebrow: string; titulo: string; bajada: string; boton?: { texto: string; href: string } }): string {
+export function banda(o: { eyebrow: string; titulo: string; bajada: string; boton?: { texto: string; href: string } }): string {
   const boton = o.boton
     ? `<div style="padding-top:24px;"><a href="${o.boton.href}" style="display:inline-block;background:#FFFFFF;color:${C.black};font-family:${F};font-size:14px;font-weight:600;text-decoration:none;padding:14px 30px;border-radius:6px;letter-spacing:.02em;">${o.boton.texto}</a></div>`
     : "";
@@ -145,17 +148,17 @@ function firmaTaller(taller: FirmaDelTaller, derecha?: string): string {
   </td></tr></table>`;
 }
 
-function cuerpo(html: string): string {
+export function cuerpo(html: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="px" style="padding:32px 40px 28px 40px;">${html}</td></tr></table>`;
 }
 
-function saludo(nombre: string | null, texto: string): string {
+export function saludo(nombre: string | null, texto: string): string {
   const hola = nombre?.trim() ? `Hola ${escapeHtml(nombre.trim())},` : "Hola,";
   return `<div style="font-family:${F};font-size:15px;font-weight:500;color:${C.ink};padding-bottom:6px;">${hola}</div>
 <div style="font-family:${F};font-size:13px;line-height:1.7;color:${C.text};">${texto}</div>`;
 }
 
-function espacio(px: number): string {
+export function espacio(px: number): string {
   return `<div style="height:${px}px;font-size:0;line-height:0;">&nbsp;</div>`;
 }
 
@@ -164,11 +167,11 @@ function dato(etiqueta: string, valor: string): string {
 <div style="font-family:${F};font-size:12px;color:${C.dValue};">${valor}</div>`;
 }
 
-function botonPrincipal(o: { texto: string; href: string }): string {
+export function botonPrincipal(o: { texto: string; href: string }): string {
   return `<a href="${o.href}" style="display:inline-block;background:${C.black};color:#FFFFFF;font-family:${F};font-size:13px;font-weight:500;text-decoration:none;padding:12px 28px;border-radius:6px;letter-spacing:.02em;">${o.texto}</a>`;
 }
 
-function llamado(o: { texto: string; boton: { texto: string; href: string }; secundario?: { texto: string; href: string } }): string {
+export function llamado(o: { texto: string; boton: { texto: string; href: string }; secundario?: { texto: string; href: string } }): string {
   const secundario = o.secundario
     ? `<div style="padding-top:14px;font-family:${F};font-size:12px;"><a href="${o.secundario.href}" style="color:${C.text};text-decoration:underline;">${o.secundario.texto}</a></div>`
     : "";
@@ -179,14 +182,14 @@ function llamado(o: { texto: string; boton: { texto: string; href: string }; sec
 </td></tr></table>`;
 }
 
-function nota(texto: string): string {
+export function nota(texto: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.band};border-radius:6px;"><tr>
   <td width="3" style="background:${C.black};border-radius:6px 0 0 6px;font-size:0;line-height:0;">&nbsp;</td>
   <td style="padding:14px 16px;font-family:${F};font-size:13px;line-height:1.65;color:${C.ink};white-space:pre-line;">${escapeHtml(texto)}</td>
 </tr></table>`;
 }
 
-function pie(legal: string): string {
+export function pie(legal: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.foot};border-top:1px solid ${C.hair};"><tr><td class="px" style="padding:24px 40px;">
   <div style="font-family:${F};font-size:11px;font-weight:600;letter-spacing:.06em;color:${C.text};">KRISTALL<sup style="font-size:7px;line-height:0;">&reg;</sup></div>
   <div style="font-family:${F};font-size:11px;color:${C.legal};line-height:1.7;padding-bottom:14px;">Performance aplicada al confort<br>Tecnología alemana en láminas de alto rendimiento.<br>
@@ -197,7 +200,7 @@ function pie(legal: string): string {
 }
 
 /** El documento completo: fuente, media query para el celular, y el sobre gris. */
-function documento(o: { asunto: string; preheader: string; contenido: string }): string {
+export function documento(o: { asunto: string; preheader: string; contenido: string }): string {
   return `<!doctype html>
 <html lang="es">
 <head>

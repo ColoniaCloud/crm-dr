@@ -7,7 +7,8 @@ import { withMobileCors, mobileCorsPreflight } from "@/lib/mobile-cors";
 import { validateBody } from "@/lib/api-validation";
 import { transporter, FROM } from "@/lib/mailer";
 import { BRAND } from "@/lib/brand";
-import { buildRemitoPdfBuffer } from "@/lib/remito-pdf-server";
+import { buildRemitoPdfBuffer, remitoPdfFilename } from "@/lib/remito-pdf-server";
+import { loadRemitoBySaleId, remitoPublicUrl, REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 import { escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { rateLimit } from "@/lib/rate-limit";
 import { createLogger } from "@/lib/logger";
@@ -35,8 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
       where: { id: saleId },
       include: {
         contact: true,
-        items: { include: { product: { select: { name: true, category: true } } } },
-        remito: true,
+        remito: { select: REMITO_SUMMARY_SELECT },
       },
     });
 
@@ -66,17 +66,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
       );
     }
 
-    const pdfBuffer = buildRemitoPdfBuffer({
-      number: sale.remito.number,
-      issuedAt: sale.remito.issuedAt.toISOString(),
-      notes: sale.remito.notes,
-      facturaInfo: sale.remito.facturaInfo,
-      sale: {
-        number: sale.number,
-        requiresFactura: sale.requiresFactura,
-        contact: sale.contact,
-        items: sale.items,
-      },
+    // Firmado sale del snapshot con la firma; sin firmar, con el link para
+    // firmarlo online si ya se generó.
+    const loaded = (await loadRemitoBySaleId(prisma, saleId))!;
+    const pdfBuffer = buildRemitoPdfBuffer(loaded.document, {
+      signature: loaded.signature,
+      signUrl: !loaded.signature && loaded.publicToken ? remitoPublicUrl(loaded.publicToken) : null,
     });
 
     const contactName = `${sale.contact.firstName ?? ""} ${sale.contact.lastName ?? ""}`.trim();
@@ -101,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
       to: email,
       subject: `Remito #${sale.remito.number} - Venta #${sale.number} - ${BRAND.name}`,
       html,
-      attachments: [{ filename: `remito-${sale.remito.number}.pdf`, content: pdfBuffer }],
+      attachments: [{ filename: remitoPdfFilename(loaded.document, !!loaded.signature), content: pdfBuffer }],
     };
 
     await transporter.sendMail(mailOptions);

@@ -17,13 +17,12 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import PaymentPlanCard from "@/components/sales/payment-plan-card";
 import SaleReturnsCard from "@/components/sales/sale-returns-card";
-import { downloadRemitoPDF } from "@/components/remito-pdf";
 import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
 import { takeSaleFlash } from "@/lib/sale-flash";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
-  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine,
+  Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine, Link2, ExternalLink,
 } from "lucide-react";
 
 interface SaleItem {
@@ -59,7 +58,16 @@ interface Remito {
   signedAt: string | null;
   notes: string | null;
   facturaInfo: string | null;
+  signedVia: string | null;
+  signedByName: string | null;
 }
+
+/** Los remitos firmados antes de la fase 2 no tienen `signedVia`: fueron en papel. */
+const SIGNED_VIA_LABEL: Record<string, string> = {
+  ONLINE: "online",
+  POS: "en el POS",
+  PAPER: "en papel",
+};
 
 interface SaleDetail {
   id: string;
@@ -160,6 +168,10 @@ export default function SaleDetailPage() {
   const [deliverDialogOpen, setDeliverDialogOpen] = useState(false);
   /** Lo que la creación de la venta dejó a medias (ver src/lib/sale-flash.ts). */
   const [flash, setFlash] = useState<string[]>([]);
+  /** El link público para que el cliente firme el remito (`/r/<token>`). */
+  const [signLink, setSignLink] = useState<string | null>(null);
+  const [signLinkCopied, setSignLinkCopied] = useState(false);
+  const [signLinkLoading, setSignLinkLoading] = useState(false);
 
   // Register payment dialog
   const [createPaymentOpen, setCreatePaymentOpen] = useState(false);
@@ -429,20 +441,30 @@ export default function SaleDetailPage() {
     }
   }
 
+  // El PDF lo arma el servidor: firmado, sale del contenido congelado al firmar.
   function handleDownloadRemito() {
     if (!sale?.remito) return;
-    downloadRemitoPDF({
-      ...sale.remito,
-      sale: {
-        number: sale.number,
-        requiresFactura: sale.requiresFactura,
-        contact: sale.contact,
-        items: sale.items.map((i) => ({
-          quantity: i.quantity,
-          product: { name: i.product.name, category: i.product.category ?? undefined },
-        })),
-      },
-    });
+    window.location.assign(`/api/remitos/${sale.remito.id}/pdf`);
+  }
+
+  /** Genera (la primera vez) y copia el link para que el cliente firme online. */
+  async function copySignLink() {
+    if (!sale?.remito) return;
+    setSignLinkLoading(true);
+    setStatusActionError("");
+    try {
+      const res = await fetch(`/api/remitos/${sale.remito.id}/link`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || "No se pudo generar el link");
+      setSignLink(data.url);
+      await navigator.clipboard.writeText(data.url).catch(() => {});
+      setSignLinkCopied(true);
+      setTimeout(() => setSignLinkCopied(false), 2000);
+    } catch (err) {
+      setStatusActionError(err instanceof Error ? err.message : "No se pudo generar el link");
+    } finally {
+      setSignLinkLoading(false);
+    }
   }
 
   async function toggleAuditLogs() {
@@ -511,12 +533,12 @@ export default function SaleDetailPage() {
               size="sm"
               variant="outline"
               onClick={() => {
-                if (confirm(`¿Registrar que el cliente firmó el Remito #${sale.remito!.number}?`)) signRemito();
+                if (confirm(`¿Registrar que el cliente firmó en papel el Remito #${sale.remito!.number}?`)) signRemito();
               }}
               disabled={statusActionLoading}
             >
               <PenLine className="h-4 w-4 mr-1" />
-              {statusActionLoading ? "Guardando..." : "Registrar firma"}
+              {statusActionLoading ? "Guardando..." : "Firmado en papel"}
             </Button>
           )}
           {isAdmin && (sale.status === "PENDING" || sale.status === "CONFIRMED") && (
@@ -638,12 +660,36 @@ export default function SaleDetailPage() {
                 <p><span className="text-muted-foreground">Emitido:</span> {formatDate(sale.remito.issuedAt)}</p>
                 <p>
                   <span className="text-muted-foreground">Firmado:</span>{" "}
-                  {sale.remito.signedAt ? formatDate(sale.remito.signedAt) : <span className="text-amber-600">Pendiente</span>}
+                  {sale.remito.signedAt ? (
+                    <>
+                      {formatDate(sale.remito.signedAt)} {SIGNED_VIA_LABEL[sale.remito.signedVia ?? "PAPER"]}
+                      {sale.remito.signedByName && <> · {sale.remito.signedByName}</>}
+                    </>
+                  ) : (
+                    <span className="text-amber-600">Pendiente</span>
+                  )}
                 </p>
                 {sale.remito.notes && <p className="text-muted-foreground mt-2">{sale.remito.notes}</p>}
-                <Button variant="outline" size="sm" className="mt-2" onClick={handleDownloadRemito}>
-                  <Download className="h-4 w-4 mr-1" />Descargar PDF
-                </Button>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button variant="outline" size="sm" onClick={handleDownloadRemito}>
+                    <Download className="h-4 w-4 mr-1" />{sale.remito.signedAt ? "PDF firmado" : "Descargar PDF"}
+                  </Button>
+                  {/* Firmar online es entregar: no se ofrece sobre una venta anulada. */}
+                  {isAdmin && !sale.remito.signedAt && sale.status !== "CANCELLED" && (
+                    <Button variant="outline" size="sm" onClick={copySignLink} disabled={signLinkLoading}>
+                      {signLinkCopied ? <Check className="h-4 w-4 mr-1 text-green-600" /> : <Link2 className="h-4 w-4 mr-1" />}
+                      {signLinkCopied ? "Link copiado" : "Link para firmar"}
+                    </Button>
+                  )}
+                </div>
+                {signLink && !sale.remito.signedAt && (
+                  <div className="flex items-center gap-2 rounded-md border p-2 text-xs">
+                    <span className="truncate text-muted-foreground">{signLink}</span>
+                    <a href={signLink} target="_blank" rel="noreferrer" className="shrink-0 text-primary" aria-label="Abrir el link">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-muted-foreground">Sin remito generado</p>
@@ -1227,8 +1273,8 @@ export default function SaleDetailPage() {
             <DialogTitle className="flex items-center gap-2"><PackageCheck className="h-5 w-5" />Marcar entregada</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            ¿El cliente firmó el remito{sale.remito ? ` #${sale.remito.number}` : ""}? Si todavía no, la venta queda
-            como entregada sin firma y la firma se registra después desde acá o desde Remitos.
+            ¿El cliente firmó el remito{sale.remito ? ` #${sale.remito.number}` : ""} en papel? Si todavía no, la venta
+            queda como entregada sin firma: podés mandarle el link para que firme online, o registrar la firma después.
           </p>
           {statusActionError && <p className="text-sm text-destructive">{statusActionError}</p>}
           <DialogFooter className="gap-2">
@@ -1236,7 +1282,7 @@ export default function SaleDetailPage() {
               Entregada, falta la firma
             </Button>
             <Button onClick={signRemito} disabled={statusActionLoading || !sale.remito}>
-              <PenLine className="h-4 w-4 mr-1" />El cliente firmó el remito
+              <PenLine className="h-4 w-4 mr-1" />Firmó en papel
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -12,6 +12,7 @@ import { resolveSaleDiscount } from "@/lib/discount-tags";
 import { validateBody } from "@/lib/api-validation";
 import { serializeSaleDetail } from "@/lib/mobile-sale";
 import { createLogger } from "@/lib/logger";
+import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 
 const log = createLogger("api/mobile/v1/sales");
 
@@ -263,7 +264,7 @@ export async function POST(request: Request) {
           },
         },
         items: { include: { product: { select: { id: true, name: true, sku: true } } } },
-        remito: true,
+        remito: { select: REMITO_SUMMARY_SELECT },
         payments: true,
       },
     });

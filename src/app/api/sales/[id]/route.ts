@@ -6,6 +6,7 @@ import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable, notifyAdmins } from "@/lib/notifications";
 import { confirmSale, restoreSaleStock } from "@/lib/sales";
 import { avisarFacturaPendiente } from "@/lib/factura-notify";
+import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 
 const log = createLogger("api/sales/[id]");
 
@@ -62,7 +63,7 @@ export async function GET(
         payments: {
           orderBy: { paidAt: "desc" },
         },
-        remito: true,
+        remito: { select: REMITO_SUMMARY_SELECT },
         paymentPlan: {
           include: {
             installments: {

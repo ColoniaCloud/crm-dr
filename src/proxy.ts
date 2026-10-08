@@ -82,6 +82,12 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // El remito público (`/r/<token>`) lo abre el cliente, que no tiene cuenta.
+  // El token es su credencial; ver src/app/r/[token]/page.tsx.
+  if (pathname.startsWith("/r/")) {
+    return noSharedCache(NextResponse.next());
+  }
+
   // Invalidated sessions (JWT revalidation cleared token) → redirect to login
   if (req.auth && !req.auth.user?.id) {
     const loginUrl = new URL("/login", req.nextUrl.origin);

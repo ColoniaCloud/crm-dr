@@ -743,6 +743,30 @@ model Remito {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // ─── Firma (ver REMITOS-FIRMA.md, fase 2) ───────────────────────────────
+  /// Lo que va en la URL pública `/r/<token>`. Aleatorio y nunca el id: nada
+  /// interno en una URL que se le manda al cliente. Se genera la primera vez
+  /// que alguien pide el link (src/lib/remito-document.ts), no al crear.
+  publicToken     String?  @unique @db.VarChar(64)
+  /// Cómo se firmó: ONLINE (el cliente en /r/<token>), POS (en el teléfono del
+  /// vendedor), PAPER (un operador registra que firmó en papel). String y no
+  /// enum a propósito: MySQL guarda los ENUM por posición.
+  signedVia       String?  @db.VarChar(16)
+  signedByName    String?  @db.VarChar(191)
+  signedByDni     String?  @db.VarChar(32)
+  /// Quién registró la firma en el CRM, cuando fue un operador (PAPER).
+  signedByUserId  String?
+  /// El trazo, como data URL PNG. Ausente en las firmas en papel.
+  signatureImage  String?  @db.MediumText
+  signedIp        String?  @db.VarChar(64)
+  signedUserAgent String?  @db.VarChar(512)
+  /// El contenido del remito congelado al firmar (RemitoDocument). Firmado, el
+  /// PDF sale de acá y no de la venta: si después se edita el total o hay una
+  /// devolución, el remito que firmó el cliente no cambia.
+  snapshot        Json?
+  /// sha256 del snapshot + la firma. Va impreso en el PDF.
+  snapshotHash    String?  @db.Char(64)
+
   @@map("remitos")
 }
 

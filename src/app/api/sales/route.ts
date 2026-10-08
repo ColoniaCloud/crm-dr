@@ -10,6 +10,7 @@ import { avisarFacturaPendiente } from "@/lib/factura-notify";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
+import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 const log = createLogger("api/sales");
 
 /** confirmSale no pudo descontar: la venta no se crea, y la pantalla ofrece guardarla pendiente. */
@@ -96,7 +97,7 @@ export async function GET(request: Request) {
           },
         },
         payments: true,
-        remito: true,
+        remito: { select: REMITO_SUMMARY_SELECT },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -283,7 +284,7 @@ export async function POST(request: Request) {
             warrantyRoll: { include: { installations: true } },
           },
         },
-        remito: true,
+        remito: { select: REMITO_SUMMARY_SELECT },
         payments: true,
       },
     });

@@ -9,7 +9,6 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
-import { downloadRemitoPDF } from "@/components/remito-pdf";
 import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
 import { Download, CheckCircle2, Clock, PenLine } from "lucide-react";
 
@@ -18,6 +17,8 @@ interface RemitoRaw {
   number: number;
   issuedAt: string;
   signedAt: string | null;
+  signedVia: string | null;
+  signedByName: string | null;
   notes: string | null;
   facturaInfo: string | null;
   sale: {
@@ -47,6 +48,13 @@ interface RemitoRaw {
   };
 }
 
+/** Los remitos firmados antes de la fase 2 no tienen `signedVia`: fueron en papel. */
+const VIA_LABEL: Record<string, string> = {
+  ONLINE: "Firmado online",
+  POS: "Firmado en POS",
+  PAPER: "Firmado en papel",
+};
+
 function RemitosPageInner() {
   const searchParams = useSearchParams();
   const saleIdFilter = searchParams.get("saleId");
@@ -74,17 +82,16 @@ function RemitosPageInner() {
     fetchRemitos();
   }, [saleIdFilter]);
 
+  // El PDF lo arma el servidor (un solo generador: src/lib/remito-pdf-server.ts).
+  // Firmado, sale del contenido congelado al firmar y con la firma al pie.
   function handleDownloadPDF(remito: RemitoRaw) {
     setDownloadingId(remito.id);
-    try {
-      downloadRemitoPDF(remito);
-    } finally {
-      setDownloadingId(null);
-    }
+    window.location.assign(`/api/remitos/${remito.id}/pdf`);
+    setTimeout(() => setDownloadingId(null), 1500);
   }
 
   async function handleSign(remito: RemitoRaw) {
-    if (!confirm(`¿Confirmar firma del Remito #${remito.number}? Esto marcará la venta como entregada.`)) return;
+    if (!confirm(`¿Registrar que el cliente firmó en papel el Remito #${remito.number}? Esto marca la venta como entregada y el remito ya no se puede modificar.`)) return;
     setSigningId(remito.id);
     try {
       const res = await fetch(`/api/remitos/${remito.id}/sign`, { method: "POST" });
@@ -104,7 +111,7 @@ function RemitosPageInner() {
       setRemitos((prev) =>
         prev.map((r) =>
           r.id === remito.id
-            ? { ...r, signedAt: new Date().toISOString(), sale: { ...r.sale, status: "DELIVERED" } }
+            ? { ...r, signedAt: new Date().toISOString(), signedVia: "PAPER", sale: { ...r.sale, status: "DELIVERED" } }
             : r
         )
       );
@@ -163,7 +170,7 @@ function RemitosPageInner() {
                   <div className="flex gap-2 pt-0.5">
                     {!remito.signedAt && remito.sale?.status !== "CANCELLED" && (
                       <Button variant="outline" size="sm" onClick={() => handleSign(remito)} disabled={signingId === remito.id} className="h-7 text-xs text-green-400 border-green-600/30 hover:bg-green-600/10">
-                        <PenLine className="h-3 w-3 mr-1" />{signingId === remito.id ? "Firmando..." : "Firmar"}
+                        <PenLine className="h-3 w-3 mr-1" />{signingId === remito.id ? "Guardando..." : "Firmado en papel"}
                       </Button>
                     )}
                     <Button variant="outline" size="sm" onClick={() => handleDownloadPDF(remito)} disabled={downloadingId === remito.id} className="h-7 text-xs">
@@ -211,7 +218,7 @@ function RemitosPageInner() {
                       {remito.signedAt ? (
                         <Badge className="bg-green-600/20 text-green-400 border-green-600/30">
                           <CheckCircle2 className="size-3 mr-1" />
-                          Firmado {formatDate(remito.signedAt)}
+                          {VIA_LABEL[remito.signedVia ?? "PAPER"] ?? "Firmado"} {formatDate(remito.signedAt)}
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="text-yellow-400 border-yellow-600/30">
@@ -234,7 +241,7 @@ function RemitosPageInner() {
                             className="text-green-400 border-green-600/30 hover:bg-green-600/10"
                           >
                             <PenLine className="h-4 w-4 mr-1" />
-                            {signingId === remito.id ? "Firmando..." : "Firmar"}
+                            {signingId === remito.id ? "Guardando..." : "Firmado en papel"}
                           </Button>
                         )}
                         <Button
