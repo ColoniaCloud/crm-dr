@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, RefreshCw, Send } from "lucide-react";
+import { Check, Copy, ExternalLink, Link2, Loader2, RefreshCw, Send } from "lucide-react";
 
 /**
  * Pestaña "Pedir datos" de /whatsapp: mandarles a los Clientes sin email un
@@ -40,7 +40,7 @@ interface Resultado {
 
 const ETIQUETA: Record<Estado, { texto: string; variant: "secondary" | "outline" | "default" }> = {
   SIN_ENVIAR: { texto: "Sin enviar", variant: "outline" },
-  ENVIADO: { texto: "Link enviado", variant: "secondary" },
+  ENVIADO: { texto: "Link vigente", variant: "secondary" },
   VENCIDO: { texto: "Link vencido", variant: "outline" },
   ESPERA_CONFIRMACION: { texto: "Falta confirmar el mail", variant: "default" },
 };
@@ -58,6 +58,10 @@ export function DataUpdateTab() {
   const [confirmar, setConfirmar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  // Envío a mano: el link generado para un Cliente, listo para copiar o abrir.
+  const [manual, setManual] = useState<{ fila: Fila; texto: string; numero: string } | null>(null);
+  const [generando, setGenerando] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
 
   async function cargar(conservarMensaje = false) {
     setCargando(true);
@@ -95,6 +99,37 @@ export function DataUpdateTab() {
       else next.add(id);
       return next;
     });
+  }
+
+  async function generarLink(fila: Fila) {
+    setGenerando(fila.id);
+    setError("");
+    setCopiado(false);
+    try {
+      const res = await fetch("/api/whatsapp/data-update/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId: fila.id, message: mensaje }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo generar el link");
+      setManual({ fila, texto: data.texto, numero: data.numero });
+      await cargar(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo generar el link");
+    } finally {
+      setGenerando(null);
+    }
+  }
+
+  async function copiar() {
+    if (!manual) return;
+    try {
+      await navigator.clipboard.writeText(manual.texto);
+      setCopiado(true);
+    } catch {
+      setError("El navegador no dejó copiar: seleccioná el texto y copialo a mano.");
+    }
   }
 
   async function enviar() {
@@ -159,6 +194,17 @@ export function DataUpdateTab() {
                     </p>
                   </div>
                   <Badge variant={ETIQUETA[f.estado].variant} className="shrink-0">{ETIQUETA[f.estado].texto}</Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={!f.numero || faltaLink || generando !== null}
+                    onClick={() => generarLink(f)}
+                    title="Generar el mensaje con su link para mandarlo a mano"
+                  >
+                    {generando === f.id ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
+                    <span className="hidden sm:inline">Link</span>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -215,6 +261,37 @@ export function DataUpdateTab() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={manual !== null} onOpenChange={(o) => !o && setManual(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mensaje para {manual?.fila.company || manual?.fila.nombre}</DialogTitle>
+            <DialogDescription>
+              Mandalo desde la app de WhatsApp Business. El link vale 7 días; si generás otro, este deja de
+              funcionar.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="max-h-64 select-all overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm">
+            {manual?.texto}
+          </p>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={copiar}>
+              {copiado ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {copiado ? "Copiado" : "Copiar"}
+            </Button>
+            <Button asChild>
+              <a
+                href={manual ? `https://wa.me/${manual.numero}?text=${encodeURIComponent(manual.texto)}` : "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="size-4" />
+                Abrir en WhatsApp
+              </a>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmar} onOpenChange={(o) => !enviando && setConfirmar(o)}>
         <DialogContent>
