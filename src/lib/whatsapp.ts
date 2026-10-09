@@ -53,6 +53,14 @@ export async function sendWhatsapp(opciones: {
   message: string;
   /** Para poder ver el mensaje en la ficha del contacto. */
   contactId?: string | null;
+  /** El operador que lo disparó. Sin esto queda como enviado por el sistema. */
+  sentById?: string | null;
+  /**
+   * Lo que queda escrito en el historial, si tiene que ser distinto de lo que
+   * se manda. Existe para los mensajes con un link personal: el link es una
+   * llave, y el historial lo lee cualquier SUPERADMIN.
+   */
+  messageForLog?: string;
 }): Promise<boolean> {
   // Antes que nada: en la demo no sale nada, y ni siquiera se deja la fila del
   // intento. Esa fila viviria en la base de demo y se borraria con el clon, pero
@@ -99,11 +107,11 @@ export async function sendWhatsapp(opciones: {
       data: {
         contactId: opciones.contactId ?? null,
         phone: number,
-        message,
+        message: opciones.messageForLog?.trim() || message,
         status: ok ? "SENT" : "FAILED",
         error,
-        // Sin `sentById`: no hubo operador, lo mandó el sistema.
-        sentById: null,
+        // Sin operador, lo mandó el sistema.
+        sentById: opciones.sentById ?? null,
       },
     });
   } catch (err) {

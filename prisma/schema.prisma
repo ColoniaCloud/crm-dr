@@ -204,6 +204,12 @@ enum PortalAccessLevel {
 enum PortalTokenPurpose {
   ACTIVATION
   PASSWORD_RESET
+  // Link que va por WhatsApp a un Cliente sin mail para que cargue su email y
+  // corrija sus datos. `sentToEmail` guarda "whatsapp:<número>": no hay mail.
+  DATA_UPDATE
+  // Confirmación del email cargado con DATA_UPDATE. `sentToEmail` es el email
+  // nuevo, que recién pasa a la ficha cuando se confirma. Ver src/lib/data-update.ts.
+  EMAIL_CONFIRM
 }
 
 model User {

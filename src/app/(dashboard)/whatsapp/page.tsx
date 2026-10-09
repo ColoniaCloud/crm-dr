@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
 import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
+import { DataUpdateTab } from "@/components/whatsapp/data-update-tab";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -179,9 +180,10 @@ function WhatsAppPageInner({ isSuperAdmin }: { isSuperAdmin: boolean }) {
       </div>
 
       <Tabs defaultValue="send" className="w-full">
-        <TabsList className="grid w-full sm:w-auto sm:inline-flex" style={{ gridTemplateColumns: `repeat(${isSuperAdmin ? 4 : 1}, minmax(0, 1fr))` }}>
+        <TabsList className="grid w-full sm:w-auto sm:inline-flex" style={{ gridTemplateColumns: `repeat(${isSuperAdmin ? 5 : 1}, minmax(0, 1fr))` }}>
           {isSuperAdmin && <TabsTrigger value="connection">Conexión</TabsTrigger>}
           <TabsTrigger value="send">Enviar mensaje</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="data-update">Pedir datos</TabsTrigger>}
           {isSuperAdmin && <TabsTrigger value="history">Historial</TabsTrigger>}
           {isSuperAdmin && <TabsTrigger value="settings">Configuración</TabsTrigger>}
         </TabsList>
@@ -194,6 +196,11 @@ function WhatsAppPageInner({ isSuperAdmin }: { isSuperAdmin: boolean }) {
         <TabsContent value="send" className="mt-4">
           <SendTab isSuperAdmin={isSuperAdmin} />
         </TabsContent>
+        {isSuperAdmin && (
+          <TabsContent value="data-update" className="mt-4">
+            <DataUpdateTab />
+          </TabsContent>
+        )}
         {isSuperAdmin && (
           <TabsContent value="history" className="mt-4">
             <HistoryTab />

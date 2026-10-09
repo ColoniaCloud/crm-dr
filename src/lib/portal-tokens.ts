@@ -19,6 +19,10 @@ import type { PortalTokenPurpose } from "@prisma/client";
 const VIGENCIA_MS: Record<PortalTokenPurpose, number> = {
   ACTIVATION: 24 * 60 * 60 * 1000, // 24 h — el cliente puede tardar en abrir el mail
   PASSWORD_RESET: 60 * 60 * 1000, //  1 h — ventana corta a propósito
+  // 7 días: llega por WhatsApp a alguien que no lo pidió, y puede abrirlo
+  // cuando tenga un rato. Sirve hasta que confirma el email, no al primer envío.
+  DATA_UPDATE: 7 * 24 * 60 * 60 * 1000,
+  EMAIL_CONFIRM: 24 * 60 * 60 * 1000, // 24 h, como la activación
 };
 
 export function hashToken(token: string): string {
