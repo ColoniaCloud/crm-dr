@@ -14,14 +14,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "api.nl360.site",
-      },
-    ],
-  },
   async headers() {
     return [
       {
@@ -41,9 +33,9 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://api.nl360.site https://maps.googleapis.com https://maps.gstatic.com https://maps.google.com https://*.googleapis.com https://*.gstatic.com",
+              "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://maps.google.com https://*.googleapis.com https://*.gstatic.com",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https://api.nl360.site https://maps.googleapis.com https://nominatim.openstreetmap.org",
+              "connect-src 'self' https://maps.googleapis.com https://nominatim.openstreetmap.org",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
             ].join("; "),

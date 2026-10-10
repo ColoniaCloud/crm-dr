@@ -35,7 +35,7 @@ if (!salidaHtml && !destinatario) {
 // Igual que en el preview de garantías: con NEXTAUTH_URL apuntando a localhost
 // el botón del mail no lleva a ningún lado desde una casilla.
 if (!process.env.NEXTAUTH_URL || /localhost|127\.0\.0\.1/.test(process.env.NEXTAUTH_URL)) {
-  process.env.NEXTAUTH_URL = "https://kri.kristallfilm.com";
+  process.env.NEXTAUTH_URL = "https://crm.kristallfilm.com";
 }
 
 const subtotal = 184000;

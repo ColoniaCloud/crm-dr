@@ -58,7 +58,7 @@ export async function POST(
     const whatsappLink = whatsappPhone
       ? `https://api.whatsapp.com/send/?phone=${whatsappPhone}&text=Hola%2C+me+gustar%C3%ADa+recibir+asesoramiento+sobre+mi+presupuesto.&type=phone_number&app_absent=0`
       : null;
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "https://kri.kristallfilm.com";
+    const baseUrl = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "https://crm.kristallfilm.com";
 
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#ffffff;">

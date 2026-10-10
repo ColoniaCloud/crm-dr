@@ -64,7 +64,7 @@ export const F = "'DM Sans', Arial, Helvetica, sans-serif";
  * sitio — usarlo para una imagen del CRM da un 404 y un mail sin logos.
  */
 export function crmBaseUrl(): string {
-  return (process.env.NEXTAUTH_URL || "https://kri.kristallfilm.com").replace(/\/$/, "");
+  return (process.env.NEXTAUTH_URL || "https://crm.kristallfilm.com").replace(/\/$/, "");
 }
 
 /** Con qué nombre y logo firma el taller. Sin logo va el nombre — nunca un hueco. */

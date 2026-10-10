@@ -44,7 +44,7 @@ if (!salidaHtml && !destinatario) {
 }
 
 if (!process.env.NEXTAUTH_URL || /localhost|127\.0\.0\.1/.test(process.env.NEXTAUTH_URL)) {
-  process.env.NEXTAUTH_URL = "https://kri.kristallfilm.com";
+  process.env.NEXTAUTH_URL = "https://crm.kristallfilm.com";
 }
 
 const hoy = new Date();
