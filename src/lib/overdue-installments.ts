@@ -90,11 +90,30 @@ export async function notifyOverdueInstallments(
     await notifyAdmins({
       type: TIPO,
       title: "Cuotas vencidas",
-      message: `${nuevas.length} cuota(s) pasaron a estar vencidas y se le avisó al cliente.`,
+      message:
+        `${nuevas.length} cuota(s) pasaron a estar vencidas y se le avisó al cliente.` +
+        (await notaDelAgente(nuevas.map((c) => c.id))),
       link: `/payments`,
     });
 
     log.info({ revisadas: vencidas.length, avisadas: nuevas.length }, "Overdue installments notified");
     return { revisadas: vencidas.length, avisadas: nuevas.length };
   });
+}
+
+/**
+ * Si hay un agente de Cobranzas activo, el aviso a los admins dice cuántas de
+ * esas cuotas ya recibieron un mail del agente (decisión 15 de AGENTES.md). La
+ * notificación al cliente en el Portal no cambia.
+ */
+async function notaDelAgente(installmentIds: string[]): Promise<string> {
+  const activo = await prisma.agent.count({ where: { kind: "COLLECTIONS", status: "ACTIVE" } });
+  if (activo === 0) return "";
+  const conMail = await prisma.agentAction.groupBy({
+    by: ["installmentId"],
+    where: { installmentId: { in: installmentIds }, status: "SENT" },
+  });
+  return conMail.length > 0
+    ? ` El agente de cobranzas ya les escribió por mail a ${conMail.length}.`
+    : " El agente de cobranzas todavía no les escribió.";
 }

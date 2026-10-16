@@ -2540,3 +2540,169 @@ model SaleReturnItem {
   @@index([saleItemId])
   @@map("sale_return_items")
 }
+
+// ─── Agentes de IA ───────────────────────────────────────────────────────────
+//
+// Plan completo en AGENTES.md (raíz del workspace). Un agente es un "empleado"
+// con una función fija: el CRM decide a quién atiende y cuánto se le cobra con
+// código determinista; la IA solo redacta plantillas, resume y conversa.
+//
+// Los ids de usuario, contacto, venta y cuota se guardan como texto suelto, sin
+// relación: así la bitácora no entra en el orden de borrado de un contacto
+// (ver CLAUDE.md, "Contact Deletion") y sobrevive si alguien borra la venta.
+
+enum AgentKind {
+  COLLECTIONS
+}
+
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  /// Llegó al tope de gasto del mes. Vuelve solo a ACTIVE el mes siguiente.
+  PAUSED_BUDGET
+}
+
+enum AgentRunTrigger {
+  SCHEDULE
+  MANUAL
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCESS
+  /// Terminó, pero alguna acción falló.
+  PARTIAL
+  FAILED
+  /// No corrió: tope de gasto, o había otra ronda en curso.
+  SKIPPED
+}
+
+enum AgentActionStatus {
+  PENDING_APPROVAL
+  SENT
+  DISCARDED
+  FAILED
+}
+
+enum AgentActionOrigin {
+  RUN
+  CHAT
+}
+
+enum AgentMessageRole {
+  USER
+  ASSISTANT
+}
+
+model Agent {
+  id               String      @id @default(cuid())
+  kind             AgentKind
+  name             String
+  status           AgentStatus @default(PAUSED)
+  instructions     String      @db.Text
+  /// Parámetros propios del tipo (plazos, pasos, plantillas). Se valida al leer
+  /// con el esquema del tipo, en src/lib/agents/.
+  config           Json
+  /// "HH:MM", hora de Buenos Aires.
+  scheduleTime     String?
+  /// Días ISO separados por coma: 1 = lunes … 7 = domingo.
+  scheduleDays     String?
+  nextRunAt        DateTime?
+  model            String
+  monthlyBudgetUsd Decimal     @db.Decimal(8, 2)
+  operatorCanChat  Boolean     @default(false)
+  /// Mes ("2026-10") en que ya se avisó el 80 % del tope, para avisar una sola vez.
+  budgetWarnedFor  String?
+  createdById      String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  runs     AgentRun[]
+  actions  AgentAction[]
+  messages AgentMessage[]
+
+  @@index([status, nextRunAt])
+  @@map("agents")
+}
+
+model AgentRun {
+  id           String          @id @default(cuid())
+  agentId      String
+  agent        Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  trigger      AgentRunTrigger
+  status       AgentRunStatus  @default(RUNNING)
+  startedById  String?
+  startedAt    DateTime        @default(now())
+  finishedAt   DateTime?
+  summary      String?         @db.Text
+  error        String?         @db.Text
+  stats        Json?
+  inputTokens  Int             @default(0)
+  outputTokens Int             @default(0)
+  costUsd      Decimal         @default(0) @db.Decimal(10, 6)
+
+  actions AgentAction[]
+
+  @@index([agentId, startedAt])
+  @@map("agent_runs")
+}
+
+model AgentAction {
+  id            String            @id @default(cuid())
+  agentId       String
+  agent         Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  runId         String?
+  run           AgentRun?         @relation(fields: [runId], references: [id], onDelete: SetNull)
+  origin        AgentActionOrigin
+  /// Qué hace la acción. Hoy solo "SEND_EMAIL".
+  type          String
+  status        AgentActionStatus
+  contactId     String
+  /// Nombre a mostrar, copiado al crear la acción: la bandeja no consulta Contact.
+  contactName   String
+  saleId        String?
+  saleNumber    Int?
+  installmentId String?
+  /// Paso de la secuencia de cobranza (PRE, DUE, OVERDUE_1…).
+  step          String?
+  amount        Decimal?          @db.Decimal(10, 2)
+  dueDate       DateTime?
+  /// `<cuota|venta>:<paso>`. Único: un paso no se manda dos veces aunque la
+  /// ronda corra dos veces. Las acciones pedidas por chat no llevan clave.
+  dedupeKey     String?           @unique
+  subject       String
+  body          String            @db.Text
+  /// El envío no salió a la dirección real: desarrollo sin redirección, o
+  /// redirigido a AGENTS_MAIL_REDIRECT_TO.
+  simulated     Boolean           @default(false)
+  requestedById String?
+  approvedById  String?
+  approvedAt    DateTime?
+  sentAt        DateTime?
+  error         String?           @db.Text
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([agentId, status, createdAt])
+  @@index([contactId])
+  @@map("agent_actions")
+}
+
+model AgentMessage {
+  id           String           @id @default(cuid())
+  agentId      String
+  agent        Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  role         AgentMessageRole
+  userId       String?
+  userName     String?
+  content      String           @db.Text
+  /// Tarjetas que acompañan la respuesta (acciones para confirmar, tablas).
+  attachments  Json?
+  inputTokens  Int              @default(0)
+  outputTokens Int              @default(0)
+  costUsd      Decimal          @default(0) @db.Decimal(10, 6)
+  createdAt    DateTime         @default(now())
+
+  @@index([agentId, createdAt])
+  @@map("agent_messages")
+}

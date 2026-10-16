@@ -85,6 +85,7 @@ const simpleItems = [
 const bottomItems = [
   { label: "Actividad Operadores", href: "/activities", icon: ClipboardList },
   { label: "Competencia", href: "/competitors", icon: Target },
+  { label: "Agentes", href: "/agents", icon: Bot },
   { label: "AI Insights", href: "/ai-insights", icon: Brain },
   { label: "RRSS Creator", href: "/social-creator", icon: Sparkles },
   { label: "Kristall Scrapp", href: "/scrapper", icon: MapPin },
