@@ -216,6 +216,16 @@ body {
   animation: fadeInDown 0.45s ease-out both;
 }
 
+/* Ticker de actividad del asistente: la lista va duplicada, así que subir
+   hasta la mitad y volver a cero es un bucle sin salto. */
+@keyframes tickerUp {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+.ticker-scroll {
+  animation: tickerUp 40s linear infinite;
+}
+
 /* ── Sidebar settings button hover ──────────────────────────────────────────── */
 .sidebar-settings-btn:hover,
 .sidebar-settings-btn:focus-visible {

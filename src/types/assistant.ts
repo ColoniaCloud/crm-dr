@@ -42,4 +42,6 @@ export interface AssistantApiResponse {
   message: string;
   action?: AssistantAction;
   error?: string;
+  /** Qué módulos del panel del asistente quedaron desactualizados por esta respuesta. */
+  refresh?: ("tasks" | "agenda")[];
 }

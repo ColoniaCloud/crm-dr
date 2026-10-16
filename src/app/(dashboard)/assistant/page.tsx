@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
 import {
@@ -19,10 +20,15 @@ import {
   Send,
   Loader2,
   Download,
+  MessageSquare,
+  LayoutPanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction } from "@/types/assistant";
 import { DottedSurface } from "@/components/ui/dotted-surface";
+import { ActivityTicker } from "@/components/assistant/activity-ticker";
+import { TaskPanel } from "@/components/assistant/task-panel";
+import { WeekCalendar } from "@/components/assistant/week-calendar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ChatMessage = {
@@ -136,6 +142,13 @@ function TableMessage({ data }: { data: AssistantTableAction }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function AssistantPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "SUPERADMIN";
+  // En pantallas angostas las dos columnas no entran: se alterna con pestañas.
+  const [mobileTab, setMobileTab] = useState<"chat" | "panel">("chat");
+  // Cuando el chat crea una tarea o agenda algo, el panel se recarga.
+  const [tasksKey, setTasksKey] = useState(0);
+  const [agendaKey, setAgendaKey] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -225,6 +238,8 @@ export default function AssistantPage() {
       setMessages(withResponse);
       persist(convId, withResponse);
       setPendingCSV(null);
+      if (data.refresh?.includes("tasks")) setTasksKey((k) => k + 1);
+      if (data.refresh?.includes("agenda")) setAgendaKey((k) => k + 1);
     } catch {
       const withError = [...messages, userMsg, { role: "assistant" as const, content: "Error de conexión. Verificá tu red e intentá de nuevo." }];
       setMessages(withError);
@@ -370,6 +385,12 @@ export default function AssistantPage() {
 
   const hasMessages = messages.length > 0;
 
+  // Un tip o una noticia del panel se convierte en mensaje al asistente.
+  function askFromPanel(text: string) {
+    setMobileTab("chat");
+    sendMessage(text);
+  }
+
   // ── Shared input toolbar ────────────────────────────────────────────────────
   function InputToolbar() {
     return (
@@ -431,7 +452,6 @@ export default function AssistantPage() {
       className="-m-3 sm:-m-6 relative flex flex-col overflow-hidden"
       style={{ height: "calc(100dvh - 56px - 37px)" }}
     >
-      <DottedSurface />
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 border-b px-4 sm:px-6 py-3 bg-background">
         <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary/10 shrink-0">
@@ -442,6 +462,28 @@ export default function AssistantPage() {
           <p className="text-xs text-muted-foreground hidden sm:block">
             Navegá, consultá y gestioná datos en lenguaje natural
           </p>
+        </div>
+        {/* Pestañas solo en pantallas angostas: en escritorio se ven las dos columnas */}
+        <div className="flex lg:hidden rounded-lg bg-muted p-0.5 text-xs" role="tablist">
+          {([
+            { id: "chat", label: "Chat", icon: MessageSquare },
+            { id: "panel", label: "Panel", icon: LayoutPanelLeft },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={mobileTab === t.id}
+              onClick={() => setMobileTab(t.id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors",
+                mobileTab === t.id ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"
+              )}
+            >
+              <t.icon className="h-3.5 w-3.5" />
+              {t.label}
+            </button>
+          ))}
         </div>
         {hasMessages && (
           <button
@@ -454,7 +496,11 @@ export default function AssistantPage() {
         )}
       </div>
 
-      {/* ── Body ───────────────────────────────────────────────────────────── */}
+      {/* ── Body: chat | panel ──────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
+      {/* ── Columna izquierda: chat ──────────────────────────────────────── */}
+      <div className={cn("relative min-h-0 flex-col overflow-hidden", mobileTab === "chat" ? "flex" : "hidden", "lg:flex")}>
+      <DottedSurface />
       {!hasMessages ? (
         /* ── Landing state ──────────────────────────────────────────────── */
         <div className="flex-1 overflow-y-auto min-h-0 flex items-center justify-center px-4 py-8">
@@ -588,6 +634,28 @@ export default function AssistantPage() {
           </div>
         </>
       )}
+      </div>
+
+      {/* ── Columna derecha: actividad, tareas y calendario ──────────────── */}
+      <aside
+        className={cn(
+          "min-h-0 flex-col gap-3 bg-muted/30 p-3 lg:border-l",
+          mobileTab === "panel" ? "flex" : "hidden",
+          "lg:flex"
+        )}
+        aria-label="Panel del asistente"
+      >
+        <ActivityTicker onAsk={askFromPanel} className="h-[26%] min-h-[150px] shrink-0" />
+        <TaskPanel
+          isAdmin={isAdmin}
+          currentUserId={session?.user?.id}
+          refreshKey={tasksKey}
+          onChanged={() => setAgendaKey((k) => k + 1)}
+          className="flex-1 min-h-[180px]"
+        />
+        <WeekCalendar isAdmin={isAdmin} refreshKey={agendaKey} className="flex-[1.4] min-h-[260px]" />
+      </aside>
+      </div>
     </div>
   );
 }

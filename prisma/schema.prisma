@@ -260,6 +260,14 @@ model CrmTask {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  /// Quien la creó, cuando no es el mismo que la tiene que hacer (un ADMIN
+  /// asignándole una tarea a otro). Null = se la creó el propio dueño.
+  assignedById String?
+  /// Contacto al que se refiere la tarea ("llamar a Juan"), si hay uno.
+  contactId    String?
+
+  @@index([userId, done])
+  @@index([dueDate])
   @@map("crm_tasks")
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logOperatorAction } from "@/lib/notifications";
 import { getRollByCode } from "@/lib/warranty";
 import { buildActivityCSV, type ActivityCsvRow } from "@/lib/activity-csv";
+import { createTask, isAdminRole, TaskError } from "@/lib/crm-tasks";
 import type {
   AssistantApiResponse,
   AssistantNavigateAction,
@@ -56,6 +57,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para campañas de WhatsApp: solo SUPERADMIN puede enviar. Ayudá al usuario a redactar mensajes profesionales y con el tono adecuado antes de ejecutar.
 - Cuando el usuario sube un CSV para importar contactos, analizá las columnas y confirmá antes de importar.
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
+- Para recordatorios y pendientes ("recordame...", "agendame una tarea...", "anotá que tengo que...") usá create_task. Convertí fechas relativas a fecha concreta; si no dijo hora, pasá solo el día (YYYY-MM-DD).
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
 - Para pedidos como "quién me debe", "saldos pendientes" o "clientes con deuda", usá list_pending_balances.
 - Para pedidos como "cuánto cobramos", "cuánto entró" o "total de pagos" en un período, usá sum_payments. Convertí vos el período a fechas concretas (from/to en formato YYYY-MM-DD) usando la fecha actual: "el mes pasado" es del día 1 al último día del mes anterior, "esta semana" arranca el lunes, etc.
@@ -66,7 +68,8 @@ REGLAS PARA GESTIÓN DE DATOS:
 RESTRICCIONES DE ROL (si el usuario no tiene el rol necesario, explicá amablemente que no tiene permisos):
 - Solo ADMIN y SUPERADMIN pueden: crear/editar productos, ajustar stock, ver y registrar ventas, presupuestos y pagos, gestionar garantías (buscar rollos, listar y actualizar reclamos), y exportar actividad de operadores a CSV.
 - Solo SUPERADMIN puede: lanzar campañas de WhatsApp.
-- Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, y agendar visitas o llamadas.
+- Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, agendar visitas o llamadas, y crearse tareas.
+- Solo ADMIN y SUPERADMIN pueden asignarle una tarea a otra persona del equipo.
 
 Respondé siempre en español, de forma concisa y amigable. Si el usuario pide algo no disponible, explicalo brevemente.`;
 
@@ -368,6 +371,22 @@ const TOOLS: Anthropic.Tool[] = [
         message: { type: "string" },
       },
       required: ["contact_search", "scheduled_date", "message"],
+    },
+  },
+  {
+    name: "create_task",
+    description: "Crea una tarea en la lista de tareas del usuario (aparece en el panel del asistente y, si tiene fecha, en el calendario). Usalo para recordatorios y pendientes genéricos (\"recordame mandarle el catálogo a Juan\", \"agendame revisar el stock el viernes\"). Si el pedido es concretamente una llamada o una visita a un contacto, preferí schedule_call o schedule_visit. ADMIN/SUPERADMIN pueden asignarla a otra persona del equipo con assignee_search.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Título corto y accionable de la tarea, en infinitivo (ej: \"Llamar a Juan Pérez por el presupuesto\")." },
+        due_date: { type: "string", description: "Vencimiento: YYYY-MM-DD si es un día sin hora, o ISO 8601 con hora (ej: 2026-07-10T14:00:00) si dijo una hora. Omitir si no dio fecha." },
+        priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH"], description: "Solo si el usuario indicó urgencia o importancia." },
+        contact_search: { type: "string", description: "Nombre, empresa, email o teléfono del contacto al que se refiere la tarea, si menciona uno." },
+        assignee_search: { type: "string", description: "Nombre o email de la persona del equipo a quien asignarla. Omitir si la tarea es para quien la pide." },
+        message: { type: "string", description: "Mensaje breve confirmando la tarea creada." },
+      },
+      required: ["title", "message"],
     },
   },
   {
@@ -1352,7 +1371,7 @@ export async function runAssistant(params: {
       });
 
       return {
-        data: { message: `${msg}\n\n✅ Visita agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.` },
+        data: { message: `${msg}\n\n✅ Visita agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.`, refresh: ["agenda"] },
         status: 200,
       };
     }
@@ -1401,9 +1420,100 @@ export async function runAssistant(params: {
       });
 
       return {
-        data: { message: `${msg}\n\n✅ Llamada agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.` },
+        data: { message: `${msg}\n\n✅ Llamada agendada con **${cName}** para ${new Date(scheduledDate).toLocaleString("es-AR")}.`, refresh: ["agenda"] },
         status: 200,
       };
+    }
+
+    // ── create_task ───────────────────────────────────────────────────────────
+    if (toolBlock.name === "create_task") {
+      const title = (input.title as string || "").trim();
+      const dueRaw = (input.due_date as string || "").trim();
+      const contactSearch = (input.contact_search as string || "").trim();
+      const assigneeSearch = (input.assignee_search as string || "").trim();
+      const msg = input.message as string;
+
+      // Las fechas sin zona se leen en hora argentina: el servidor corre en UTC,
+      // y "el viernes" guardado como 00:00 UTC caería el jueves a la noche.
+      let dueDate: Date | null = null;
+      if (dueRaw) {
+        const iso = /^\d{4}-\d{2}-\d{2}$/.test(dueRaw)
+          ? `${dueRaw}T00:00:00-03:00`
+          : /(Z|[+-]\d{2}:?\d{2})$/.test(dueRaw) ? dueRaw : `${dueRaw}-03:00`;
+        const parsed = new Date(iso);
+        if (!isNaN(parsed.getTime())) dueDate = parsed;
+      }
+
+      let contactId: string | null = null;
+      let contactLabel = "";
+      if (contactSearch) {
+        const contact = await prisma.contact.findFirst({
+          where: {
+            OR: [
+              { firstName: { contains: contactSearch } },
+              { lastName: { contains: contactSearch } },
+              { company: { contains: contactSearch } },
+              { email: { contains: contactSearch } },
+              { phone: { contains: contactSearch } },
+            ],
+          },
+          select: { id: true, firstName: true, lastName: true, company: true },
+        });
+        if (contact) {
+          contactId = contact.id;
+          contactLabel = contact.company || `${contact.firstName} ${contact.lastName}`.trim();
+        }
+      }
+
+      let assigneeId: string | null = null;
+      if (assigneeSearch) {
+        if (!isAdminRole(actor.role)) {
+          return { data: { message: "Solo ADMIN y SUPERADMIN pueden asignarle tareas a otra persona. Si querés, te la creo a vos." }, status: 200 };
+        }
+        const assignee = await prisma.user.findFirst({
+          where: {
+            deletedAt: null,
+            OR: [{ name: { contains: assigneeSearch } }, { email: { contains: assigneeSearch } }],
+          },
+          select: { id: true },
+        });
+        if (!assignee) {
+          return { data: { message: `No encontré a nadie del equipo que coincida con "${assigneeSearch}".` }, status: 200 };
+        }
+        assigneeId = assignee.id;
+      }
+
+      const me = await prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } });
+
+      try {
+        const task = await createTask({
+          actor: { userId: actor.userId, role: actor.role, name: me?.name },
+          title,
+          dueDate,
+          priority: (input.priority as string) || null,
+          assigneeId,
+          contactId,
+          via: "assistant",
+        });
+
+        const when = task.dueDate
+          ? ` para el ${new Date(task.dueDate).toLocaleString("es-AR", {
+              timeZone: "America/Argentina/Buenos_Aires",
+              weekday: "long", day: "numeric", month: "long",
+              ...(/^\d{4}-\d{2}-\d{2}$/.test(dueRaw) ? {} :{ hour: "2-digit", minute: "2-digit" }),
+            })}`
+          : "";
+        const who = task.userId !== actor.userId && task.userName ? ` (asignada a ${task.userName})` : "";
+        const about = contactLabel ? ` · contacto: ${contactLabel}` : "";
+
+        return {
+          data: { message: `${msg}\n\n✅ Tarea creada: **${task.title}**${when}${who}${about}.`, refresh: ["tasks", "agenda"] },
+          status: 200,
+        };
+      } catch (err) {
+        if (err instanceof TaskError) return { data: { message: err.message }, status: 200 };
+        throw err;
+      }
     }
 
     // ── search_sales ──────────────────────────────────────────────────────────
