@@ -127,8 +127,8 @@ function AgentPageInner({ id }: { id: string }) {
             </p>
           </div>
 
-          <div className="hidden w-40 sm:block" title="Gasto del mes">
-            <div className="flex justify-between text-[11px] text-muted-foreground">
+          <div className="hidden w-52 shrink-0 sm:block" title="Gasto del mes">
+            <div className="flex justify-between gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
               <span>Gasto del mes</span>
               <span>{usd(agent.monthSpendUsd)} / {usd(agent.monthlyBudgetUsd)}</span>
             </div>

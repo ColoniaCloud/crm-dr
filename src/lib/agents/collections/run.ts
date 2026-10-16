@@ -7,6 +7,7 @@ import { computeDebts, dedupeKeyFor, formatAmount, renderForDebt, type Debt } fr
 import { NO_SPEND, type Spend } from "@/lib/agents/models";
 import { aiAvailable, complete, modelFor } from "@/lib/agents/llm";
 import { hasBudget } from "@/lib/agents/budget";
+import { agentMailMode } from "@/lib/agents/mail";
 
 const log = createLogger("agents/collections");
 
@@ -161,8 +162,17 @@ export async function runCollections(params: {
   return { stats, summary, spend, nuevasPendientes, escaladas };
 }
 
+/** Cómo salieron los mails en este servidor, para que el parte no diga "envié" cuando fue una prueba. */
+function notaDeEnvio(): string | null {
+  const modo = agentMailMode();
+  if (modo === "simulated") return "Los envíos fueron SIMULADOS: este servidor no manda mails reales.";
+  if (modo === "redirect") return "Los envíos fueron de PRUEBA: salieron a la casilla de prueba, no a los clientes.";
+  return null;
+}
+
 function plainSummary(stats: CollectionsRunStats): string {
   const partes = [
+    stats.enviadas ? notaDeEnvio() : null,
     `Revisé ${stats.revisadas} deuda(s).`,
     stats.enviadas ? `Mandé ${stats.enviadas} aviso(s).` : null,
     stats.pendientes ? `Dejé ${stats.pendientes} reclamo(s) esperando aprobación.` : null,
@@ -195,6 +205,7 @@ async function summarize(params: {
         `Sos "${params.agent.name}", el agente de cobranzas del CRM de Kristall Film. Escribís el parte de la ronda que acabás de terminar, en español rioplatense, en primera persona, breve (máximo 8 líneas), sin saludo ni despedida. Primero lo importante: qué necesita la atención de una persona. No inventes datos que no estén en la lista.`,
       prompt: [
         `Números de la ronda: ${JSON.stringify(params.stats)}`,
+        params.stats.enviadas ? notaDeEnvio() ?? "" : "",
         params.movimientos.length ? `Movimientos:\n${params.movimientos.slice(0, 60).join("\n")}` : "Sin movimientos nuevos.",
         params.escaladas.length ? `Deudas escaladas (ya no se les escribe):\n${params.escaladas.slice(0, 30).join("\n")}` : "",
       ].join("\n\n"),

@@ -31,7 +31,9 @@ export type ChatCard =
   | { type: "report"; from: string; to: string }
   | { type: "template"; stepKey: string; stepLabel: string; subject: string; body: string }
   | { type: "run" }
-  | { type: "pending_link"; count: number };
+  | { type: "pending_link"; count: number }
+  /** Rastro de las consultas que hizo el agente. No se dibuja: vuelve en el historial. */
+  | { type: "trace"; calls: string[] };
 
 const MAX_TURNS = 6;
 const HISTORY = 30;
@@ -144,7 +146,7 @@ Cómo trabajás en este chat:
 - No tenés acceso a emails, teléfonos ni datos personales de los clientes, y no los necesitás: el CRM completa el destinatario al mandar. Si te los piden, explicalo.
 - Nunca mandás, aprobás, descartás ni cambiás nada directamente. Las herramientas preparar_* y proponer_* muestran una tarjeta con un botón y una persona decide. Decí claramente que hace falta ese clic. Aprobar envíos y aplicar cambios solo lo puede hacer un SUPERADMIN.
 - Los textos de los mails salen de plantillas. Si te piden cambiar cómo escribís, proponé la plantilla nueva con proponer_plantilla.
-- Respondé en español rioplatense, breve y concreto. Usá listas cortas cuando enumeres.`;
+- Respondé en español rioplatense, breve y concreto. Usá listas cortas cuando enumeres. No nombres tus herramientas: hablá de lo que hacés, no de cómo se llama la función.`;
 }
 
 interface Actor {
@@ -358,7 +360,12 @@ async function historyFor(agentId: string): Promise<Anthropic.MessageParam[]> {
   });
   const mensajes: Anthropic.MessageParam[] = [];
   for (const m of ultimos.reverse()) {
-    const texto = m.role === "USER" ? `[${m.userName ?? "Usuario"}] ${m.content}` : m.content;
+    // Sin el rastro, en el turno siguiente el modelo ve una respuesta con datos
+    // y ninguna consulta detrás, y concluye que se los inventó.
+    const traza = ((m.attachments as ChatCard[] | null) ?? []).find((c) => c.type === "trace");
+    const consultas = traza && traza.type === "trace" && traza.calls.length ? `(Consultas que hice: ${traza.calls.join(" · ")})
+` : "";
+    const texto = m.role === "USER" ? `[${m.userName ?? "Usuario"}] ${m.content}` : `${consultas}${m.content}`;
     const role = m.role === "USER" ? "user" : "assistant";
     const previo = mensajes[mensajes.length - 1];
     // Mensajes seguidos del mismo rol (dos partes de ronda, dos personas que
@@ -419,6 +426,8 @@ export async function chatWithAgent(params: {
 
   const model = modelFor(agent);
   const ctx: ToolContext = { agentId: agent.id, actor: params.actor, cards: [] };
+  const calls: string[] = [];
+  const conTraza = () => (calls.length ? [...ctx.cards, { type: "trace" as const, calls }] : ctx.cards);
   const messages = await historyFor(agent.id);
   let spend = NO_SPEND;
 
@@ -434,7 +443,7 @@ export async function chatWithAgent(params: {
       spend = addSpend(spend, spendOf(model, res.usage));
 
       if (res.stop_reason === "refusal") {
-        return guardar("No puedo ayudar con ese pedido.", ctx.cards, spend);
+        return guardar("No puedo ayudar con ese pedido.", conTraza(), spend);
       }
 
       const usos = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
@@ -445,7 +454,7 @@ export async function chatWithAgent(params: {
         .trim();
 
       if (res.stop_reason !== "tool_use" || usos.length === 0) {
-        return guardar(texto || "Listo.", ctx.cards, spend);
+        return guardar(texto || "Listo.", conTraza(), spend);
       }
 
       messages.push({ role: "assistant", content: res.content });
@@ -453,7 +462,9 @@ export async function chatWithAgent(params: {
       for (const uso of usos) {
         try {
           const salida = await runTool(uso.name, (uso.input ?? {}) as Record<string, unknown>, ctx);
-          resultados.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(salida) });
+          const json = JSON.stringify(salida);
+          calls.push(`${uso.name}(${JSON.stringify(uso.input ?? {})}) → ${json.length > 240 ? `${json.slice(0, 240)}…` : json}`);
+          resultados.push({ type: "tool_result", tool_use_id: uso.id, content: json });
         } catch (err) {
           log.error({ err, tool: uso.name }, "Falló una herramienta del agente");
           resultados.push({
@@ -466,12 +477,12 @@ export async function chatWithAgent(params: {
       }
       messages.push({ role: "user", content: resultados });
     }
-    return guardar("Me quedé sin pasos para terminar de responder. ¿Podés acotar la pregunta?", ctx.cards, spend);
+    return guardar("Me quedé sin pasos para terminar de responder. ¿Podés acotar la pregunta?", conTraza(), spend);
   } catch (err) {
     log.error({ err, agentId: agent.id }, "Falló el chat del agente");
     return guardar(
       `Tuve un problema para responder (${err instanceof Error ? err.message : "error desconocido"}). Probá de nuevo en un rato.`,
-      ctx.cards,
+      conTraza(),
       spend
     );
   }

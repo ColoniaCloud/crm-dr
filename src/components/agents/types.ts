@@ -81,7 +81,8 @@ export type ChatCard =
   | { type: "report"; from: string; to: string }
   | { type: "template"; stepKey: string; stepLabel: string; subject: string; body: string }
   | { type: "run" }
-  | { type: "pending_link"; count: number };
+  | { type: "pending_link"; count: number }
+  | { type: "trace"; calls: string[] };
 
 export interface AgentMessageDTO {
   id: string;

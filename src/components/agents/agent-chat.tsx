@@ -51,7 +51,7 @@ export function AgentChat({
 
   useEffect(load, [load, refreshKey]);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages, sending]);
 
   async function send(text: string) {
@@ -413,5 +413,8 @@ function CardView({
           {card.count} reclamo(s) esperando aprobación
         </button>
       );
+
+    case "trace":
+      return null;
   }
 }
