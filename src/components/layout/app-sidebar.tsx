@@ -5,34 +5,36 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  LayoutDashboard,
-  UserPlus,
-  Users,
-  Package,
-  Bot,
-  FileText,
-  ShoppingCart,
-  FileCheck,
-  CreditCard,
-  Target,
-  Brain,
-  Sparkles,
-  MapPin,
-  CalendarDays,
-  Phone,
-  Settings,
-  Truck,
-  ClipboardList,
-  BarChart3,
-  ChevronRight,
-  Bell,
-  Wrench,
-  Store,
-  Plus,
-  MessageSquare,
-  ShieldCheck,
-} from "lucide-react";
+  Add01Icon,
+  AiBrain01Icon,
+  AiChat02Icon,
+  AiMagicIcon,
+  ArrowRight01Icon,
+  Calendar03Icon,
+  Call02Icon,
+  ChartColumnIcon,
+  CreditCardIcon,
+  DashboardSquare01Icon,
+  DeliveryTruck01Icon,
+  File01Icon,
+  FileValidationIcon,
+  Location01Icon,
+  Message01Icon,
+  Notification01Icon,
+  PackageIcon,
+  RoboticIcon,
+  SecurityCheckIcon,
+  Settings01Icon,
+  ShoppingCart01Icon,
+  Store01Icon,
+  Target02Icon,
+  Task01Icon,
+  UserAdd01Icon,
+  UserGroupIcon,
+  Wrench01Icon,
+} from "@hugeicons/core-free-icons";
 import {
   Sidebar,
   SidebarContent,
@@ -54,6 +56,42 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useCurrency } from "@/contexts/currency-context";
+
+// Prueba de Hugeicons: cada icono se envuelve en un componente con el mismo
+// nombre que tenía en Lucide, así el JSX de abajo no cambia.
+function hugeicon(icon: IconSvgElement) {
+  function Icono({ className }: { className?: string }) {
+    return <HugeiconsIcon icon={icon} strokeWidth={1.8} className={className} />;
+  }
+  return Icono;
+}
+const LayoutDashboard = hugeicon(DashboardSquare01Icon);
+const UserPlus = hugeicon(UserAdd01Icon);
+const Users = hugeicon(UserGroupIcon);
+const Package = hugeicon(PackageIcon);
+const Bot = hugeicon(RoboticIcon);
+const FileText = hugeicon(File01Icon);
+const ShoppingCart = hugeicon(ShoppingCart01Icon);
+const FileCheck = hugeicon(FileValidationIcon);
+const CreditCard = hugeicon(CreditCardIcon);
+const Target = hugeicon(Target02Icon);
+const Brain = hugeicon(AiBrain01Icon);
+const Sparkles = hugeicon(AiMagicIcon);
+const MapPin = hugeicon(Location01Icon);
+const CalendarDays = hugeicon(Calendar03Icon);
+const Phone = hugeicon(Call02Icon);
+const Settings = hugeicon(Settings01Icon);
+const Truck = hugeicon(DeliveryTruck01Icon);
+const ClipboardList = hugeicon(Task01Icon);
+const BarChart3 = hugeicon(ChartColumnIcon);
+const ChevronRight = hugeicon(ArrowRight01Icon);
+const Bell = hugeicon(Notification01Icon);
+const Wrench = hugeicon(Wrench01Icon);
+const Store = hugeicon(Store01Icon);
+const Plus = hugeicon(Add01Icon);
+const MessageSquare = hugeicon(Message01Icon);
+const ShieldCheck = hugeicon(SecurityCheckIcon);
+const Asistente = hugeicon(AiChat02Icon);
 
 function CurrencyToggle() {
   const { currency, rate, loading, toggle } = useCurrency();
@@ -209,7 +247,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
                     <SidebarMenuButton isActive={asistenteActive} tooltip="Asistente">
-                      <Bot className="sidebar-icon" />
+                      <Asistente className="sidebar-icon" />
                       <span>Asistente</span>
                       <ChevronRight className="sidebar-chevron ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                     </SidebarMenuButton>
