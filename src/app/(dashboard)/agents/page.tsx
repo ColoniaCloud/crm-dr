@@ -81,7 +81,7 @@ export default function AgentsPage() {
 
       {data && data.agents.length === 0 && (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center sm:py-12">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
               <Bot className="h-6 w-6 text-primary" />
             </div>
@@ -106,7 +106,7 @@ export default function AgentsPage() {
         {data?.agents.map((a) => (
           <Link key={a.id} href={`/agents/${a.id}`} className="group">
             <Card className="h-full transition-colors group-hover:border-primary/40">
-              <CardContent className="space-y-4 p-5">
+              <CardContent className="space-y-4 p-5 sm:p-5">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                     <Bot className="h-5 w-5 text-primary" />
