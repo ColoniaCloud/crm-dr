@@ -233,3 +233,29 @@ body {
   background-color: transparent !important;
   color: white !important;
 }
+
+/* ── Iconos del sidebar ─────────────────────────────────────────────────────── */
+/* Gris sobre un recuadro de un gris más oscuro. El padding agranda el
+   recuadro sin achicar el dibujo (content-box), y el margen negativo lo
+   devuelve al lugar de siempre: en el modo colapsado el botón mide 32px y
+   el icono tiene que quedar centrado igual. Va fuera de @layer para ganarle
+   a los `[&>svg]:text-…` de los botones de shadcn. */
+.sidebar-icon {
+  box-sizing: content-box;
+  padding: 3px;
+  margin: -3px 0 -3px -3px;
+  border-radius: 6px;
+  background-color: oklch(0.5 0 0);
+  color: oklch(0.9 0 0);
+}
+.dark .sidebar-icon {
+  background-color: oklch(0.3 0 0);
+  color: oklch(0.78 0 0);
+}
+/* La flecha de los desplegables no lleva recuadro: es un indicador, no un icono. */
+.sidebar-chevron {
+  color: oklch(0.55 0 0);
+}
+.dark .sidebar-chevron {
+  color: oklch(0.65 0 0);
+}
