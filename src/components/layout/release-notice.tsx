@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Sparkles } from "lucide-react";
+import { Sparkles } from "@/components/icons";
 
 /**
  * Aviso de una sola vez que se muestra al entrar después de un deploy grande.

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { CalendarClock, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, Plus, Trash2 } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import {

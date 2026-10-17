@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, CalendarClock } from "lucide-react";
+import { Wallet, CalendarClock } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { INSTALLMENT_STATUS_LABEL, PLAN_FREQUENCY_LABEL, type InstallmentStatus, type PlanFrequency } from "@/lib/account-calc";

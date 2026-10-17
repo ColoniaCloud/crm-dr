@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Copy, Check } from "lucide-react";
+import { Plus, Copy, Check } from "@/components/icons";
 import { formatDateTime } from "@/lib/utils";
 
 interface ApiClient {

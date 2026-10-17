@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag, Bot } from "lucide-react";
+import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag, Bot } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { TaskDTO } from "@/lib/crm-tasks";
 import { LeadOutcomeDialog } from "@/components/assistant/lead-outcome-dialog";

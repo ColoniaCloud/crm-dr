@@ -14,7 +14,7 @@ import { RichTextEditor } from "@/components/mail/rich-text-editor";
 import { EmailBodyView } from "@/components/mail/email-body-view";
 import { MessageTemplatesManager } from "@/components/settings/message-templates-manager";
 import { TemplatePicker, type MessageTemplate } from "@/components/messages/template-picker";
-import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon, ArrowLeft } from "lucide-react";
+import { Mail, Send, RotateCw, Plus, Paperclip, X, FileIcon, ArrowLeft } from "@/components/icons";
 import { formatDateTime } from "@/lib/utils";
 
 // Espeja el `select` de GET /api/mail: solo metadata. El cuerpo se pide

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   ShieldCheck, ChevronLeft, Package, Boxes, Tag, Users2, KeyRound,
   Webhook, AlertTriangle, CheckCircle2, Lock, Link2,
-} from "lucide-react";
+} from "@/components/icons";
 import { Tip, Step, FeatureCard, CodeBlock, EndpointBadge } from "@/components/docs/doc-ui";
 
 export default function WarrantyDocsPage() {
@@ -23,7 +23,7 @@ export default function WarrantyDocsPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="rounded-lg bg-primary/10 p-2.5">
+        <div className="rounded-lg bg-icon-chip p-2.5">
           <ShieldCheck className="size-6 text-primary" />
         </div>
         <div>

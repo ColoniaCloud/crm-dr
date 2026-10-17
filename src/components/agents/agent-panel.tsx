@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, Ban, Check, ChevronDown, FileDown, Loader2, Mail, Pencil, Send, Trash2,
-} from "lucide-react";
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";

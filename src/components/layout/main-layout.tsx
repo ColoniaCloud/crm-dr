@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { Mail, MessageCircle } from "lucide-react";
+import { Mail, MessageCircle } from "@/components/icons";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";

@@ -21,7 +21,7 @@ import {
   Plus, Trash2, Filter, ChevronDown, ChevronRight,
   Search, Package, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown,
   Ban, Power, Settings2,
-} from "lucide-react";
+} from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 // -- Constants ---------------------------------------------------------------

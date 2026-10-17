@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Copy, Check, TrendingUp } from "lucide-react";
+import { Sparkles, Copy, Check, TrendingUp } from "@/components/icons";
 
 type SocialNetwork = "Instagram" | "Facebook" | "TikTok" | "LinkedIn" | "Twitter/X";
 type MediaType = "Foto" | "Video" | "Reel" | "Story" | "Carrusel";

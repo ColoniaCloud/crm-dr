@@ -14,7 +14,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Plus, Search, Store, Tags, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Store, Tags, ChevronLeft, ChevronRight } from "@/components/icons";
 import { AR_PROVINCES, UY_DEPARTMENTS } from "@/lib/argentina-geo";
 import { useCurrency } from "@/contexts/currency-context";
 

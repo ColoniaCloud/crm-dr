@@ -32,7 +32,7 @@ import {
 import {
   CheckCircle2, XCircle, RefreshCw, Send, Search, Loader2, Tag as TagIcon, X,
   LogOut, Bold, Italic, Strikethrough, Code, Quote, Smile, Paperclip,
-} from "lucide-react";
+} from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 interface ContactBrief {

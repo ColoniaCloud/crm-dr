@@ -31,7 +31,7 @@ import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { useSession } from "next-auth/react";
 import { isAdminRole } from "@/lib/utils";
 import dynamic from "next/dynamic";
-import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "lucide-react";
+import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "@/components/icons";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { CreditTierCard } from "@/components/clients/credit-tier-card";
 import { DiscountTagCard } from "@/components/clients/discount-tag-card";

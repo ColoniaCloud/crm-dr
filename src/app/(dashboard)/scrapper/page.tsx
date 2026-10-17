@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { MapPin, Search, CheckCircle2, Plus, Globe, Phone, Crosshair, CheckSquare, MessageCircle, Star } from "lucide-react";
+import { MapPin, Search, CheckCircle2, Plus, Globe, Phone, Crosshair, CheckSquare, MessageCircle, Star } from "@/components/icons";
 import { Checkbox } from "@/components/ui/checkbox";
 
 // Lazy-load Google Map to avoid SSR issues

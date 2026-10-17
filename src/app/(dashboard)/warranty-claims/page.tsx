@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Search, ChevronRight, KeyRound } from "lucide-react";
+import { Search, ChevronRight, KeyRound } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 import { useSession } from "next-auth/react";
 import Link from "next/link";

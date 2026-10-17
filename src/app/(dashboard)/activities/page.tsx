@@ -17,7 +17,7 @@ import {
   Phone, Mail, MessageCircle, UserPlus, UserCheck,
   ArrowRightLeft, ShoppingCart, FileText, MapPin, Activity,
   Calendar, Users, TrendingUp, Download, Loader2,
-} from "lucide-react";
+} from "@/components/icons";
 
 interface Operator {
   id: string;

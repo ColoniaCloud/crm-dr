@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Undo2, AlertTriangle } from "lucide-react";
+import { Undo2, AlertTriangle } from "@/components/icons";
 import { formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 

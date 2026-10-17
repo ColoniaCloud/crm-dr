@@ -3,7 +3,7 @@
 import { Suspense, use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Bot, LayoutPanelLeft, Loader2, MessageSquare, Pause, Play } from "lucide-react";
+import { ArrowLeft, Bot, LayoutPanelLeft, Loader2, MessageSquare, Pause, Play } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AgentChat } from "@/components/agents/agent-chat";
@@ -110,7 +110,7 @@ function AgentPageInner({ id }: { id: string }) {
           <Link href="/agents" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Volver a agentes">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-icon-chip">
             <Bot className="h-5 w-5 text-primary" />
           </div>
           <div className="min-w-0 flex-1">

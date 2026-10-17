@@ -12,7 +12,7 @@ import {
   LayoutDashboard, UserPlus, CreditCard, BarChart3, Truck,
   ClipboardList, Bell, Target, Sparkles, ShieldCheck, ArrowRight,
   CheckCircle2, Layers, Bot,
-} from "lucide-react";
+} from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
 

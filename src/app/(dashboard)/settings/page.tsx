@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "lucide-react";
+import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 import { ApiKeyManager } from "@/components/settings/api-key-manager";
 import { CreditTiersManager } from "@/components/settings/credit-tiers-manager";

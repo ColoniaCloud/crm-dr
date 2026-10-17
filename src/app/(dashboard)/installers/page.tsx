@@ -23,7 +23,7 @@ import {
   Mail, Phone, Plus, ChevronDown, ChevronLeft, ChevronRight,
   Search, Trash2, AlertTriangle, Pencil, UserPlus, Store, StoreIcon,
   Upload, Download, FileSpreadsheet,
-} from "lucide-react";
+} from "@/components/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { AR_PROVINCES, UY_DEPARTMENTS } from "@/lib/argentina-geo";

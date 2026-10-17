@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 import {
   Bell, BellOff, CheckCheck, Phone, CalendarDays, CheckCircle2,
-} from "lucide-react";
+} from "@/components/icons";
 
 interface Notif {
   id: string;

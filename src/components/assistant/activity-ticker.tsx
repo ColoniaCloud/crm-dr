@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Sparkles, ShoppingCart, UserPlus, ShieldCheck, Boxes, RefreshCw } from "lucide-react";
+import { Activity, Sparkles, ShoppingCart, UserPlus, ShieldCheck, Boxes, RefreshCw } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { FeedCategory, FeedEvent } from "@/types/assistant-panel";
 

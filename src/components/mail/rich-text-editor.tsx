@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link as LinkIcon, Eraser } from "lucide-react";
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link as LinkIcon, Eraser } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 interface RichTextEditorProps {

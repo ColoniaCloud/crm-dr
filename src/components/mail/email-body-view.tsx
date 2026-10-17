@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   ImageOff, Code2, FileText, Maximize2, Minimize2, Paperclip, Download, Eye,
   File as FileIcon, FileImage, FileArchive, FileSpreadsheet, AlignLeft,
-} from "lucide-react";
+} from "@/components/icons";
 
 interface EmailAttachment {
   id: string;

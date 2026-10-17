@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Package, Power, Trash2 } from "lucide-react";
+import { ArrowLeft, Package, Power, Trash2 } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 const CATEGORY_LABEL: Record<string, string> = {

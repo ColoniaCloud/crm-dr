@@ -33,7 +33,7 @@ import {
   Pencil, FileText, CalendarDays, Phone, ChevronLeft, Check, X, Clock, User, MapPin,
   MessageSquare, Mail, Send as SendIcon, RotateCw, MoreHorizontal, UserCheck,
   Loader2, Sparkles, Plus, Tag,
-} from "lucide-react";
+} from "@/components/icons";
 
 const GoogleLocationMap = dynamic(() => import("@/components/google-location-map"), {
   ssr: false,

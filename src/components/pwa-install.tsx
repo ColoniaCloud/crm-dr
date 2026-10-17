@@ -4,7 +4,7 @@ import {
   useState, useEffect, useCallback, useSyncExternalStore,
   createContext, useContext,
 } from "react";
-import { X, Download, Share, ArrowDown } from "lucide-react";
+import { X, Download, Share, ArrowDown } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 

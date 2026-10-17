@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Tag } from "lucide-react";
+import { Tag } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 interface DiscountTagInfo {

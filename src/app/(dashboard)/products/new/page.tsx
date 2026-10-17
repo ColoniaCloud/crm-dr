@@ -12,7 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Plus, Trash2, Sparkles, ArrowLeft, ImagePlus, CheckCircle2, PackagePlus,
-} from "lucide-react";
+} from "@/components/icons";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SUBCATEGORIES: Record<string, { value: string; label: string }[]> = {

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { User, Mail, Lock, Camera, CheckCircle2, Eye, EyeOff, History, Search, MessageCircle } from "lucide-react";
+import { User, Mail, Lock, Camera, CheckCircle2, Eye, EyeOff, History, Search, MessageCircle } from "@/components/icons";
 import { formatDateTime } from "@/lib/utils";
 
 interface ProfileData {

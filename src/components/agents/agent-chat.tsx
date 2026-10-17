@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, Check, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "lucide-react";
+import { Bot, Check, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { ChatInput, ChatInputSubmit, ChatInputTextArea } from "@/components/ui/chat-input";
 import { cn } from "@/lib/utils";
@@ -96,7 +96,7 @@ export function AgentChat({
 
         {vacio && (
           <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-10 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-icon-chip">
               <Bot className="h-6 w-6 text-primary" />
             </div>
             <div>
@@ -125,7 +125,7 @@ export function AgentChat({
           {messages?.map((m) => (
             <div key={m.id} className={cn("flex gap-2.5", m.role === "USER" ? "justify-end" : "justify-start")}>
               {m.role === "ASSISTANT" && (
-                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-icon-chip">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
               )}

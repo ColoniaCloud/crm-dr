@@ -10,7 +10,7 @@ import {
   ArrowLeft, CalendarDays, Clock, User, CheckCircle,
   Phone, MessageCircle, Mail, MapPin, Building2, ExternalLink,
   FileText, Timer,
-} from "lucide-react";
+} from "@/components/icons";
 
 interface LeadActivity {
   id: string;

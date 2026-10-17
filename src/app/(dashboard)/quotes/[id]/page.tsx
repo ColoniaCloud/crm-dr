@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { ArrowLeft, ShoppingCart, Download, Send, Mail, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ShoppingCart, Download, Send, Mail, AlertTriangle } from "@/components/icons";
 import { downloadQuotePDF, getQuotePDFBase64 } from "@/components/quote-pdf";
 import Link from "next/link";
 

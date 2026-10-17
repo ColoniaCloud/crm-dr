@@ -27,7 +27,7 @@ import {
   MapPin, Mail, Filter, Send, User, Plus, Download,
   ChevronDown, ChevronRight, ChevronLeft, Headphones, Search, ArrowUpDown, ArrowUp, ArrowDown,
   CheckCircle2, DollarSign, Tag, X, Settings2, Trash2, AlertTriangle, Pencil,
-} from "lucide-react";
+} from "@/components/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { SoporteModal } from "@/components/soporte-modal";

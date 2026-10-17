@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, Trash2 } from "@/components/icons";
 
 interface CompetitorProduct {
   id: string;

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ContactSearchSelect } from "@/components/contact-search-select";
-import { ArrowRightLeft, Plus, Warehouse } from "lucide-react";
+import { ArrowRightLeft, Plus, Warehouse } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 
 const CATEGORY_LABEL: Record<string, string> = {

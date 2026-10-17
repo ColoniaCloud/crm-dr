@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Plus, Clock, Inbox, Wallet, ChevronRight, Loader2 } from "lucide-react";
+import { Bot, Plus, Clock, Inbox, Wallet, ChevronRight, Loader2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -82,7 +82,7 @@ export default function AgentsPage() {
       {data && data.agents.length === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center sm:py-12">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-icon-chip">
               <Bot className="h-6 w-6 text-primary" />
             </div>
             <div>
@@ -108,7 +108,7 @@ export default function AgentsPage() {
             <Card className="h-full transition-colors group-hover:border-primary/40">
               <CardContent className="space-y-4 p-5 sm:p-5">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-icon-chip">
                     <Bot className="h-5 w-5 text-primary" />
                   </div>
                   <div className="min-w-0 flex-1">

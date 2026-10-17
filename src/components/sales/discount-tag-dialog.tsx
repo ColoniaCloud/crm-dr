@@ -10,7 +10,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "@/components/icons";
 
 export interface TagEditable {
   id: string;

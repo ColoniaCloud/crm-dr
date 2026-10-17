@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Phone, CheckCircle, User, Clock, Timer,
   ChevronLeft, ChevronRight, AlertTriangle,
-} from "lucide-react";
+} from "@/components/icons";
 import { CALENDAR_USER_COLORS } from "@/lib/design-tokens";
 
 interface Call {

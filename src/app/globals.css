@@ -39,10 +39,14 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
+  --color-icon-chip: var(--icon-chip);
 }
 
 :root {
   --radius: 0.5rem;
+
+  /* Fondo de los iconos encapsulados: siempre gris, aunque el icono sea de color. */
+  --icon-chip: oklch(0.92 0 0);
 
   --background: oklch(0.98 0 0);
   --foreground: oklch(0.145 0 0);
@@ -86,6 +90,7 @@
 }
 
 .dark {
+  --icon-chip: oklch(0.27 0 0);
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
 

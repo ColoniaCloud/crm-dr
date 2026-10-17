@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { KeyRound, Mail, AlertTriangle } from "lucide-react";
+import { KeyRound, Mail, AlertTriangle } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 
 type AccessLevel = "BASIC" | "INSTALLER" | "RESELLER";

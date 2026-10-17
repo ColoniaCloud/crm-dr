@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { ProductSearchSelect } from "@/components/contact-search-select";
-import { Tags, Trash2, AlertTriangle } from "lucide-react";
+import { Tags, Trash2, AlertTriangle } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 interface TagInfo {

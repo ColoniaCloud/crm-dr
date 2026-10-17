@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTextareaResize } from "@/hooks/use-textarea-resize";

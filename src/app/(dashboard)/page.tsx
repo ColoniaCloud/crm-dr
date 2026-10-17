@@ -19,7 +19,7 @@ import {
   UserPlus, Users, ShoppingCart, TrendingUp, Clock, Trash2, Plus,
   CheckCircle2, Circle, ExternalLink, Loader2, AlertTriangle,
   PhoneCall, MessageSquare, CalendarCheck, Eye, EyeOff,
-} from "lucide-react";
+} from "@/components/icons";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface VisitSummary {
@@ -149,7 +149,7 @@ function StatCard({
           <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             {title}
           </CardTitle>
-          <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+          <div className="p-2 rounded-lg bg-icon-chip transition-colors">
             <Icon className="h-4 w-4 text-primary" />
           </div>
         </CardHeader>

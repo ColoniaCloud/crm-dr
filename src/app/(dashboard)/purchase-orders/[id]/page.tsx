@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Plus, Trash2, PackageCheck, AlertTriangle, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, PackageCheck, AlertTriangle, Download } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 import { downloadPurchaseOrderPDF } from "@/components/purchase-order-pdf";
 

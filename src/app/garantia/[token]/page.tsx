@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ShieldCheck, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ShieldCheck, Loader2, CheckCircle2, XCircle } from "@/components/icons";
 
 interface Warranty {
   installationCode: string;
@@ -103,7 +103,7 @@ export default function GarantiaPage() {
     <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 rounded-full bg-primary/10 p-3 w-fit">
+          <div className="mx-auto mb-2 rounded-full bg-icon-chip p-3 w-fit">
             <ShieldCheck className="h-8 w-8 text-primary" />
           </div>
           <CardTitle>{warranty.product.name}</CardTitle>

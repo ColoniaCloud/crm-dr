@@ -8,7 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Check, ChevronsUpDown, Search } from "lucide-react";
+import { Check, ChevronsUpDown, Search } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 interface SearchableSelectProps {

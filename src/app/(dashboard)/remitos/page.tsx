@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
-import { Download, CheckCircle2, Clock, PenLine } from "lucide-react";
+import { Download, CheckCircle2, Clock, PenLine } from "@/components/icons";
 
 interface RemitoRaw {
   id: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, User, Settings, Sun, Moon } from "lucide-react";
+import { LogOut, User, Settings, Sun, Moon } from "@/components/icons";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import {

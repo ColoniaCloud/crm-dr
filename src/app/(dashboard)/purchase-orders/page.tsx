@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Plus, Eye, ChevronRight } from "lucide-react";
+import { Plus, Eye, ChevronRight } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 interface PurchaseOrder {

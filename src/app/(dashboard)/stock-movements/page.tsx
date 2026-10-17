@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, AlertTriangle } from "lucide-react";
+import { Plus, AlertTriangle } from "@/components/icons";
 import {
   Dialog,
   DialogContent,

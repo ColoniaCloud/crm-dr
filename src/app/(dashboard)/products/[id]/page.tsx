@@ -25,7 +25,7 @@ import {
 import {
   ArrowLeft, Package, Sparkles, Plus, Trash2, Send, QrCode, Check, ImagePlus,
   Pencil, DollarSign, Layers, Tag, BarChart3, Info, AlertTriangle,
-} from "lucide-react";
+} from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
 
 // ── Constants ─────────────────────────────────────────────────────────────────

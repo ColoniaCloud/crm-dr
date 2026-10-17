@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, FileText, Trash2, Download, Send, Mail, AlertTriangle, ChevronRight } from "lucide-react";
+import { Plus, FileText, Trash2, Download, Send, Mail, AlertTriangle, ChevronRight } from "@/components/icons";
 import { downloadQuotePDF, getQuotePDFBase64 } from "@/components/quote-pdf";
 import type { QuotePDFData } from "@/components/quote-pdf";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";

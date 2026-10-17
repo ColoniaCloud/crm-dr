@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Headphones } from "lucide-react";
+import { Headphones } from "@/components/icons";
 
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
   return (

@@ -8,7 +8,7 @@ import {
   Bot, ChevronLeft, Mic, Paperclip, MessageSquare, Compass, Users2,
   Package, ShoppingCart, CalendarDays, ShieldCheck, MessageCircle,
   CheckCircle2, AlertTriangle, Activity,
-} from "lucide-react";
+} from "@/components/icons";
 import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
 
 function RoleBadge({ role }: { role: "TODOS" | "ADMIN+" | "SUPERADMIN" }) {
@@ -45,7 +45,7 @@ export default function AssistantDocsPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="rounded-lg bg-primary/10 p-2.5">
+        <div className="rounded-lg bg-icon-chip p-2.5">
           <Bot className="size-6 text-primary" />
         </div>
         <div>

@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Check, Copy, ExternalLink, Link2, Loader2, RefreshCw, Send } from "lucide-react";
+import { Check, Copy, ExternalLink, Link2, Loader2, RefreshCw, Send } from "@/components/icons";
 
 /**
  * Pestaña "Pedir datos" de /whatsapp: mandarles a los Clientes sin email un

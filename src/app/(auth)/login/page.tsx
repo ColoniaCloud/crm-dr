@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Image from "next/image";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "@/components/icons";
 import logoColonia from "@/public/Logo.png";
 import { GridPattern } from "@/components/ui/grid-pattern";
 import { cn } from "@/lib/utils";

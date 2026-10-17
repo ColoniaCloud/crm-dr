@@ -23,7 +23,7 @@ import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
   Check, Copy, ShieldCheck, XCircle, CheckCircle2, PackageCheck, Download, PenLine, Send,
-} from "lucide-react";
+} from "@/components/icons";
 
 interface SaleItem {
   id: string;

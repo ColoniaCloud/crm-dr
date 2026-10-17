@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Bell, BellDot, CheckCheck, CalendarDays, Phone, ArrowRight } from "lucide-react";
+import { Bell, BellDot, CheckCheck, CalendarDays, Phone, ArrowRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -153,8 +153,8 @@ export function NotificationBell() {
                     onClick={() => { if (!n.read) markRead(n.id); setOpen(false); }}
                   >
                     <div className={cn(
-                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                      n.type === "VISIT_ASSIGNED" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-icon-chip",
+                      n.type === "VISIT_ASSIGNED" ? "text-green-700 dark:text-green-400" : "text-blue-700 dark:text-blue-400"
                     )}>
                       <Icon className="h-4 w-4" />
                     </div>

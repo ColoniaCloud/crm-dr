@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronDown, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Loader2, Plus, Trash2, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";

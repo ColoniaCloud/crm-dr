@@ -22,7 +22,7 @@ import {
   Download,
   MessageSquare,
   LayoutPanelLeft,
-} from "lucide-react";
+} from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction } from "@/types/assistant";
 import { DottedSurface } from "@/components/ui/dotted-surface";
@@ -454,7 +454,7 @@ export default function AssistantPage() {
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 border-b px-4 sm:px-6 py-3 bg-background">
-        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary/10 shrink-0">
+        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-icon-chip shrink-0">
           <Bot className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
@@ -506,7 +506,7 @@ export default function AssistantPage() {
         <div className="flex-1 overflow-y-auto min-h-0 flex items-center justify-center px-4 py-8">
           <div className="animate-fade-in-down w-full max-w-2xl space-y-6">
             <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-icon-chip">
                 <Bot className="h-7 w-7 text-primary" />
               </div>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight leading-snug">
@@ -546,7 +546,7 @@ export default function AssistantPage() {
                   className={cn("flex gap-3", msg.role === "user" ? "flex-row-reverse" : "flex-row")}
                 >
                   {msg.role === "assistant" && (
-                    <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 mt-0.5">
+                    <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-icon-chip mt-0.5">
                       <Bot className="h-4 w-4 text-primary" />
                     </div>
                   )}

@@ -15,7 +15,7 @@ import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/
 import { takeSaleFlash } from "@/lib/sale-flash";
 import {
   AlertTriangle, Check, ChevronLeft, Copy, Download, Mail, MessageCircle, PenLine, Share2, CheckCircle2,
-} from "lucide-react";
+} from "@/components/icons";
 
 /**
  * La pantalla del remito: a donde lleva crear una venta confirmada, y lo que

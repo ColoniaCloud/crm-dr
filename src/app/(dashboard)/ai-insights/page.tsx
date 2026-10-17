@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Brain, TrendingUp, Loader2, Lightbulb } from "lucide-react";
+import { Brain, TrendingUp, Loader2, Lightbulb } from "@/components/icons";
 import { formatDateTime } from "@/lib/utils";
 
 interface Insight {

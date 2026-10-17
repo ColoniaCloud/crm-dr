@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { AgendaItem, AgendaKind } from "@/types/assistant-panel";
 

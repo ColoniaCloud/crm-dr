@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
-import { Plus, Trash2, AlertTriangle, Send, ChevronRight, CreditCard, Tag, Pencil, PackageCheck, CheckCircle2, Save } from "lucide-react";
+import { Plus, Trash2, AlertTriangle, Send, ChevronRight, CreditCard, Tag, Pencil, PackageCheck, CheckCircle2, Save } from "@/components/icons";
 import { ContactSearchSelect, ProductSearchSelect } from "@/components/contact-search-select";
 import { buildInstallmentSchedule, PLAN_FREQUENCY_LABEL, type PlanFrequency } from "@/lib/account-calc";
 import { calcItemTagDiscount, describeTag, splitDiscount } from "@/lib/discount-tag-calc";

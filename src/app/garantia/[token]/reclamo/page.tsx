@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, CheckCircle2, ChevronLeft } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft } from "@/components/icons";
 
 export default function ReclamoPage() {
   const { token } = useParams<{ token: string }>();
@@ -48,7 +48,7 @@ export default function ReclamoPage() {
     <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 rounded-full bg-orange-100 p-3 w-fit">
+          <div className="mx-auto mb-2 rounded-full bg-icon-chip p-3 w-fit">
             <AlertTriangle className="h-8 w-8 text-orange-600" />
           </div>
           <CardTitle>Reportar un problema</CardTitle>
