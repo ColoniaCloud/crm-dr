@@ -362,6 +362,15 @@ model Contact {
   assignedToId String?
   assignedTo   User?   @relation("AssignedTo", fields: [assignedToId], references: [id])
 
+  /// Subcliente de un revendedor: un Cliente (type CLIENT) que le compra a un
+  /// Revendedor (type RESELLER). Sigue siendo un cliente normal en todo —
+  /// aparece en Clientes, tiene sus ventas y su cuenta— y esto solo dice de qué
+  /// revendedor es. Se valida en la API que apunte a un RESELLER; si el
+  /// revendedor se borra, el subcliente queda como cliente directo.
+  resellerId String?
+  reseller   Contact?  @relation("ResellerSubclients", fields: [resellerId], references: [id], onDelete: SetNull)
+  subclients Contact[] @relation("ResellerSubclients")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -411,6 +420,7 @@ model Contact {
   @@index([source])
   @@index([phoneStatus])
   @@index([lastVerifiedAt])
+  @@index([resellerId])
   @@map("contacts")
 }
 

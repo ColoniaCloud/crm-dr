@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
 import { logOperatorAction } from "@/lib/notifications";
 import { completarM2DeRollos, faltanMedidas } from "@/lib/product-medidas";
+import { canSeeFactoryCost, hideFactoryCost } from "@/lib/money-visibility";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
@@ -45,7 +46,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       },
     });
     if (!product) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
-    return NextResponse.json(product);
+    // El costo de fábrica es solo de SUPERADMIN (lib/money-visibility.ts).
+    return NextResponse.json(hideFactoryCost(product, gate.session.user.role));
   } catch {
     return NextResponse.json({ error: "Error al obtener producto" }, { status: 500 });
   }
@@ -70,6 +72,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const body = await request.json();
     const { discounts, priceTiers, warrantyConfig, ...productData } = body;
+    // ADMIN no ve el costo, así que su formulario lo manda vacío: si se
+    // guardara, borraría el costo real. Para quien no lo ve, no se toca.
+    if (!canSeeFactoryCost(session.user.role)) delete productData.cost;
 
     // Un PATCH puede ser parcial: lo que no viene, se toma de lo guardado.
     const actual = await prisma.product.findUnique({
@@ -149,7 +154,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
 
     await logOperatorAction({ userId: session.user.id, action: "UPDATE_PRODUCT", entityType: "PRODUCT", entityId: id, description: `Actualizó producto "${product.name}"`, link: `/products/${id}` });
-    return NextResponse.json(product);
+    return NextResponse.json(hideFactoryCost(product, session.user.role));
   } catch (error: unknown) {
     if ((error as { code?: string }).code === "P2002")
       return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });

@@ -26,15 +26,14 @@ import {
 import {
   MapPin, Mail, Filter, Send, User, Plus, Download,
   ChevronDown, ChevronRight, ChevronLeft, Headphones, Search, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, DollarSign, Tag, X, Settings2, Trash2, AlertTriangle, Pencil,
+  CheckCircle2, DollarSign, Tag, X, Settings2, Trash2, AlertTriangle, Pencil, Store,
 } from "@/components/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { SoporteModal } from "@/components/soporte-modal";
 import { useCurrency } from "@/contexts/currency-context";
-import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
-import { SearchableSelect } from "@/components/searchable-select";
 import { SECTOR_COLORS } from "@/lib/design-tokens";
+import { ClientCreateDialog } from "@/components/clients/client-create-dialog";
 
 // ── WhatsApp SVG ──────────────────────────────────────────────────────────────
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
@@ -67,6 +66,7 @@ interface Client {
   state: string | null;
   cuit: string | null;
   assignedTo: { id: string; name: string } | null;
+  reseller: { id: string; firstName: string; lastName: string; company: string | null } | null;
   createdAt: string;
   totalPurchases: number;
   balance: number;
@@ -110,6 +110,8 @@ export default function ClientsPage() {
   const [filterSector, setFilterSector] = useState<string | null>(null);
   const [filterHasAddress, setFilterHasAddress] = useState(false);
   const [filterWithBalance, setFilterWithBalance] = useState(false);
+  // Subclientes: null = todos, "any" = solo los de algún revendedor, "none" = solo directos.
+  const [filterReseller, setFilterReseller] = useState<"any" | "none" | null>(null);
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
   const [filterState, setFilterState] = useState<string | null>(null);
   const [filterCity, setFilterCity] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export default function ClientsPage() {
     filterSector !== null,
     filterHasAddress,
     filterWithBalance,
+    filterReseller !== null,
     filterTagId !== null,
     filterState !== null,
     filterCity !== null,
@@ -147,11 +150,6 @@ export default function ClientsPage() {
 
   // Modals
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    firstName: "", lastName: "", company: "", sector: "",
-    email: "", phone: "", whatsapp: "", address: "", city: "", state: "", cuit: "", notes: "",
-  });
 
   const [mapClient, setMapClient] = useState<Client | null>(null);
 
@@ -192,6 +190,7 @@ export default function ClientsPage() {
       if (filterSector) params.set("sector", filterSector);
       if (filterHasAddress) params.set("hasAddress", "1");
       if (filterWithBalance) params.set("withBalance", "1");
+      if (filterReseller) params.set("resellerId", filterReseller);
       if (filterTagId) params.set("tagId", filterTagId);
       if (filterState) params.set("state", filterState);
       if (filterCity) params.set("city", filterCity);
@@ -216,12 +215,12 @@ export default function ClientsPage() {
 
   // Reset page when filters change
   useEffect(() => {
-    const key = `${search}|${filterSector}|${filterHasAddress}|${filterWithBalance}|${filterTagId}|${filterState}|${filterCity}|${sortDate}|${myClients}`;
+    const key = `${search}|${filterSector}|${filterHasAddress}|${filterWithBalance}|${filterReseller}|${filterTagId}|${filterState}|${filterCity}|${sortDate}|${myClients}`;
     if (prevFilterKeyRef.current && prevFilterKeyRef.current !== key) setPage(1);
     prevFilterKeyRef.current = key;
-  }, [search, filterSector, filterHasAddress, filterWithBalance, filterTagId, filterState, filterCity, sortDate, myClients]);
+  }, [search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, sortDate, myClients]);
 
-  useEffect(() => { fetchClients(); }, [search, page, filterSector, filterHasAddress, filterWithBalance, filterTagId, filterState, filterCity, sortDate, myClients]);
+  useEffect(() => { fetchClients(); }, [search, page, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, sortDate, myClients]);
 
   async function fetchTags() {
     try {
@@ -241,6 +240,7 @@ export default function ClientsPage() {
     setFilterSector(null);
     setFilterHasAddress(false);
     setFilterWithBalance(false);
+    setFilterReseller(null);
     setFilterTagId(null);
     setFilterState(null);
     setFilterCity(null);
@@ -381,26 +381,6 @@ export default function ClientsPage() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   function applySearch() { setSearch(searchInput); }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, sector: form.sector || null, type: "CLIENT" }),
-      });
-      if (!res.ok) throw new Error("Error al crear cliente");
-      setDialogOpen(false);
-      setForm({ firstName: "", lastName: "", company: "", sector: "", email: "", phone: "", whatsapp: "", address: "", city: "", state: "", cuit: "", notes: "" });
-      fetchClients();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear cliente");
-    } finally {
-      setCreating(false);
-    }
-  }
 
   async function handleSendEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -694,95 +674,7 @@ export default function ClientsPage() {
       </Dialog>
 
       {/* ── Nuevo Cliente Modal ── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Crear Nuevo Cliente</DialogTitle></DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Nombre *</Label>
-                <Input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
-              </div>
-              <div className="space-y-1">
-                <Label>Apellido *</Label>
-                <Input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Empresa</Label>
-                <Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Rubro</Label>
-                <Select value={form.sector || undefined} onValueChange={(v) => setForm({ ...form, sector: v })}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="AUTO_TALLER">Auto - Taller</SelectItem>
-                    <SelectItem value="AUTO_CONCESIONARIO">Auto - Concesionario</SelectItem>
-                    <SelectItem value="AUTO_MAYORISTA">Auto - Mayorista</SelectItem>
-                    <SelectItem value="ARQUITECTURA_CONSTRUCTORA">Arquitectura - Constructora</SelectItem>
-                    <SelectItem value="ARQUITECTURA_VIDRIERIA">Arquitectura - Vidriería</SelectItem>
-                    <SelectItem value="ARQUITECTURA_MAYORISTA">Arquitectura - Mayorista</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Dirección</Label>
-              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Av. Ejemplo 1234" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Provincia</Label>
-                <SearchableSelect
-                  options={AR_PROVINCES}
-                  value={form.state}
-                  onValueChange={(v) => setForm({ ...form, state: v, city: "" })}
-                  placeholder="Seleccionar..."
-                  searchPlaceholder="Buscar provincia..."
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Ciudad</Label>
-                <SearchableSelect
-                  options={AR_CITIES[form.state] ?? []}
-                  value={form.city}
-                  onValueChange={(v) => setForm({ ...form, city: v })}
-                  placeholder={form.state ? "Seleccionar..." : "Elegí provincia"}
-                  searchPlaceholder="Buscar ciudad..."
-                  disabled={!form.state}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Email</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Teléfono</Label>
-                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>WhatsApp</Label>
-              <Input value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} placeholder="+54 9 11 XXXX-XXXX" />
-            </div>
-            <div className="space-y-1">
-              <Label>CUIT</Label>
-              <Input value={form.cuit} onChange={(e) => setForm({ ...form, cuit: e.target.value })} placeholder="XX-XXXXXXXX-X" />
-            </div>
-            <div className="space-y-1">
-              <Label>Notas</Label>
-              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
-            </div>
-            <DialogFooter>
-              <Button type="submit" disabled={creating}>{creating ? "Creando..." : "Crear Cliente"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ClientCreateDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreated={fetchClients} />
 
       {/* ── Table Card ── */}
       <Card>
@@ -841,6 +733,12 @@ export default function ClientsPage() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setFilterWithBalance(!filterWithBalance)} className="gap-2">
                     <DollarSign size={13} /> Con saldo pendiente {filterWithBalance && "✓"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "any" ? null : "any")} className="gap-2">
+                    <Store size={13} /> Subclientes de revendedor {filterReseller === "any" && "✓"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "none" ? null : "none")} className="gap-2">
+                    <User size={13} /> Clientes directos {filterReseller === "none" && "✓"}
                   </DropdownMenuItem>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger className="gap-2"><Filter size={13} />Por rubro</DropdownMenuSubTrigger>
@@ -952,6 +850,12 @@ export default function ClientsPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setFilterWithBalance(!filterWithBalance)} className="gap-2">
                       <DollarSign size={13} /> Con saldo pendiente {filterWithBalance && "✓"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "any" ? null : "any")} className="gap-2">
+                      <Store size={13} /> Subclientes de revendedor {filterReseller === "any" && "✓"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "none" ? null : "none")} className="gap-2">
+                      <User size={13} /> Clientes directos {filterReseller === "none" && "✓"}
                     </DropdownMenuItem>
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger className="gap-2"><MapPin size={13} />Por provincia {filterState && `(${filterState.split(" ")[0]})`}</DropdownMenuSubTrigger>
@@ -1101,6 +1005,12 @@ export default function ClientsPage() {
                           </Badge>
                         )}
                         {client.city && <span className="text-xs text-muted-foreground">{client.city}</span>}
+                        {client.reseller && (
+                          <Link href={`/revendedores/${client.reseller.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            <Store size={11} />
+                            {client.reseller.company || `${client.reseller.firstName} ${client.reseller.lastName}`.trim()}
+                          </Link>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         {client.totalPurchases != null && <span className="font-medium text-foreground">{formatCurrency(client.totalPurchases)}</span>}
@@ -1153,6 +1063,7 @@ export default function ClientsPage() {
                     <TableHead>Total Compras</TableHead>
                     <TableHead>Saldo</TableHead>
                     <TableHead>Asignado a</TableHead>
+                    <TableHead>Revendedor</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1300,12 +1211,20 @@ export default function ClientsPage() {
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {client.assignedTo?.name || "-"}
                         </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {client.reseller ? (
+                            <Link href={`/revendedores/${client.reseller.id}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                              <Store size={13} />
+                              {client.reseller.company || `${client.reseller.firstName} ${client.reseller.lastName}`.trim()}
+                            </Link>
+                          ) : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {visibleClients.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
                         No se encontraron clientes
                       </TableCell>
                     </TableRow>

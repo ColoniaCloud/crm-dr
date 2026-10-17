@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logOperatorAction, notifyAdmins, escapeHtml } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { resolveResellerId, RESELLER_SUMMARY_SELECT } from "@/lib/subclients";
 const log = createLogger("api/clients");
 
 export async function GET(request: Request) {
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
     const hasAddress = searchParams.get("hasAddress");
     const withBalance = searchParams.get("withBalance");
     const myClients = searchParams.get("myClients");
+    // "none" = clientes directos de Kristall; un id = subclientes de ese revendedor.
+    const resellerFilter = searchParams.get("resellerId");
     const sortDate = searchParams.get("sortDate");
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const limitParam = searchParams.get("limit");
@@ -52,6 +55,9 @@ export async function GET(request: Request) {
       };
     }
     if (hasAddress === "1") where.address = { not: null };
+    if (resellerFilter === "none") where.resellerId = null;
+    else if (resellerFilter === "any") where.resellerId = { not: null };
+    else if (resellerFilter) where.resellerId = resellerFilter;
     if (myClients === "1" && session?.user?.id) {
       where.assignedToId = session.user.id;
     }
@@ -91,6 +97,7 @@ export async function GET(request: Request) {
           assignedTo: {
             select: { id: true, name: true },
           },
+          reseller: { select: RESELLER_SUMMARY_SELECT },
           sales: { select: { total: true } },
           payments: { select: { amount: true } },
           tags: {
@@ -154,17 +161,25 @@ export async function POST(request: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const body = await request.json();
+    const { resellerId: rawResellerId, ...body } = await request.json();
+
+    // Subcliente: el alta puede venir con el revendedor al que pertenece (desde
+    // el formulario de Clientes o desde "Crear subcliente" en la ficha del
+    // revendedor). Es un cliente normal; solo queda asignado.
+    const reseller = await resolveResellerId(rawResellerId);
+    if (!reseller.ok) return NextResponse.json({ error: reseller.error }, { status: 400 });
 
     const client = await prisma.contact.create({
       data: {
         ...body,
         type: "CLIENT" as const,
+        resellerId: reseller.value ?? null,
       },
       include: {
         assignedTo: {
           select: { id: true, name: true },
         },
+        reseller: { select: RESELLER_SUMMARY_SELECT },
       },
     });
 
@@ -176,7 +191,9 @@ export async function POST(request: Request) {
       action: "CLIENT_CREATED",
       entityType: "CLIENT",
       entityId: client.id,
-      description: `Creó el cliente "${contactName}"`,
+      description: client.reseller
+        ? `Creó el cliente "${contactName}" como subcliente de "${client.reseller.company || `${client.reseller.firstName} ${client.reseller.lastName}`.trim()}"`
+        : `Creó el cliente "${contactName}"`,
       link: "/clients",
     });
 

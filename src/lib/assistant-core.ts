@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { canSeeSalesTotals } from "@/lib/money-visibility";
 import { prisma } from "@/lib/prisma";
 import { logOperatorAction } from "@/lib/notifications";
 import { getRollByCode } from "@/lib/warranty";
@@ -517,11 +518,16 @@ function parseDayBoundary(value: string, edge: "start" | "end"): Date | null {
   return rolledOver ? null : date;
 }
 
-async function executeDataQuery(queryType: string): Promise<string> {
+async function executeDataQuery(queryType: string, role: string): Promise<string> {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+  // Los totales de ventas son solo de SUPERADMIN (lib/money-visibility.ts).
+  if ((queryType === "sales_this_month" || queryType === "sales_last_month") && !canSeeSalesTotals(role)) {
+    return "No tenés permiso para ver los totales de ventas. Solo un SUPERADMIN puede consultarlos.";
+  }
 
   switch (queryType) {
     case "sales_this_month": {
@@ -631,7 +637,7 @@ export async function runAssistant(params: {
 
     // ── query_data ────────────────────────────────────────────────────────────
     if (toolBlock.name === "query_data") {
-      const dataResult = await executeDataQuery(input.query_type as string);
+      const dataResult = await executeDataQuery(input.query_type as string, actor.role);
 
       const followUp = await anthropic.messages.create({
         model: MODEL,

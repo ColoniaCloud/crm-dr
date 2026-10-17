@@ -5,6 +5,9 @@ import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 const log = createLogger("api/purchase-orders");
 
+// Órdenes de compra: solo SUPERADMIN. Todo el módulo son costos de fábrica
+// (FOB, gastos de importación, costo landed) y ADMIN no los ve — ver
+// src/lib/money-visibility.ts.
 export async function GET(request: Request) {
   try {
     const session = await auth();
@@ -12,7 +15,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
     const role = session.user.role as string;
-    if (role !== "ADMIN" && role !== "SUPERADMIN") {
+    if (role !== "SUPERADMIN") {
       return NextResponse.json({ error: "Acceso restringido" }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
     const role = session.user.role as string;
-    if (role !== "ADMIN" && role !== "SUPERADMIN") {
+    if (role !== "SUPERADMIN") {
       return NextResponse.json({ error: "Acceso restringido" }, { status: 403 });
     }
 

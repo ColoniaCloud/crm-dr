@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api-auth";
+
+// Órdenes de compra: solo SUPERADMIN. Todo el módulo son costos de fábrica
+// (FOB, gastos de importación, costo landed) y ADMIN no los ve — ver
+// src/lib/money-visibility.ts.
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { ensureWarrantyRolls } from "@/lib/warranty";
@@ -10,7 +14,7 @@ const log = createLogger("api/purchase-orders/[id]/receive");
 // POST /api/purchase-orders/[id]/receive
 // Marks order as RECEIVED, updates product stock and cost, creates stock movements
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  const gate = await requireRole(["SUPERADMIN"]);
   if (!gate.success) return gate.response;
   const { session } = gate;
 

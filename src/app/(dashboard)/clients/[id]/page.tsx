@@ -31,12 +31,15 @@ import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { useSession } from "next-auth/react";
 import { isAdminRole } from "@/lib/utils";
 import dynamic from "next/dynamic";
-import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy } from "@/components/icons";
+import { Pencil, FileText, CalendarDays, Phone, ShoppingCart, CreditCard, ChevronLeft, MapPin, Plus, X, Save, MoreHorizontal, Check, ShieldCheck, Copy, UserPlus } from "@/components/icons";
 import { ClientPortalAccess } from "@/components/clients/client-portal-access";
 import { CreditTierCard } from "@/components/clients/credit-tier-card";
 import { DiscountTagCard } from "@/components/clients/discount-tag-card";
 import { ProductDiscountsCard } from "@/components/clients/product-discounts-card";
 import { ClientAccountStatement } from "@/components/clients/client-account-statement";
+import { ClientCreateDialog } from "@/components/clients/client-create-dialog";
+import { ResellerAssignCard } from "@/components/clients/reseller-assign-card";
+import { SubclientsCard, type Subclient } from "@/components/clients/subclients-card";
 import type { BuildingUse, FilmSide, GlassType } from "@prisma/client";
 import { BUILDING_USE_LABELS, describirSuperficie, FILM_SIDE_LABELS, GLASS_TYPE_LABELS } from "@/lib/obra";
 
@@ -90,6 +93,10 @@ interface ClientDetail {
   creditTier: { id: string; code: string; name: string; limit: string } | null;
   discountTag: { id: string; code: string; name: string; type: string; value: string; active: boolean } | null;
   consignmentBalance: number;
+  /** Si es un Cliente subcliente de un revendedor. */
+  reseller: { id: string; firstName: string; lastName: string; company: string | null } | null;
+  /** Si es un Revendedor: sus subclientes. */
+  subclients: Subclient[];
 }
 
 interface WarrantyInstallationSummary {
@@ -141,6 +148,7 @@ export default function ClientDetailPage() {
   const [error, setError] = useState("");
   const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
   const [visitDialogOpen, setVisitDialogOpen] = useState(false);
+  const [subclientDialogOpen, setSubclientDialogOpen] = useState(false);
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitForm, setVisitForm] = useState({ assignedToId: "", scheduledDate: "", notes: "" });
@@ -365,6 +373,11 @@ export default function ClientDetailPage() {
                     <ShoppingCart className="h-4 w-4 mr-1" />Crear Venta
                   </Link>
                 </Button>
+                {esRevendedor && (
+                  <Button variant="outline" size="sm" onClick={() => setSubclientDialogOpen(true)}>
+                    <UserPlus className="h-4 w-4 mr-1" />Crear subcliente
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setVisitDialogOpen(true)}>
                   <CalendarDays className="h-4 w-4 mr-1" />Visita
                 </Button>
@@ -412,6 +425,11 @@ export default function ClientDetailPage() {
                         <ShoppingCart className="h-4 w-4 mr-2" />Crear Venta
                       </Link>
                     </DropdownMenuItem>
+                    {esRevendedor && (
+                      <DropdownMenuItem onClick={() => setSubclientDialogOpen(true)}>
+                        <UserPlus className="h-4 w-4 mr-2" />Crear subcliente
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => setVisitDialogOpen(true)}>
                       <CalendarDays className="h-4 w-4 mr-2" />Visita
                     </DropdownMenuItem>
@@ -597,6 +615,11 @@ export default function ClientDetailPage() {
             canEdit={isAdminUser}
             onChanged={fetchClient}
           />
+        )}
+
+        {/* Revendedor del cliente (subclientes). Un revendedor no tiene revendedor. */}
+        {client && !esRevendedor && (
+          <ResellerAssignCard clientId={clientId} reseller={client.reseller} onChanged={fetchClient} />
         )}
 
         {/* Summary */}
@@ -858,6 +881,19 @@ export default function ClientDetailPage() {
             <GoogleLocationMap address={[client.address, client.city, client.state].filter(Boolean).join(", ")} />
           </CardContent>
         </Card>
+      )}
+
+      {/* Subclientes — al final de la ficha de un revendedor */}
+      {esRevendedor && (
+        <SubclientsCard subclients={client.subclients ?? []} onCreate={() => setSubclientDialogOpen(true)} />
+      )}
+      {esRevendedor && (
+        <ClientCreateDialog
+          open={subclientDialogOpen}
+          onOpenChange={setSubclientDialogOpen}
+          onCreated={fetchClient}
+          fixedReseller={{ id: clientId, name: client.company || client.name }}
+        />
       )}
 
       {/* Warranty — installations modal */}

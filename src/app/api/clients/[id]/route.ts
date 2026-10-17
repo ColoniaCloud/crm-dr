@@ -8,6 +8,7 @@ import { getClientProfile } from "@/lib/client-portal";
 import { releaseRollForSaleItem } from "@/lib/warranty";
 import { getConsignmentBalance } from "@/lib/credit";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
+import { resolveResellerId, RESELLER_SUMMARY_SELECT } from "@/lib/subclients";
 
 // Esta ruta es LA FICHA de un contacto comprador, no "la ficha de un cliente":
 // abre igual para CLIENT y para RESELLER, porque /revendedores/[id] reusa esta
@@ -29,7 +30,25 @@ export async function GET(
 
     const [profile, contact, consignmentBalance] = await Promise.all([
       getClientProfile(id),
-      prisma.contact.findFirst({ where: { id, ...WHERE_COMPRADOR }, include: { creditTier: true, discountTag: true } }),
+      prisma.contact.findFirst({
+        where: { id, ...WHERE_COMPRADOR },
+        include: {
+          creditTier: true,
+          discountTag: true,
+          reseller: { select: RESELLER_SUMMARY_SELECT },
+          // Solo un revendedor tiene subclientes; para un cliente esto viene vacío.
+          subclients: {
+            where: { type: "CLIENT" },
+            select: {
+              id: true, leadNumber: true, firstName: true, lastName: true, company: true,
+              city: true, state: true, phone: true, whatsapp: true, email: true, createdAt: true,
+              sales: { where: { status: { not: "CANCELLED" } }, select: { total: true } },
+              payments: { where: { sale: { status: { not: "CANCELLED" } } }, select: { amount: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      }),
       getConsignmentBalance(id),
     ]);
 
@@ -89,6 +108,12 @@ export async function GET(
           }
         : null,
       consignmentBalance,
+      reseller: contact.reseller,
+      subclients: contact.subclients.map(({ sales, payments, ...sc }) => {
+        const purchased = sales.reduce((sum, x) => sum + Number(x.total), 0);
+        const paid = payments.reduce((sum, x) => sum + Number(x.amount), 0);
+        return { ...sc, purchasesCount: sales.length, balance: purchased - paid };
+      }),
     });
   } catch (error) {
     log.error({ err: error }, "Error fetching client");
@@ -144,6 +169,18 @@ export async function PATCH(
     const { notes, suppliers, priceRange, creditTierId, discountTagId } = body;
 
     const data: Record<string, unknown> = {};
+    // Asignar / cambiar / quitar el revendedor de un cliente. Solo un CLIENT
+    // puede ser subcliente: un revendedor colgado de otro no tiene sentido hoy.
+    if (body.resellerId !== undefined) {
+      const reseller = await resolveResellerId(body.resellerId);
+      if (!reseller.ok) return NextResponse.json({ error: reseller.error }, { status: 400 });
+      if (reseller.value === id) return NextResponse.json({ error: "Un contacto no puede ser su propio revendedor" }, { status: 400 });
+      const target = await prisma.contact.findFirst({ where: { id, ...WHERE_COMPRADOR }, select: { type: true } });
+      if (target && target.type !== "CLIENT") {
+        return NextResponse.json({ error: "Solo un cliente puede asignarse a un revendedor" }, { status: 400 });
+      }
+      data.resellerId = reseller.value;
+    }
     if (notes !== undefined) data.notes = notes;
     if (suppliers !== undefined) data.currentSupplier = JSON.stringify(suppliers);
     if (priceRange !== undefined) data.currentSupplierPrices = priceRange;

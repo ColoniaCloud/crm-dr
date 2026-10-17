@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
 import { faltanMedidas } from "@/lib/product-medidas";
+import { canSeeFactoryCost, hideFactoryCost } from "@/lib/money-visibility";
 const log = createLogger("api/products");
 
 export async function GET(request: Request) {
@@ -48,7 +49,8 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(products);
+    // El costo de fábrica es solo de SUPERADMIN (lib/money-visibility.ts).
+    return NextResponse.json(products.map((p) => hideFactoryCost(p, session.user.role)));
   } catch (error) {
     log.error({ err: error }, "Error fetching products");
     return NextResponse.json({ error: "Error fetching products" }, { status: 500 });
@@ -77,6 +79,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { discounts, priceTiers, warrantyConfig, ...productData } = body;
+    // Quien no ve el costo de fábrica tampoco lo carga.
+    if (!canSeeFactoryCost(session.user.role)) delete productData.cost;
 
     const falta = faltanMedidas({
       category: productData.category,
@@ -148,7 +152,7 @@ export async function POST(request: Request) {
     });
 
     await logOperatorAction({ userId: session.user.id, action: "CREATE_PRODUCT", entityType: "PRODUCT", entityId: product?.id, description: `Creó producto "${productData.name}"`, link: `/products/${product?.id}` });
-    return NextResponse.json(product, { status: 201 });
+    return NextResponse.json(product && hideFactoryCost(product, session.user.role), { status: 201 });
   } catch (error) {
     if ((error as { code?: string }).code === "P2002")
       return NextResponse.json({ error: "Ya existe un producto con ese SKU" }, { status: 409 });

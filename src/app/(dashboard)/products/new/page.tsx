@@ -2,6 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { canSeeFactoryCost } from "@/lib/money-visibility";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,6 +84,7 @@ const EMPTY_FORM = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function NewProductPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -362,10 +365,12 @@ export default function NewProductPage() {
                 <Label>Precio de venta *</Label>
                 <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
               </div>
-              <div className="space-y-1">
-                <Label>Costo</Label>
-                <Input type="number" step="0.01" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="Opcional" />
-              </div>
+              {canSeeFactoryCost(session?.user?.role) && (
+                <div className="space-y-1">
+                  <Label>Costo</Label>
+                  <Input type="number" step="0.01" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="Opcional" />
+                </div>
+              )}
             </div>
 
             {/* Garantía */}

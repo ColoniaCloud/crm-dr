@@ -17,17 +17,15 @@ export async function GET() {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const twelveWeeksAgo = new Date(now.getTime() - 84 * 24 * 60 * 60 * 1000);
 
+    // Las cards y el gráfico de plata viven en /api/dashboard/card y
+    // /api/dashboard/finance, con su propio control por rol. Acá queda lo que
+    // no depende del período: listados recientes, agendas y el gráfico de leads.
     const isSuperAdmin = userRole === "SUPERADMIN";
 
     const [
       totalLeads,
       totalClients,
-      salesThisMonth,
-      allSales,
       recentSales,
-      monthlySalesRaw,
-      dailySalesRaw,
-      weeklySalesRaw,
       upcomingVisits,
       pendingVisits,
       contactedLeads,
@@ -40,14 +38,6 @@ export async function GET() {
     ] = await Promise.all([
       prisma.contact.count({ where: { type: "LEAD" } }),
       prisma.contact.count({ where: { type: "CLIENT" } }),
-      // Sales queries — only fetch if SUPERADMIN
-      isSuperAdmin
-        ? prisma.sale.findMany({ where: { createdAt: { gte: startOfMonth } } })
-        : Promise.resolve([]),
-      isSuperAdmin
-        ? prisma.sale.findMany({ include: { payments: true } })
-        : Promise.resolve([]),
-
       // Recent sales (remitos) — only if SUPERADMIN
       isSuperAdmin
         ? prisma.sale.findMany({
@@ -57,30 +47,6 @@ export async function GET() {
               payments: true,
             },
             orderBy: { createdAt: "desc" },
-          })
-        : Promise.resolve([]),
-
-      // Monthly data (last 6 months)
-      isSuperAdmin
-        ? prisma.sale.findMany({
-            where: { createdAt: { gte: sixMonthsAgo } },
-            select: { total: true, createdAt: true },
-          })
-        : Promise.resolve([]),
-
-      // Daily data (last 30 days)
-      isSuperAdmin
-        ? prisma.sale.findMany({
-            where: { createdAt: { gte: thirtyDaysAgo } },
-            select: { total: true, createdAt: true },
-          })
-        : Promise.resolve([]),
-
-      // Weekly data (last 12 weeks)
-      isSuperAdmin
-        ? prisma.sale.findMany({
-            where: { createdAt: { gte: twelveWeeksAgo } },
-            select: { total: true, createdAt: true },
           })
         : Promise.resolve([]),
 
@@ -155,71 +121,12 @@ export async function GET() {
       }),
     ]);
 
-    // Totals
-    const totalSalesThisMonth = salesThisMonth.length;
-    const totalRevenueThisMonth = salesThisMonth.reduce((s, x) => s + Number(x.total), 0);
-    const pendingPaymentsAmount = allSales.reduce((s, sale) => {
-      const paid = sale.payments.reduce((ps, p) => ps + Number(p.amount), 0);
-      const rem = Number(sale.total) - paid;
-      return s + (rem > 0 ? rem : 0);
-    }, 0);
-
     // Low stock
     const lowStockCount = await prisma.$queryRaw<[{ count: bigint }]>`
       SELECT COUNT(*) as count FROM products WHERE active = true AND stock <= minStock
     `;
 
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-
-    // ── Sales chart data (SUPERADMIN only) ──
-    let monthlyData: { month: string; revenue: number }[] = [];
-    let dailyData: { day: string; revenue: number }[] = [];
-    let weeklyData: { week: string; revenue: number }[] = [];
-
-    if (isSuperAdmin) {
-      // Monthly chart data
-      const monthlyMap: Record<string, { month: string; revenue: number }> = {};
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        monthlyMap[key] = { month: monthNames[d.getMonth()], revenue: 0 };
-      }
-      for (const s of monthlySalesRaw) {
-        const d = new Date(s.createdAt);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        if (monthlyMap[key]) monthlyMap[key].revenue += Number(s.total);
-      }
-      monthlyData = Object.values(monthlyMap);
-
-      // Daily chart data (last 30 days)
-      const dailyMap: Record<string, { day: string; revenue: number }> = {};
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        dailyMap[key] = { day: `${d.getDate()}/${d.getMonth() + 1}`, revenue: 0 };
-      }
-      for (const s of dailySalesRaw) {
-        const d = new Date(s.createdAt);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        if (dailyMap[key]) dailyMap[key].revenue += Number(s.total);
-      }
-      dailyData = Object.values(dailyMap);
-
-      // Weekly chart data (last 12 weeks)
-      const weeklyMap: Record<number, { week: string; revenue: number }> = {};
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-        const weekNum = 12 - i;
-        weeklyMap[12 - i] = { week: `S${weekNum} ${d.getDate()}/${d.getMonth() + 1}`, revenue: 0 };
-      }
-      for (const s of weeklySalesRaw) {
-        const d = new Date(s.createdAt);
-        const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-        const weekIdx = 11 - Math.floor(diffDays / 7);
-        if (weekIdx >= 0 && weekIdx <= 11) weeklyMap[weekIdx + 1].revenue += Number(s.total);
-      }
-      weeklyData = Object.values(weeklyMap);
-    }
 
     // ── Leads chart data (OPERATOR/ADMIN dashboard) ──
     // Monthly leads
@@ -266,14 +173,8 @@ export async function GET() {
       userRole,
       totalLeads,
       totalClients,
-      monthlySales: totalSalesThisMonth,
-      monthlyRevenue: totalRevenueThisMonth,
-      pendingPayments: pendingPaymentsAmount,
       lowStockProducts: Number(lowStockCount[0].count),
       recentSales,
-      monthlyData,
-      dailyData,
-      weeklyData,
       upcomingVisits,
       pendingVisits,
       contactedLeads,

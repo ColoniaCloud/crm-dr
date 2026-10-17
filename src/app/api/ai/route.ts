@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { generateSalesSummary, detectOpportunities } from "@/lib/ai";
 import { createLogger } from "@/lib/logger";
 import { requireRole } from "@/lib/api-auth";
+import { canSeeSalesTotals } from "@/lib/money-visibility";
 const log = createLogger("api/ai");
 
 export async function POST(request: Request) {
@@ -21,6 +22,10 @@ export async function POST(request: Request) {
     }
 
     if (action === "summary") {
+      // El resumen de ventas es un total agregado: solo SUPERADMIN.
+      if (!canSeeSalesTotals(gate.session.user.role)) {
+        return NextResponse.json({ error: "Solo un SUPERADMIN puede ver el resumen de ventas." }, { status: 403 });
+      }
       // Fetch sales from last 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

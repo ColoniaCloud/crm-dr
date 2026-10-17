@@ -285,7 +285,8 @@ export function AppSidebar() {
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {productosSubItems.map((item) => (
+                      {/* Órdenes de compra son costos de fábrica: solo SUPERADMIN. */}
+                      {productosSubItems.filter((item) => item.href !== "/purchase-orders" || userRole === "SUPERADMIN").map((item) => (
                         <SidebarMenuSubItem key={item.href}>
                           <SidebarMenuSubButton
                             asChild

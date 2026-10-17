@@ -12,13 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { formatDate } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
+import { PeriodStatCard } from "@/components/dashboard/period-stat-card";
+import { FinanceChart } from "@/components/dashboard/finance-chart";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
   UserPlus, Users, ShoppingCart, TrendingUp, Clock, Trash2, Plus,
   CheckCircle2, Circle, ExternalLink, Loader2, AlertTriangle,
-  PhoneCall, MessageSquare, CalendarCheck, Eye, EyeOff,
+  PhoneCall, MessageSquare, CalendarCheck, Wallet,
 } from "@/components/icons";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -48,13 +50,6 @@ interface RecentSale {
   createdAt: string;
 }
 
-interface ChartPoint {
-  month?: string;
-  week?: string;
-  day?: string;
-  revenue: number;
-}
-
 interface LeadsChartPoint {
   month?: string;
   week?: string;
@@ -66,14 +61,8 @@ interface DashboardData {
   userRole: string;
   totalLeads: number;
   totalClients: number;
-  monthlySales: number;
-  monthlyRevenue: number;
-  pendingPayments: number;
   lowStockProducts: number;
   recentSales: RecentSale[];
-  monthlyData: ChartPoint[];
-  weeklyData: ChartPoint[];
-  dailyData: ChartPoint[];
   upcomingVisits: VisitSummary[];
   pendingVisits: VisitSummary[];
   contactedLeads: ContactedLead[];
@@ -128,57 +117,6 @@ const priorityConfig: Record<string, { label: string; color: string }> = {
   MEDIUM: { label: "Media", color: "text-yellow-500" },
   LOW:    { label: "Baja",  color: "text-green-500"  },
 };
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  title, value, icon: Icon, href, sub, isCurrency, hideMoney, onToggleMoney,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  href: string;
-  sub?: string;
-  isCurrency?: boolean;
-  hideMoney?: boolean;
-  onToggleMoney?: () => void;
-}) {
-  return (
-    <Link href={href} className="block group">
-      <Card className="hover:shadow-lg transition-all border hover:border-orange-500/30 cursor-pointer">
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {title}
-          </CardTitle>
-          <div className="p-2 rounded-lg bg-icon-chip transition-colors">
-            <Icon className="h-4 w-4 text-primary" />
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {isCurrency ? (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <p className="font-bold truncate text-lg sm:text-xl lg:text-2xl min-w-0">
-                {hideMoney ? "••••••" : value}
-              </p>
-              <button
-                type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMoney?.(); }}
-                className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
-                aria-label={hideMoney ? "Mostrar monto" : "Ocultar monto"}
-              >
-                {hideMoney
-                  ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
-                  : <Eye className="h-3.5 w-3.5 text-muted-foreground" />}
-              </button>
-            </div>
-          ) : (
-            <p className="text-2xl font-bold">{value}</p>
-          )}
-          {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -406,13 +344,10 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const isSuperAdmin = data.userRole === "SUPERADMIN";
-
-  const chartData =
-    chartFilter === "month"
-      ? data.monthlyData.map((d) => ({ label: d.month, revenue: d.revenue }))
-      : chartFilter === "week"
-      ? data.weeklyData.map((d) => ({ label: d.week, revenue: d.revenue }))
-      : data.dailyData.map((d) => ({ label: d.day, revenue: d.revenue }));
+  // ADMIN ve cobros y saldo pendiente, pero no los totales de ventas
+  // (lib/money-visibility.ts). Las APIs lo controlan; esto solo arma la pantalla.
+  const isAdmin = data.userRole === "ADMIN";
+  const moneyToggle = { hideMoney, onToggleMoney: () => setHideMoney(!hideMoney) };
 
   const leadsChartData =
     chartFilter === "month"
@@ -452,22 +387,29 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Stat Cards ── */}
+      {/* ── Stat Cards — cada una con su filtro de período (Semana / Mes) ── */}
       {isSuperAdmin ? (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard title="Agenda Pendiente" value={data.pendingVisits.length} icon={CalendarCheck} href="/calendar" sub="Próximas visitas" />
-          <StatCard title="Clientes" value={data.totalClients} icon={Users} href="/clients" sub="Clientes totales" />
-          <StatCard title="Ventas del Mes" value={data.monthlySales} icon={ShoppingCart} href="/sales" sub="Operaciones" />
-          <StatCard title="Ingresos del Mes" value={formatCurrency(data.monthlyRevenue)} icon={TrendingUp} href="/sales" sub="Este mes" isCurrency hideMoney={hideMoney} onToggleMoney={() => setHideMoney(!hideMoney)} />
-          <StatCard title="Pagos Pendientes" value={formatCurrency(data.pendingPayments)} icon={Clock} href="/payments" sub="Por cobrar" isCurrency hideMoney={hideMoney} onToggleMoney={() => setHideMoney(!hideMoney)} />
+        <div className="grid gap-3 grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
+          <PeriodStatCard title="Agenda Pendiente" metric="visits" icon={CalendarCheck} href="/calendar" />
+          <PeriodStatCard title="Clientes Nuevos" metric="clients" icon={Users} href="/clients" />
+          <PeriodStatCard title="Ventas" metric="salesCount" icon={ShoppingCart} href="/sales" />
+          <PeriodStatCard title="Ingresos" metric="revenue" icon={TrendingUp} href="/sales" {...moneyToggle} />
+          <PeriodStatCard title="Cobros" metric="collected" icon={Wallet} href="/payments" {...moneyToggle} />
+          <PeriodStatCard title="Saldo Pendiente" metric="pending" icon={Clock} href="/payments" subPrefix="Deuda total" {...moneyToggle} />
         </div>
       ) : (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard title="Leads Totales" value={data.totalLeads} icon={UserPlus} href="/leads" sub="Prospectos activos" />
-          <StatCard title="Leads del Mes" value={data.monthlyLeadsGenerated} icon={PhoneCall} href="/leads" sub="Generados este mes" />
-          <StatCard title="Contactados" value={data.monthlyLeadsContacted} icon={MessageSquare} href="/leads" sub="Contactados este mes" />
-          <StatCard title="Clientes" value={data.totalClients} icon={Users} href="/clients" sub="Clientes totales" />
-          <StatCard title="Agendas Pendientes" value={data.pendingVisits.length} icon={CalendarCheck} href="/calendar" sub="Próximas visitas" />
+        <div className="grid gap-3 grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <PeriodStatCard title="Leads Totales" metric="leadsTotal" icon={UserPlus} href="/leads" />
+          <PeriodStatCard title="Leads Nuevos" metric="leadsNew" icon={PhoneCall} href="/leads" />
+          <PeriodStatCard title="Contactados" metric="leadsContacted" icon={MessageSquare} href="/leads" />
+          <PeriodStatCard title="Clientes Nuevos" metric="clients" icon={Users} href="/clients" />
+          <PeriodStatCard title="Agendas Pendientes" metric="visits" icon={CalendarCheck} href="/calendar" />
+          {isAdmin && (
+            <>
+              <PeriodStatCard title="Cobros" metric="collected" icon={Wallet} href="/payments" {...moneyToggle} />
+              <PeriodStatCard title="Saldo Pendiente" metric="pending" icon={Clock} href="/payments" subPrefix="Deuda total" {...moneyToggle} />
+            </>
+          )}
         </div>
       )}
 
@@ -651,57 +593,12 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border">
-          <CardHeader className="pb-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base text-card-foreground">Ingresos</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {chartFilter === "month" ? "Últimos 6 meses" : chartFilter === "week" ? "Últimas 12 semanas" : "Últimos 30 días"}
-                </p>
-              </div>
-              <div className="flex gap-1 rounded-lg border border-border bg-muted p-1 w-fit">
-                {(["month", "week", "day"] as const).map((f) => (
-                  <button key={f} onClick={() => setChartFilter(f)}
-                    className={`h-8 px-3 text-xs rounded-md font-medium transition-all ${
-                      chartFilter === f ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                    }`}>
-                    {f === "month" ? "Mes" : f === "week" ? "Sem" : "Día"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 0 }} barCategoryGap="35%">
-                  <defs>
-                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f97316" stopOpacity={0.95} />
-                      <stop offset="100%" stopColor="#ea580c" stopOpacity={0.7} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false}
-                    interval={chartFilter === "day" ? 4 : 0} />
-                  <YAxis tick={{ fontSize: 11, fill: "#71717a" }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => v === 0 ? "" : `$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)", radius: 4 }}
-                    contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#f4f4f5" }}
-                    labelStyle={{ color: "#a1a1aa", marginBottom: 2 }}
-                    formatter={(value) => [formatCurrency(Number(value)), "Ingresos"]} />
-                  <Bar dataKey="revenue" fill="url(#barGradient)" radius={[6, 6, 0, 0]}>
-                    {chartData.map((_, i) => <Cell key={i} fill="url(#barGradient)" />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        <FinanceChart hideMoney={hideMoney} />
       </div>
       ) : (
-      /* Gráfico de Leads — ADMIN/OPERATOR */
+      /* Gráfico de Leads — ADMIN/OPERATOR (+ cobros y saldo para ADMIN) */
+      <>
+      {isAdmin && <FinanceChart hideMoney={hideMoney} />}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -750,6 +647,7 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+      </>
       )}
 
       {/* ── Tareas ── */}

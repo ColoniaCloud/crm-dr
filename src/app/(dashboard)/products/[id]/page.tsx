@@ -1,5 +1,6 @@
 "use client";
 
+import { canSeeFactoryCost } from "@/lib/money-visibility";
 import { useState, useEffect, useRef, use } from "react";
 import { WarrantyRollCoverage } from "@/components/products/warranty-roll-coverage";
 import { useSession } from "next-auth/react";
@@ -151,6 +152,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { format: formatCurrency } = useCurrency();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "SUPERADMIN";
+  // Costo landed y margen: solo SUPERADMIN (lib/money-visibility.ts).
+  const canSeeCost = canSeeFactoryCost(session?.user?.role);
   const { id } = use(params);
   const router = useRouter();
 
@@ -527,7 +530,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <TooltipContent>Stock disponible</TooltipContent>
             </Tooltip>
 
-            {isAdmin && product.cost != null && (
+            {canSeeCost && product.cost != null && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Card
@@ -547,7 +550,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </Tooltip>
             )}
 
-            {isAdmin && product.cost != null && (
+            {canSeeCost && product.cost != null && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Card
@@ -965,7 +968,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <Label>Precio de venta *</Label>
                 <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
               </div>
-              {isAdmin && (
+              {canSeeCost && (
                 <div className="space-y-1">
                   <Label>Costo landed</Label>
                   <Input type="number" step="0.01" min="0" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="Opcional" />
