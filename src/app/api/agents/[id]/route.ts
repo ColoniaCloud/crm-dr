@@ -3,8 +3,8 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
-import { logOperatorAction } from "@/lib/notifications";
-import { canConfigureAgents } from "@/lib/agents/access";
+import { logAgentAudit } from "@/lib/agents/notify";
+import { agentOwners, canConfigureAgents } from "@/lib/agents/access";
 import { AGENT_MODELS } from "@/lib/agents/models";
 import { isValidTime, nextRunAfter, parseDays } from "@/lib/agents/schedule";
 import { PLACEHOLDERS, readCollectionsConfig } from "@/lib/agents/collections/config";
@@ -27,14 +27,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const agent = await serializeAgent(found.value, gate.value);
   let excludedContacts: Array<{ id: string; name: string }> = [];
   let users: Array<{ id: string; name: string; role: string }> = [];
-  if (canConfigureAgents(gate.value.role) && found.value.kind === "LEAD_PRIORITIZER") {
+  if (canConfigureAgents(gate.value.role, found.value, gate.value.userId) && found.value.kind !== "COLLECTIONS") {
     users = await prisma.user.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true, role: true },
       orderBy: { name: "asc" },
     });
   }
-  if (canConfigureAgents(gate.value.role) && found.value.kind === "COLLECTIONS") {
+  if (canConfigureAgents(gate.value.role, found.value, gate.value.userId) && found.value.kind === "COLLECTIONS") {
     const ids = readCollectionsConfig(found.value.config).excludedContactIds;
     const contactos = ids.length
       ? await prisma.contact.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, company: true } })
@@ -63,16 +63,17 @@ const patchSchema = z.object({
   monthlyBudgetUsd: z.number().min(0).max(1000).optional(),
   operatorCanChat: z.boolean().optional(),
   config: z.unknown().optional(),
+  visibleToUserIds: z.array(z.string()).min(1).max(20).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireActor();
   if (!gate.ok) return gate.response;
   const actor = gate.value;
-  if (!canConfigureAgents(actor.role)) return forbidden("Solo un SUPERADMIN puede configurar agentes.");
   const { id } = await params;
   const found = await loadAgentFor(actor, id);
   if (!found.ok) return found.response;
+  if (!canConfigureAgents(actor.role, found.value, actor.userId)) return forbidden("Solo un SUPERADMIN puede configurar agentes.");
   const actual = found.value;
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -104,6 +105,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data.config = cfg.data as Prisma.InputJsonValue;
   }
   if (d.status !== undefined) data.status = d.status;
+  if (d.visibleToUserIds !== undefined) {
+    // Cambiar dueños solo en un agente que ya los tiene, y sin sacarse uno mismo:
+    // si no, un dueño podría dejar el agente huérfano o abrirlo a todos.
+    if (!agentOwners(actual)) return NextResponse.json({ error: "Este agente no tiene dueños." }, { status: 400 });
+    if (!d.visibleToUserIds.includes(actor.userId)) {
+      return NextResponse.json({ error: "No te podés sacar de los dueños." }, { status: 400 });
+    }
+    const existen = await prisma.user.findMany({ where: { id: { in: d.visibleToUserIds }, deletedAt: null }, select: { id: true } });
+    data.visibleToUserIds = existen.map((u) => u.id);
+  }
 
   const scheduleTime = d.scheduleTime !== undefined ? d.scheduleTime : actual.scheduleTime;
   const scheduleDays =
@@ -120,7 +131,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const agent = await prisma.agent.update({ where: { id }, data });
     const cambios = Object.keys(d).join(", ");
-    await logOperatorAction({
+    await logAgentAudit({
       userId: actor.userId,
       action: d.status === "ACTIVE" ? "AGENT_ACTIVATED" : d.status === "PAUSED" ? "AGENT_PAUSED" : "AGENT_UPDATED",
       entityType: "Agent",

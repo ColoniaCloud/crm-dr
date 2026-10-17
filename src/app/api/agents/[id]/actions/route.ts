@@ -59,10 +59,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const gate = await requireActor();
   if (!gate.ok) return gate.response;
   const actor = gate.value;
-  if (!canApproveAgentActions(actor.role)) return forbidden("Solo un SUPERADMIN puede aprobar o descartar envíos.");
   const { id } = await params;
   const found = await loadAgentFor(actor, id);
   if (!found.ok) return found.response;
+  if (!canApproveAgentActions(actor.role, found.value, actor.userId)) return forbidden("Solo un SUPERADMIN puede aprobar o descartar envíos.");
 
   const parsed = bulkSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });

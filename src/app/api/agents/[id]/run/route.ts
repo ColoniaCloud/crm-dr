@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logOperatorAction } from "@/lib/notifications";
+import { logAgentAudit } from "@/lib/agents/notify";
 import { canConfigureAgents } from "@/lib/agents/access";
 import { runAgent } from "@/lib/agents/runner";
 import { forbidden, loadAgentFor, requireActor } from "@/lib/agents/api";
@@ -13,10 +13,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const gate = await requireActor();
   if (!gate.ok) return gate.response;
   const actor = gate.value;
-  if (!canConfigureAgents(actor.role)) return forbidden("Solo un SUPERADMIN puede ejecutar una ronda.");
   const { id } = await params;
   const found = await loadAgentFor(actor, id);
   if (!found.ok) return found.response;
+  if (!canConfigureAgents(actor.role, found.value, actor.userId)) return forbidden("Solo un SUPERADMIN puede ejecutar una ronda.");
 
   const r = await runAgent({ agentId: id, trigger: "MANUAL", userId: actor.userId });
   if (!r.ok) {
@@ -25,7 +25,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       { status: r.reason === "BUSY" ? 409 : 404 }
     );
   }
-  await logOperatorAction({
+  await logAgentAudit({
     userId: actor.userId,
     action: "AGENT_RUN_MANUAL",
     entityType: "Agent",

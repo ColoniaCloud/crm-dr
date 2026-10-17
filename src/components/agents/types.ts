@@ -39,7 +39,18 @@ export interface PrioritizerConfig {
   morningMail: boolean;
 }
 
-export type AgentConfig = CollectionsConfig | PrioritizerConfig;
+export interface TeamConfig {
+  excludedUserIds: string[];
+  morningSummary: boolean;
+  overdueReminders: boolean;
+  escalateAfterDays: number;
+  channels: { notification: boolean; email: boolean };
+  weeklyReport: boolean;
+  weeklyDay: number;
+  alerts: { enabled: boolean; inactiveDays: number; overdueTasks: number; unansweredMailHours: number };
+}
+
+export type AgentConfig = CollectionsConfig | PrioritizerConfig | TeamConfig;
 
 export interface AgentDTO {
   id: string;
@@ -57,6 +68,8 @@ export interface AgentDTO {
   monthlyBudgetUsd: number;
   monthSpendUsd: number;
   operatorCanChat: boolean;
+  /** Dueños, si el agente es restringido (solo lo recibe quien lo configura). */
+  visibleToUserIds: string[] | null;
   pendingCount: number;
   lastRun: { startedAt: string; status: string; summary: string | null } | null;
   permissions: { configure: boolean; approve: boolean };
@@ -66,7 +79,7 @@ export interface AgentActionDTO {
   id: string;
   origin: "RUN" | "CHAT";
   status: "PENDING_APPROVAL" | "SENT" | "DISCARDED" | "FAILED";
-  contactId: string;
+  contactId: string | null;
   contactName: string;
   saleId: string | null;
   saleNumber: number | null;
@@ -102,6 +115,8 @@ export type ChatCard =
   | { type: "run" }
   | { type: "pending_link"; count: number }
   | { type: "config_patch"; description: string; patch: Record<string, unknown> }
+  | { type: "guided_task"; userId: string; userName: string; title: string; notes: string; dueDate: string; priority: "HIGH" | "MEDIUM" | "LOW" }
+  | { type: "user_message"; userId: string; userName: string; subject: string; body: string }
   | { type: "trace"; calls: string[] };
 
 export interface AgentMessageDTO {

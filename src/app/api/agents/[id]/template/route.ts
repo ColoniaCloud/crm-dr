@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { logOperatorAction } from "@/lib/notifications";
+import { logAgentAudit } from "@/lib/agents/notify";
 import { canConfigureAgents } from "@/lib/agents/access";
 import { readCollectionsConfig } from "@/lib/agents/collections/config";
 import { forbidden, loadAgentFor, requireActor } from "@/lib/agents/api";
@@ -18,10 +18,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const gate = await requireActor();
   if (!gate.ok) return gate.response;
   const actor = gate.value;
-  if (!canConfigureAgents(actor.role)) return forbidden("Solo un SUPERADMIN puede cambiar plantillas.");
   const { id } = await params;
   const found = await loadAgentFor(actor, id);
   if (!found.ok) return found.response;
+  if (!canConfigureAgents(actor.role, found.value, actor.userId)) return forbidden("Solo un SUPERADMIN puede cambiar plantillas.");
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     step.body = body;
   }
   await prisma.agent.update({ where: { id }, data: { config: config as unknown as Prisma.InputJsonValue } });
-  await logOperatorAction({
+  await logAgentAudit({
     userId: actor.userId,
     action: "AGENT_TEMPLATE_UPDATED",
     entityType: "Agent",

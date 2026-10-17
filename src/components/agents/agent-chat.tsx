@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, Check, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "@/components/icons";
+import { Bot, Check, ClipboardList, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { ChatInput, ChatInputSubmit, ChatInputTextArea } from "@/components/ui/chat-input";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,12 @@ const SUGERENCIAS: Record<string, string[]> = {
     "¿Cómo salieron los contactos esta semana?",
     "¿Qué viene en la cola?",
     "Poné los talleres de Mendoza más arriba",
+  ],
+  TEAM_SUPERVISOR: [
+    "¿Cómo viene el equipo esta semana?",
+    "¿Quién tiene más tareas atrasadas?",
+    "Necesito que alguien haga una tarea",
+    "¿Qué recordatorios mandaste hoy?",
   ],
 };
 
@@ -420,6 +426,75 @@ function CardView({
           <Inbox className="h-3.5 w-3.5" />
           {card.count} reclamo(s) esperando aprobación
         </button>
+      );
+
+    case "guided_task":
+      return (
+        <CardShell icon={<ClipboardList className="h-3.5 w-3.5" />} title={`Tarea para ${card.userName}`}>
+          <p className="font-medium">{card.title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Vence el {card.dueDate.split("-").reverse().join("/")} · prioridad {card.priority === "HIGH" ? "alta" : card.priority === "MEDIUM" ? "media" : "baja"}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap rounded-md bg-background p-2 text-xs">{card.notes}</p>
+          {agent.permissions.configure && !done ? (
+            <Button
+              size="sm"
+              className="mt-2"
+              disabled={busy}
+              onClick={() =>
+                act(async () => {
+                  await apiJson(`/api/agents/${agent.id}/team/task`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      userId: card.userId,
+                      title: card.title,
+                      notes: card.notes,
+                      dueDate: card.dueDate,
+                      priority: card.priority,
+                    }),
+                  });
+                  return `Tarea creada. ${card.userName} ya tiene el aviso.`;
+                })
+              }
+            >
+              {busy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Crear tarea
+            </Button>
+          ) : !agent.permissions.configure ? (
+            sinPermiso
+          ) : null}
+          {pie}
+        </CardShell>
+      );
+
+    case "user_message":
+      return (
+        <CardShell icon={<Send className="h-3.5 w-3.5" />} title={`Mensaje para ${card.userName}`}>
+          <p className="text-xs text-muted-foreground">Asunto: {card.subject}</p>
+          <p className="mt-1 whitespace-pre-wrap rounded-md bg-background p-2 text-xs">{card.body}</p>
+          {agent.permissions.configure && !done ? (
+            <Button
+              size="sm"
+              className="mt-2"
+              disabled={busy}
+              onClick={() =>
+                act(async () => {
+                  await apiJson(`/api/agents/${agent.id}/team/message`, {
+                    method: "POST",
+                    body: JSON.stringify({ userId: card.userId, subject: card.subject, body: card.body }),
+                  });
+                  return "Enviado.";
+                })
+              }
+            >
+              {busy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              Enviar
+            </Button>
+          ) : !agent.permissions.configure ? (
+            sinPermiso
+          ) : null}
+          {pie}
+        </CardShell>
       );
 
     case "config_patch":

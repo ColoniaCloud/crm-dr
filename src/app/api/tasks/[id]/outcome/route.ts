@@ -52,7 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const ahora = new Date();
   const metodo = { PHONE: "teléfono", WHATSAPP: "WhatsApp", EMAIL: "email", IN_PERSON: "en persona" }[method];
   const [actualizada] = await prisma.$transaction([
-    prisma.crmTask.update({ where: { id }, data: { done: true } }),
+    prisma.crmTask.update({ where: { id }, data: { done: true, doneAt: ahora } }),
     prisma.contact.update({
       where: { id: task.contactId },
       data: {

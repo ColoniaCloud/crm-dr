@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Plus, Clock, Inbox, Wallet, ChevronRight, Loader2 } from "@/components/icons";
+import { useSession } from "next-auth/react";
+import { Bot, Plus, Clock, Inbox, Wallet, ChevronRight, Loader2, Lock } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ interface CatalogItem {
   defaultInstructions: string;
   defaultScheduleTime: string;
   defaultScheduleDays: string;
+  restricted: boolean;
 }
 
 interface ListResponse {
@@ -35,6 +37,7 @@ interface ListResponse {
   catalog: CatalogItem[];
   models: Array<{ id: string; label: string }>;
   canCreate: boolean;
+  users: Array<{ id: string; name: string; email: string }>;
 }
 
 export default function AgentsPage() {
@@ -113,7 +116,14 @@ export default function AgentsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold">{a.name}</p>
-                    <p className="text-xs text-muted-foreground">{a.kindLabel}</p>
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                      {a.kindLabel}
+                      {a.visibleToUserIds && (
+                        <span className="flex items-center gap-0.5" title="Solo lo ven sus dueños">
+                          · <Lock className="h-3 w-3" /> Privado
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs">
                     <span className={cn("h-2 w-2 rounded-full", STATUS_DOT[a.status])} />
@@ -151,7 +161,7 @@ export default function AgentsPage() {
       </div>
 
       {data?.canCreate && (
-        <CreateAgentDialog open={creating} onOpenChange={setCreating} catalog={data.catalog} models={data.models} />
+        <CreateAgentDialog open={creating} onOpenChange={setCreating} catalog={data.catalog} models={data.models} users={data.users} />
       )}
     </div>
   );
@@ -162,12 +172,16 @@ function CreateAgentDialog({
   onOpenChange,
   catalog,
   models,
+  users,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   catalog: CatalogItem[];
   models: Array<{ id: string; label: string }>;
+  users: Array<{ id: string; name: string; email: string }>;
 }) {
+  const { data: session } = useSession();
+  const [owners, setOwners] = useState<string[]>([]);
   const router = useRouter();
   const inicial = catalog[0];
   const [kind, setKind] = useState(inicial?.kind ?? "");
@@ -180,6 +194,8 @@ function CreateAgentDialog({
   const [operatorCanChat, setOperatorCanChat] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tipo = catalog.find((c) => c.kind === kind);
+  const yo = session?.user?.id;
 
   /** Al cambiar de función se cargan sus valores por defecto. */
   function selectKind(c: CatalogItem) {
@@ -205,6 +221,7 @@ function CreateAgentDialog({
           model,
           monthlyBudgetUsd: Number(budget),
           operatorCanChat,
+          ...(tipo?.restricted ? { visibleToUserIds: owners } : {}),
         }),
       });
       router.push(`/agents/${agent.id}?tab=config`);
@@ -277,13 +294,40 @@ function CreateAgentDialog({
             </div>
           </div>
 
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox checked={operatorCanChat} onCheckedChange={(v) => setOperatorCanChat(v === true)} className="mt-0.5" />
-            <span>
-              Los OPERATOR pueden chatear con este agente
-              <span className="block text-xs text-muted-foreground">Van a ver lo mismo que el agente, saldos incluidos. No pueden aprobar envíos.</span>
-            </span>
-          </label>
+          {tipo?.restricted ? (
+            <div className="space-y-1.5">
+              <Label>Quiénes lo ven</Label>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {users.map((u) => {
+                  const esYo = u.id === yo;
+                  return (
+                    <label key={u.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={esYo || owners.includes(u.id)}
+                        disabled={esYo}
+                        onCheckedChange={(v) =>
+                          setOwners(v === true ? [...new Set([...owners, u.id])] : owners.filter((x) => x !== u.id))
+                        }
+                      />
+                      {u.name}
+                      {esYo && <span className="text-xs text-muted-foreground">(vos)</span>}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Solo estas personas lo ven y reciben sus avisos, aunque haya otros SUPERADMIN. No se los audita.
+              </p>
+            </div>
+          ) : (
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox checked={operatorCanChat} onCheckedChange={(v) => setOperatorCanChat(v === true)} className="mt-0.5" />
+              <span>
+                Los OPERATOR pueden chatear con este agente
+                <span className="block text-xs text-muted-foreground">Van a ver lo mismo que el agente, saldos incluidos. No pueden aprobar envíos.</span>
+              </span>
+            </label>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

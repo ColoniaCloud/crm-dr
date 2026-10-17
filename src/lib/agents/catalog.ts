@@ -1,6 +1,7 @@
 import type { AgentKind } from "@prisma/client";
 import { defaultCollectionsConfig } from "@/lib/agents/collections/config";
 import { defaultPrioritizerConfig } from "@/lib/agents/leads/prioritizer/config";
+import { defaultTeamConfig } from "@/lib/agents/team/config";
 
 /**
  * Catálogo de tipos de agente (decisión 3 de AGENTES.md): cada tipo trae sus
@@ -19,6 +20,8 @@ export interface AgentKindInfo {
   defaultConfig: () => unknown;
   defaultScheduleTime: string;
   defaultScheduleDays: string;
+  /** Se crea con dueños: solo esos usuarios lo ven, sin importar el rol. */
+  restricted?: boolean;
 }
 
 export const AGENT_CATALOG: Record<AgentKind, AgentKindInfo> = {
@@ -45,6 +48,19 @@ export const AGENT_CATALOG: Record<AgentKind, AgentKindInfo> = {
     defaultConfig: defaultPrioritizerConfig,
     defaultScheduleTime: "08:30",
     defaultScheduleDays: "1,2,3,4,5",
+  },
+  TEAM_SUPERVISOR: {
+    kind: "TEAM_SUPERVISOR",
+    label: "Supervisor del equipo",
+    description:
+      "Audita a los usuarios (tareas, leads, actividad y respuesta a mails), les recuerda sus tareas con amabilidad y los guía con tareas que le encargás por el chat. Solo lo ven los dueños que elijas.",
+    defaultName: "Supervisor",
+    defaultInstructions:
+      "Sos el supervisor del equipo. Con los empleados, siempre cálido y respetuoso: recordás, no retás. Con nosotros, directo y con números. Antes de armar una tarea para alguien, preguntá todo lo que necesites para que quede perfectamente clara.",
+    defaultConfig: defaultTeamConfig,
+    defaultScheduleTime: "09:00",
+    defaultScheduleDays: "1,2,3,4,5",
+    restricted: true,
   },
 };
 

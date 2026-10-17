@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { logOperatorAction } from "@/lib/notifications";
+import { logAgentAudit } from "@/lib/agents/notify";
 import { createLogger } from "@/lib/logger";
 import { sendAgentMail } from "@/lib/agents/mail";
 import { readCollectionsConfig } from "@/lib/agents/collections/config";
@@ -72,6 +72,12 @@ export async function executeAction(actionId: string, approverId: string | null)
     }
   }
 
+  // Solo los mails a clientes pasan por la bandeja. Una acción sin cliente
+  // (recordatorio a un usuario) no tiene nada que mandar acá.
+  if (!action.contactId) {
+    await prisma.agentAction.update({ where: { id: actionId }, data: { status: "FAILED", error: "La acción no tiene un cliente de destino." } });
+    return "FAILED";
+  }
   const config = readCollectionsConfig(action.agent.config);
   try {
     const res = await sendAgentMail({
@@ -108,7 +114,7 @@ export async function approveActions(params: {
     resultado[await executeAction(a.id, params.userId)]++;
   }
   if (acciones.length > 0) {
-    await logOperatorAction({
+    await logAgentAudit({
       userId: params.userId,
       action: "AGENT_ACTIONS_APPROVED",
       entityType: "Agent",
@@ -126,7 +132,7 @@ export async function discardActions(params: { agentId: string; actionIds: strin
     data: { status: "DISCARDED", approvedById: params.userId, approvedAt: new Date() },
   });
   if (count > 0) {
-    await logOperatorAction({
+    await logAgentAudit({
       userId: params.userId,
       action: "AGENT_ACTIONS_DISCARDED",
       entityType: "Agent",
@@ -150,7 +156,7 @@ export async function editAction(params: {
     data: { subject: params.subject, body: params.body },
   });
   if (count > 0) {
-    await logOperatorAction({
+    await logAgentAudit({
       userId: params.userId,
       action: "AGENT_ACTION_EDITED",
       entityType: "Agent",
@@ -177,7 +183,7 @@ export async function excludeContact(params: { agentId: string; contactId: strin
     where: { agentId: params.agentId, contactId: params.contactId, status: "PENDING_APPROVAL", approvedAt: null },
     data: { status: "DISCARDED", error: "Cliente marcado como no contactar.", approvedById: params.userId, approvedAt: new Date() },
   });
-  await logOperatorAction({
+  await logAgentAudit({
     userId: params.userId,
     action: "AGENT_CONTACT_EXCLUDED",
     entityType: "Agent",

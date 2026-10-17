@@ -4,7 +4,7 @@ import { conArriendo } from "@/lib/lock";
 import { createLogger } from "@/lib/logger";
 import { nextRunAfter } from "@/lib/agents/schedule";
 import { checkBudgetAfterSpend, hasBudget } from "@/lib/agents/budget";
-import { notifySuperadmins } from "@/lib/agents/notify";
+import { notifyAgentOwners } from "@/lib/agents/notify";
 import { kindImpl } from "@/lib/agents/kinds";
 
 const log = createLogger("agents/runner");
@@ -77,7 +77,7 @@ export async function runAgent(params: {
       });
 
       if (r.spend.costUsd > 0) await checkBudgetAfterSpend(agent.id, now);
-      for (const aviso of r.notify) await notifySuperadmins(aviso);
+      for (const aviso of r.notify) await notifyAgentOwners(agent.id, aviso);
       return { ok: true, runId: run.id, status: r.status, summary: r.summary };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -86,7 +86,7 @@ export async function runAgent(params: {
         where: { id: run.id },
         data: { status: "FAILED", finishedAt: new Date(), error: detail },
       });
-      await notifySuperadmins({
+      await notifyAgentOwners(agent.id, {
         type: "AGENT_RUN_FAILED",
         title: `La ronda de "${agent.name}" falló`,
         message: `Error: ${detail}`,
@@ -99,8 +99,26 @@ export async function runAgent(params: {
   return resultado ?? { ok: false, reason: "BUSY" };
 }
 
+/**
+ * El trabajo liviano de cada tipo (alertas), en cada llamada del cron. Un
+ * arriendo corto por agente evita que dos llamadas seguidas lo pisen.
+ */
+async function runTicks(now: Date) {
+  const activos = await prisma.agent.findMany({ where: { status: "ACTIVE" } });
+  for (const a of activos) {
+    const tick = kindImpl(a.kind).tick;
+    if (!tick) continue;
+    try {
+      await conArriendo(`agent-tick:${a.id}`, 5 * 60_000, () => tick(a, now));
+    } catch (err) {
+      log.error({ err, agentId: a.id }, "Falló el chequeo periódico del agente");
+    }
+  }
+}
+
 /** Lo que llama el cron: corre los agentes activos a los que ya les tocaba. */
 export async function runDueAgents(now: Date = new Date()) {
+  await runTicks(now);
   const vencidos = await prisma.agent.findMany({
     where: { status: { in: ["ACTIVE", "PAUSED_BUDGET"] }, nextRunAt: { lte: now } },
     select: { id: true, status: true },

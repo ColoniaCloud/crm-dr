@@ -15,10 +15,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const gate = await requireActor();
   if (!gate.ok) return gate.response;
   const actor = gate.value;
-  if (!canApproveAgentActions(actor.role)) return forbidden("Solo un SUPERADMIN puede modificar envíos.");
   const { id, actionId } = await params;
   const found = await loadAgentFor(actor, id);
   if (!found.ok) return found.response;
+  if (!canApproveAgentActions(actor.role, found.value, actor.userId)) return forbidden("Solo un SUPERADMIN puede modificar envíos.");
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
@@ -38,6 +38,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: true });
   }
 
+  if (!accion.contactId) return NextResponse.json({ error: "Ese envío no es a un cliente." }, { status: 400 });
   await excludeContact({ agentId: id, contactId: accion.contactId, userId: actor.userId });
   return NextResponse.json({ ok: true });
 }

@@ -23,7 +23,11 @@ export async function PATCH(
   // Solo estos campos se pueden tocar: antes el body iba directo a Prisma.
   const body = await request.json();
   const data: Record<string, unknown> = {};
-  if (typeof body.done === "boolean") data.done = body.done;
+  if (typeof body.done === "boolean") {
+    data.done = body.done;
+    // Cuándo se cerró: lo usa el Supervisor del equipo para medir cuánto tarda cada uno.
+    if (body.done !== existing.done) data.doneAt = body.done ? new Date() : null;
+  }
   if (typeof body.title === "string" && body.title.trim()) data.title = body.title.trim();
   if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
   if (body.priority !== undefined) {

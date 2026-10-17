@@ -16,9 +16,11 @@ import { cn } from "@/lib/utils";
 import { ScheduleFields } from "@/components/agents/schedule-fields";
 import {
   apiJson, formatDateTimeAR, usd,
-  type AgentActionDTO, type AgentConfig, type AgentDTO, type AgentRunDTO, type CollectionsConfig, type PrioritizerConfig,
+  type AgentActionDTO, type AgentConfig, type AgentDTO, type AgentRunDTO, type CollectionsConfig, type PrioritizerConfig, type TeamConfig,
 } from "@/components/agents/types";
 import { PrioritizerSettings, TodayLists } from "@/components/agents/prioritizer-panel";
+import { TeamOverview, TeamSettings } from "@/components/agents/team-panel";
+import { useSession } from "next-auth/react";
 
 export interface AgentDetailExtras {
   excludedContacts: Array<{ id: string; name: string }>;
@@ -49,7 +51,14 @@ export function AgentPanel({
   refreshKey: number;
   onChanged: () => void;
 }) {
-  const tabs = agent.hasApprovals
+  const tabs = agent.kind === "TEAM_SUPERVISOR"
+    ? [
+        { id: "team", label: "Equipo" },
+        { id: "sent", label: "Avisos" },
+        { id: "runs", label: "Ejecuciones" },
+        ...(agent.permissions.configure ? [{ id: "config", label: "Configuración" }] : []),
+      ]
+    : agent.hasApprovals
     ? [
         { id: "pending", label: `Pendientes${agent.pendingCount ? ` (${agent.pendingCount})` : ""}` },
         { id: "runs", label: "Ejecuciones" },
@@ -72,7 +81,16 @@ export function AgentPanel({
         </TabsList>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {agent.hasApprovals ? (
+        {agent.kind === "TEAM_SUPERVISOR" ? (
+          <>
+            <TabsContent value="team" className="mt-0">
+              <TeamOverview agent={agent} refreshKey={refreshKey} />
+            </TabsContent>
+            <TabsContent value="sent" className="mt-0">
+              <ActionsList agent={agent} status={null} refreshKey={refreshKey} onChanged={onChanged} />
+            </TabsContent>
+          </>
+        ) : agent.hasApprovals ? (
           <>
             <TabsContent value="pending" className="mt-0">
               <ActionsList agent={agent} status="PENDING_APPROVAL" refreshKey={refreshKey} onChanged={onChanged} />
@@ -410,6 +428,9 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
   const [budget, setBudget] = useState(String(agent.monthlyBudgetUsd));
   const [operatorCanChat, setOperatorCanChat] = useState(agent.operatorCanChat);
   const [config, setConfig] = useState<AgentConfig>(agent.config!);
+  const [owners, setOwners] = useState<string[]>(agent.visibleToUserIds ?? []);
+  const { data: session } = useSession();
+  const restringido = Boolean(agent.visibleToUserIds);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const mode = MAIL_MODE[extras.mailMode];
@@ -429,6 +450,7 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
           monthlyBudgetUsd: Number(budget),
           operatorCanChat,
           config,
+          ...(restringido ? { visibleToUserIds: owners } : {}),
         }),
       });
       setMsg({ ok: true, text: "Guardado." });
@@ -487,6 +509,7 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
             <p className="text-xs text-muted-foreground">Avisa al 80 % y se pausa solo al 100 %.</p>
           </div>
         </div>
+        {!restringido && (
         <label className="flex items-start gap-2 text-sm">
           <Checkbox checked={operatorCanChat} onCheckedChange={(v) => setOperatorCanChat(v === true)} className="mt-0.5" />
           <span>
@@ -494,10 +517,20 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
             <span className="block text-xs text-muted-foreground">Ven lo mismo que el agente, saldos incluidos. No pueden aprobar.</span>
           </span>
         </label>
+        )}
       </Section>
 
       {agent.kind === "COLLECTIONS" ? (
         <CollectionsSettings config={config as CollectionsConfig} setConfig={setConfig} extras={extras} reinclude={reinclude} />
+      ) : agent.kind === "TEAM_SUPERVISOR" ? (
+        <TeamSettings
+          config={config as TeamConfig}
+          setConfig={setConfig}
+          owners={owners}
+          setOwners={setOwners}
+          currentUserId={session?.user?.id}
+          extras={extras}
+        />
       ) : (
         <PrioritizerSettings config={config as PrioritizerConfig} setConfig={setConfig} extras={extras} />
       )}

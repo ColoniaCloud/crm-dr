@@ -18,6 +18,10 @@ export type ChatCard =
   | { type: "pending_link"; count: number }
   /** Cambio de configuración propuesto por el agente: se aplica con un botón (PATCH parcial). */
   | { type: "config_patch"; description: string; patch: Record<string, unknown> }
+  /** Tarea guiada propuesta por el Supervisor: se crea con un botón. */
+  | { type: "guided_task"; userId: string; userName: string; title: string; notes: string; dueDate: string; priority: "HIGH" | "MEDIUM" | "LOW" }
+  /** Mensaje puntual a un empleado propuesto por el Supervisor: se manda con un botón. */
+  | { type: "user_message"; userId: string; userName: string; subject: string; body: string }
   /** Rastro de las consultas que hizo el agente. No se dibuja: vuelve en el historial. */
   | { type: "trace"; calls: string[] };
 
@@ -68,4 +72,9 @@ export interface AgentKindImpl {
   tools: Anthropic.Tool[];
   runTool: (name: string, input: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>;
   run: (params: { agent: Agent; runId: string; now: Date }) => Promise<KindRunResult>;
+  /**
+   * Trabajo liviano que corre en cada llamada del cron (cada 15 min) mientras el
+   * agente está activo, aparte de la ronda programada. Sin IA: alertas y chequeos.
+   */
+  tick?: (agent: Agent, now: Date) => Promise<void>;
 }

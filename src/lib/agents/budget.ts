@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { monthKey, startOfLocalMonth } from "@/lib/agents/schedule";
-import { notifySuperadmins } from "@/lib/agents/notify";
+import { notifyAgentOwners } from "@/lib/agents/notify";
 
 /**
  * Tope de gasto mensual por agente (decisión 10 de AGENTES.md).
@@ -57,7 +57,7 @@ export async function checkBudgetAfterSpend(agentId: string, now: Date = new Dat
 
   if (gastado >= tope && agent.status === "ACTIVE") {
     await prisma.agent.update({ where: { id: agentId }, data: { status: "PAUSED_BUDGET" } });
-    await notifySuperadmins({
+    await notifyAgentOwners(agentId, {
       type: "AGENT_BUDGET_PAUSED",
       title: `El agente "${agent.name}" se pausó por gasto`,
       message: `Llegó al tope del mes (${cifra}). Vuelve solo el mes que viene, o subí el tope desde su configuración.`,
@@ -68,7 +68,7 @@ export async function checkBudgetAfterSpend(agentId: string, now: Date = new Dat
 
   if (gastado >= tope * 0.8 && agent.budgetWarnedFor !== mes) {
     await prisma.agent.update({ where: { id: agentId }, data: { budgetWarnedFor: mes } });
-    await notifySuperadmins({
+    await notifyAgentOwners(agentId, {
       type: "AGENT_BUDGET_WARNING",
       title: `El agente "${agent.name}" usó el 80 % de su tope`,
       message: `Lleva ${cifra} este mes. Al llegar al 100 % se pausa solo.`,

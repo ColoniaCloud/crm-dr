@@ -1,7 +1,7 @@
 import type { Agent } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
-import { logOperatorAction } from "@/lib/notifications";
+import { logAgentAudit } from "@/lib/agents/notify";
 import { aiAvailable, complete, modelFor } from "@/lib/agents/llm";
 import { hasBudget } from "@/lib/agents/budget";
 import { NO_SPEND, type Spend } from "@/lib/agents/models";
@@ -121,7 +121,7 @@ export async function runPrioritizer(params: { agent: Agent; runId: string; now:
   });
   const vigente = new Map(contactos.map((c) => [c.id, c.type === "LEAD" && !c.contacted]));
   const cerrar = abiertas.filter((t) => !t.contactId || !vigente.get(t.contactId)).map((t) => t.id);
-  if (cerrar.length) await prisma.crmTask.updateMany({ where: { id: { in: cerrar } }, data: { done: true } });
+  if (cerrar.length) await prisma.crmTask.updateMany({ where: { id: { in: cerrar } }, data: { done: true, doneAt: now } });
   const siguen = abiertas.filter((t) => !cerrar.includes(t.id));
 
   // 2. Cuánto le falta a cada uno.
@@ -163,7 +163,7 @@ export async function runPrioritizer(params: { agent: Agent; runId: string; now:
   if (asignados > 0) {
     // La asignación la hizo el agente, pero la bitácora de operadores pide un
     // usuario: queda a nombre de quien creó el agente.
-    await logOperatorAction({
+    await logAgentAudit({
       userId: agent.createdById,
       action: "AGENT_LEADS_ASSIGNED",
       entityType: "Agent",

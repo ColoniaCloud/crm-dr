@@ -278,6 +278,8 @@ model CrmTask {
   agentId      String?
   /// Contexto para quien la hace: por qué ese lead y qué decirle.
   notes        String?   @db.Text
+  /// Cuándo se marcó hecha. Sin esto no se puede medir cuánto tarda cada uno.
+  doneAt       DateTime?
 
   @@index([userId, done])
   @@index([dueDate])
@@ -2587,6 +2589,9 @@ enum AgentKind {
   /// Agentes de leads (sección "Agentes de leads" de AGENTES.md). Los tipos
   /// nuevos van siempre AL FINAL: MySQL guarda el ENUM por posición.
   LEAD_PRIORITIZER
+  /// Supervisor del equipo: audita a los usuarios, les recuerda sus tareas y
+  /// los guía con tareas que le encargan sus dueños.
+  TEAM_SUPERVISOR
 }
 
 enum AgentStatus {
@@ -2645,6 +2650,10 @@ model Agent {
   model            String
   monthlyBudgetUsd Decimal     @db.Decimal(8, 2)
   operatorCanChat  Boolean     @default(false)
+  /// Si tiene ids, SOLO esos usuarios ven el agente, lo configuran y reciben sus
+  /// avisos, sin importar el rol (un SUPERADMIN auditado no puede verlo). Null =
+  /// visibilidad normal por rol.
+  visibleToUserIds Json?
   /// Mes ("2026-10") en que ya se avisó el 80 % del tope, para avisar una sola vez.
   budgetWarnedFor  String?
   createdById      String
@@ -2691,7 +2700,10 @@ model AgentAction {
   /// Qué hace la acción. Hoy solo "SEND_EMAIL".
   type          String
   status        AgentActionStatus
-  contactId     String
+  /// Cliente al que va la acción. Null cuando va a un usuario del equipo.
+  contactId     String?
+  /// Usuario del equipo al que va la acción (recordatorios del Supervisor).
+  targetUserId  String?
   /// Nombre a mostrar, copiado al crear la acción: la bandeja no consulta Contact.
   contactName   String
   saleId        String?
@@ -2719,6 +2731,7 @@ model AgentAction {
 
   @@index([agentId, status, createdAt])
   @@index([contactId])
+  @@index([targetUserId])
   @@map("agent_actions")
 }
 

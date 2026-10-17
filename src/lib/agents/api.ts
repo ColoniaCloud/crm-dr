@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Agent } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canApproveAgentActions, canChatWithAgent, canConfigureAgents } from "@/lib/agents/access";
+import { agentOwners, canApproveAgentActions, canChatWithAgent, canConfigureAgents } from "@/lib/agents/access";
 import { monthSpendUsd } from "@/lib/agents/budget";
 import { kindInfo } from "@/lib/agents/catalog";
 import { kindImpl } from "@/lib/agents/kinds";
@@ -38,7 +38,7 @@ export function forbidden(message = "No tenés permiso para esto.") {
  */
 export async function loadAgentFor(actor: AgentActor, id: string): Promise<Gate<Agent>> {
   const agent = await prisma.agent.findUnique({ where: { id } });
-  if (!agent || !canChatWithAgent(actor.role, agent)) {
+  if (!agent || !canChatWithAgent(actor.role, agent, actor.userId)) {
     return { ok: false, response: NextResponse.json({ error: "Agente no encontrado" }, { status: 404 }) };
   }
   return { ok: true, value: agent };
@@ -54,7 +54,7 @@ export async function serializeAgent(agent: Agent, actor: AgentActor) {
       select: { startedAt: true, status: true, summary: true },
     }),
   ]);
-  const puedeConfigurar = canConfigureAgents(actor.role);
+  const puedeConfigurar = canConfigureAgents(actor.role, agent, actor.userId);
   return {
     id: agent.id,
     kind: agent.kind,
@@ -72,13 +72,15 @@ export async function serializeAgent(agent: Agent, actor: AgentActor) {
     monthlyBudgetUsd: Number(agent.monthlyBudgetUsd),
     monthSpendUsd: gasto,
     operatorCanChat: agent.operatorCanChat,
+    // Quiénes lo ven, si es un agente restringido. Solo para quien lo configura.
+    visibleToUserIds: puedeConfigurar ? agentOwners(agent) : null,
     pendingCount: pendientes,
     lastRun: ultima
       ? { startedAt: ultima.startedAt.toISOString(), status: ultima.status, summary: ultima.summary }
       : null,
     permissions: {
       configure: puedeConfigurar,
-      approve: canApproveAgentActions(actor.role),
+      approve: canApproveAgentActions(actor.role, agent, actor.userId),
     },
   };
 }
