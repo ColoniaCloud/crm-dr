@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canApproveAgentActions, canChatWithAgent, canConfigureAgents } from "@/lib/agents/access";
 import { monthSpendUsd } from "@/lib/agents/budget";
 import { kindInfo } from "@/lib/agents/catalog";
+import { kindImpl } from "@/lib/agents/kinds";
 
 /** Utilidades compartidas por las rutas de /api/agents. */
 
@@ -58,6 +59,7 @@ export async function serializeAgent(agent: Agent, actor: AgentActor) {
     id: agent.id,
     kind: agent.kind,
     kindLabel: kindInfo(agent.kind).label,
+    hasApprovals: kindImpl(agent.kind).hasApprovals,
     name: agent.name,
     status: agent.status,
     instructions: agent.instructions,

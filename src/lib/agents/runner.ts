@@ -5,7 +5,7 @@ import { createLogger } from "@/lib/logger";
 import { nextRunAfter } from "@/lib/agents/schedule";
 import { checkBudgetAfterSpend, hasBudget } from "@/lib/agents/budget";
 import { notifySuperadmins } from "@/lib/agents/notify";
-import { runCollections } from "@/lib/agents/collections/run";
+import { kindImpl } from "@/lib/agents/kinds";
 
 const log = createLogger("agents/runner");
 
@@ -51,15 +51,14 @@ export async function runAgent(params: {
     });
 
     try {
-      const r = await runCollections({ agent, runId: run.id, now });
-      const status = r.stats.fallidas > 0 ? "PARTIAL" : "SUCCESS";
+      const r = await kindImpl(agent.kind).run({ agent, runId: run.id, now });
       await prisma.agentRun.update({
         where: { id: run.id },
         data: {
-          status,
+          status: r.status,
           finishedAt: new Date(),
           summary: r.summary,
-          stats: r.stats as unknown as Prisma.InputJsonValue,
+          stats: r.stats,
           inputTokens: r.spend.inputTokens,
           outputTokens: r.spend.outputTokens,
           costUsd: new Prisma.Decimal(r.spend.costUsd.toFixed(6)),
@@ -73,30 +72,13 @@ export async function runAgent(params: {
           agentId: agent.id,
           role: "ASSISTANT",
           content: `**Ronda ${params.trigger === "MANUAL" ? "manual" : "programada"}** — ${r.summary}`,
-          attachments: r.stats.pendientes > 0 ? ([{ type: "pending_link", count: r.stats.pendientes }] as Prisma.InputJsonValue) : undefined,
+          attachments: r.pendingCount > 0 ? ([{ type: "pending_link", count: r.pendingCount }] as Prisma.InputJsonValue) : undefined,
         },
       });
 
       if (r.spend.costUsd > 0) await checkBudgetAfterSpend(agent.id, now);
-
-      if (r.nuevasPendientes.length > 0) {
-        await notifySuperadmins({
-          type: "AGENT_PENDING_APPROVAL",
-          title: `${agent.name}: ${r.nuevasPendientes.length} reclamo(s) para aprobar`,
-          message: `La ronda dejó ${r.nuevasPendientes.length} reclamo(s) esperando tu aprobación. Se pueden aprobar desde la bandeja del agente o pidiéndoselo en el chat.`,
-          link: `/agents/${agent.id}?tab=pending`,
-          detail: r.nuevasPendientes.slice(0, 25),
-        });
-      }
-      if (status === "PARTIAL") {
-        await notifySuperadmins({
-          type: "AGENT_RUN_PARTIAL",
-          title: `${agent.name}: ${r.stats.fallidas} envío(s) fallaron`,
-          message: "La ronda terminó, pero algunos mails no salieron. El detalle está en Ejecuciones.",
-          link: `/agents/${agent.id}?tab=runs`,
-        });
-      }
-      return { ok: true, runId: run.id, status, summary: r.summary };
+      for (const aviso of r.notify) await notifySuperadmins(aviso);
+      return { ok: true, runId: run.id, status: r.status, summary: r.summary };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       log.error({ err, agentId: agent.id }, "La ronda del agente falló");

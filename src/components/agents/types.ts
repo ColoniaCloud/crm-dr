@@ -23,14 +23,33 @@ export interface CollectionsConfig {
   manualBody: string;
 }
 
+export interface PrioritizerSeller {
+  userId: string;
+  dailyQuota: number;
+  zones: string[];
+  active: boolean;
+}
+
+export interface PrioritizerConfig {
+  sellers: PrioritizerSeller[];
+  sectorOrder: string[];
+  boostZones: string[];
+  assignUnassigned: boolean;
+  retryNoAnswerDays: number;
+  morningMail: boolean;
+}
+
+export type AgentConfig = CollectionsConfig | PrioritizerConfig;
+
 export interface AgentDTO {
   id: string;
   kind: string;
   kindLabel: string;
+  hasApprovals: boolean;
   name: string;
   status: AgentStatus;
   instructions: string;
-  config: CollectionsConfig | null;
+  config: AgentConfig | null;
   scheduleTime: string | null;
   scheduleDays: string | null;
   nextRunAt: string | null;
@@ -82,6 +101,7 @@ export type ChatCard =
   | { type: "template"; stepKey: string; stepLabel: string; subject: string; body: string }
   | { type: "run" }
   | { type: "pending_link"; count: number }
+  | { type: "config_patch"; description: string; patch: Record<string, unknown> }
   | { type: "trace"; calls: string[] };
 
 export interface AgentMessageDTO {

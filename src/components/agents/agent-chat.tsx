@@ -7,12 +7,20 @@ import { ChatInput, ChatInputSubmit, ChatInputTextArea } from "@/components/ui/c
 import { cn } from "@/lib/utils";
 import { apiJson, formatDateTimeAR, type AgentDTO, type AgentMessageDTO, type ChatCard } from "@/components/agents/types";
 
-const SUGERENCIAS = [
-  "¿Qué hiciste en la última ronda?",
-  "¿Quiénes tienen pagos vencidos?",
-  "¿Qué quedó pendiente de aprobación?",
-  "Armame el reporte de este mes",
-];
+const SUGERENCIAS: Record<string, string[]> = {
+  COLLECTIONS: [
+    "¿Qué hiciste en la última ronda?",
+    "¿Quiénes tienen pagos vencidos?",
+    "¿Qué quedó pendiente de aprobación?",
+    "Armame el reporte de este mes",
+  ],
+  LEAD_PRIORITIZER: [
+    "¿Cómo vienen las listas de hoy?",
+    "¿Cómo salieron los contactos esta semana?",
+    "¿Qué viene en la cola?",
+    "Poné los talleres de Mendoza más arriba",
+  ],
+};
 
 /** Negritas `**así**` y saltos de línea; el resto, texto plano. */
 function RichText({ text }: { text: string }) {
@@ -99,7 +107,7 @@ export function AgentChat({
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
-              {SUGERENCIAS.map((s) => (
+              {(SUGERENCIAS[agent.kind] ?? SUGERENCIAS.COLLECTIONS).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -412,6 +420,34 @@ function CardView({
           <Inbox className="h-3.5 w-3.5" />
           {card.count} reclamo(s) esperando aprobación
         </button>
+      );
+
+    case "config_patch":
+      return (
+        <CardShell icon={<Wand2 className="h-3.5 w-3.5" />} title="Cambio de configuración">
+          <p>{card.description}</p>
+          {agent.permissions.configure && !done ? (
+            <Button
+              size="sm"
+              className="mt-2"
+              disabled={busy}
+              onClick={() =>
+                act(async () => {
+                  await apiJson(`/api/agents/${agent.id}/config-patch`, {
+                    method: "POST",
+                    body: JSON.stringify({ patch: card.patch, description: card.description }),
+                  });
+                  return "Cambio aplicado. Rige desde la próxima ronda.";
+                })
+              }
+            >
+              Aplicar
+            </Button>
+          ) : !agent.permissions.configure ? (
+            sinPermiso
+          ) : null}
+          {pie}
+        </CardShell>
       );
 
     case "trace":

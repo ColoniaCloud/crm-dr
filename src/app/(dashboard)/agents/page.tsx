@@ -243,7 +243,7 @@ function CreateAgentDialog({
                 </button>
               ))}
               <p className="text-xs text-muted-foreground">
-                Próximamente: remitos sin firmar, reporte semanal de ventas y revisor de garantías.
+                Próximamente: reporte de captación, seguimiento y primer contacto de leads, remitos sin firmar y revisor de garantías.
               </p>
             </div>
           </div>

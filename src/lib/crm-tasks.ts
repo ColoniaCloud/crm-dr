@@ -26,6 +26,10 @@ export interface TaskDTO {
   assignedByName: string | null;
   contactId: string | null;
   contactName: string | null;
+  /** Agente que creó la tarea (Priorizador de leads). Cerrarla pide el resultado del contacto. */
+  agentId: string | null;
+  /** Por qué ese lead y qué decirle, escrito por el agente. */
+  notes: string | null;
   createdAt: string;
 }
 
@@ -46,6 +50,8 @@ type TaskRow = {
   userId: string | null;
   assignedById: string | null;
   contactId: string | null;
+  agentId?: string | null;
+  notes?: string | null;
   createdAt: Date;
 };
 
@@ -80,6 +86,8 @@ export async function toTaskDTOs(tasks: TaskRow[]): Promise<TaskDTO[]> {
     assignedByName: t.assignedById ? userName.get(t.assignedById) ?? null : null,
     contactId: t.contactId,
     contactName: t.contactId ? contactName.get(t.contactId) ?? null : null,
+    agentId: t.agentId ?? null,
+    notes: t.notes ?? null,
     createdAt: t.createdAt.toISOString(),
   }));
 }

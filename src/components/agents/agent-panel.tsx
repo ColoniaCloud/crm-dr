@@ -16,14 +16,18 @@ import { cn } from "@/lib/utils";
 import { ScheduleFields } from "@/components/agents/schedule-fields";
 import {
   apiJson, formatDateTimeAR, usd,
-  type AgentActionDTO, type AgentDTO, type AgentRunDTO, type CollectionsConfig,
+  type AgentActionDTO, type AgentConfig, type AgentDTO, type AgentRunDTO, type CollectionsConfig, type PrioritizerConfig,
 } from "@/components/agents/types";
+import { PrioritizerSettings, TodayLists } from "@/components/agents/prioritizer-panel";
 
 export interface AgentDetailExtras {
   excludedContacts: Array<{ id: string; name: string }>;
   mailMode: "real" | "redirect" | "simulated" | "unconfigured";
   placeholders: ReadonlyArray<{ key: string; help: string }>;
   models: Array<{ id: string; label: string }>;
+  users: Array<{ id: string; name: string; role: string }>;
+  zones: Array<{ key: string; label: string; country: string }>;
+  sectors: Array<{ key: string; label: string }>;
 }
 
 // Sin símbolo: la acción no guarda la moneda de la venta. El texto del mail sí la lleva.
@@ -45,14 +49,20 @@ export function AgentPanel({
   refreshKey: number;
   onChanged: () => void;
 }) {
-  const tabs = [
-    { id: "pending", label: `Pendientes${agent.pendingCount ? ` (${agent.pendingCount})` : ""}` },
-    { id: "runs", label: "Ejecuciones" },
-    { id: "sent", label: "Envíos" },
-    ...(agent.permissions.configure ? [{ id: "config", label: "Configuración" }] : []),
-    { id: "reports", label: "Reportes" },
-  ];
-  const actual = tabs.some((t) => t.id === tab) ? tab : "pending";
+  const tabs = agent.hasApprovals
+    ? [
+        { id: "pending", label: `Pendientes${agent.pendingCount ? ` (${agent.pendingCount})` : ""}` },
+        { id: "runs", label: "Ejecuciones" },
+        { id: "sent", label: "Envíos" },
+        ...(agent.permissions.configure ? [{ id: "config", label: "Configuración" }] : []),
+        { id: "reports", label: "Reportes" },
+      ]
+    : [
+        { id: "today", label: "Listas de hoy" },
+        { id: "runs", label: "Ejecuciones" },
+        ...(agent.permissions.configure ? [{ id: "config", label: "Configuración" }] : []),
+      ];
+  const actual = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   return (
     <Tabs value={actual} onValueChange={onTabChange} className="flex h-full min-h-0 flex-col">
@@ -62,23 +72,31 @@ export function AgentPanel({
         </TabsList>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <TabsContent value="pending" className="mt-0">
-          <ActionsList agent={agent} status="PENDING_APPROVAL" refreshKey={refreshKey} onChanged={onChanged} />
-        </TabsContent>
+        {agent.hasApprovals ? (
+          <>
+            <TabsContent value="pending" className="mt-0">
+              <ActionsList agent={agent} status="PENDING_APPROVAL" refreshKey={refreshKey} onChanged={onChanged} />
+            </TabsContent>
+            <TabsContent value="sent" className="mt-0">
+              <ActionsList agent={agent} status={null} refreshKey={refreshKey} onChanged={onChanged} />
+            </TabsContent>
+            <TabsContent value="reports" className="mt-0">
+              <ReportsPanel agent={agent} />
+            </TabsContent>
+          </>
+        ) : (
+          <TabsContent value="today" className="mt-0">
+            <TodayLists agent={agent} refreshKey={refreshKey} />
+          </TabsContent>
+        )}
         <TabsContent value="runs" className="mt-0">
           <RunsList agent={agent} refreshKey={refreshKey} />
-        </TabsContent>
-        <TabsContent value="sent" className="mt-0">
-          <ActionsList agent={agent} status={null} refreshKey={refreshKey} onChanged={onChanged} />
         </TabsContent>
         {agent.permissions.configure && (
           <TabsContent value="config" className="mt-0">
             <ConfigForm agent={agent} extras={extras} onChanged={onChanged} />
           </TabsContent>
         )}
-        <TabsContent value="reports" className="mt-0">
-          <ReportsPanel agent={agent} />
-        </TabsContent>
       </div>
     </Tabs>
   );
@@ -391,13 +409,10 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
   const [model, setModel] = useState(agent.model);
   const [budget, setBudget] = useState(String(agent.monthlyBudgetUsd));
   const [operatorCanChat, setOperatorCanChat] = useState(agent.operatorCanChat);
-  const [config, setConfig] = useState<CollectionsConfig>(agent.config!);
+  const [config, setConfig] = useState<AgentConfig>(agent.config!);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const mode = MAIL_MODE[extras.mailMode];
-
-  const setStep = (i: number, patch: Partial<CollectionsConfig["steps"][number]>) =>
-    setConfig((c) => ({ ...c, steps: c.steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
 
   async function save() {
     setSaving(true);
@@ -427,16 +442,21 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
 
   async function reinclude(contactId: string) {
     await apiJson(`/api/agents/${agent.id}/excluded/${contactId}`, { method: "DELETE" });
-    setConfig((c) => ({ ...c, excludedContactIds: c.excludedContactIds.filter((x) => x !== contactId) }));
+    setConfig((c) => {
+      const cc = c as CollectionsConfig;
+      return { ...cc, excludedContactIds: cc.excludedContactIds.filter((x) => x !== contactId) };
+    });
     onChanged();
   }
 
   return (
     <div className="space-y-5 pb-6">
-      <div className={cn("flex gap-2 rounded-lg border p-2.5 text-xs", mode.className)}>
-        <Mail className="h-4 w-4 shrink-0" />
-        {mode.text}
-      </div>
+      {agent.kind === "COLLECTIONS" && (
+        <div className={cn("flex gap-2 rounded-lg border p-2.5 text-xs", mode.className)}>
+          <Mail className="h-4 w-4 shrink-0" />
+          {mode.text}
+        </div>
+      )}
 
       <Section title="Puesto">
         <div className="space-y-1.5">
@@ -476,83 +496,10 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
         </label>
       </Section>
 
-      <Section title="Cobranza">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Plazo de ventas sin plan (días desde la venta)</Label>
-            <Input type="number" min={1} value={config.defaultTermDays} onChange={(e) => setConfig({ ...config, defaultTermDays: Number(e.target.value) })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Deja de escribir pasados (días de atraso)</Label>
-            <Input type="number" min={1} value={config.escalateAfterDays} onChange={(e) => setConfig({ ...config, escalateAfterDays: Number(e.target.value) })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Las respuestas llegan a</Label>
-            <Input type="email" value={config.replyTo} onChange={(e) => setConfig({ ...config, replyTo: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Firma</Label>
-            <Input value={config.signature} onChange={(e) => setConfig({ ...config, signature: e.target.value })} />
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Secuencia y plantillas">
-        <p className="text-xs text-muted-foreground">
-          Días negativos = antes del vencimiento. Variables:{" "}
-          {extras.placeholders.map((p) => (
-            <code key={p.key} title={p.help} className="mr-1 rounded bg-muted px-1">{`{{${p.key}}}`}</code>
-          ))}
-        </p>
-        {config.steps.map((s, i) => (
-          <details key={s.key} className="rounded-lg border bg-card p-3">
-            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium">{s.label}</span>
-              {!s.enabled && <Badge variant="outline" className="text-[10px]">Apagado</Badge>}
-              <Badge variant="outline" className="text-[10px]">{s.requiresApproval ? "Con aprobación" : "Sale solo"}</Badge>
-            </summary>
-            <div className="mt-3 space-y-2">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Etiqueta</Label>
-                  <Input value={s.label} onChange={(e) => setStep(i, { label: e.target.value })} className="h-8 w-44" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Día</Label>
-                  <Input type="number" value={s.offsetDays} onChange={(e) => setStep(i, { offsetDays: Number(e.target.value) })} className="h-8 w-20" />
-                </div>
-                <label className="flex items-center gap-1.5 text-xs">
-                  <Checkbox checked={s.enabled} onCheckedChange={(v) => setStep(i, { enabled: v === true })} /> Activo
-                </label>
-                <label className="flex items-center gap-1.5 text-xs">
-                  <Checkbox checked={s.requiresApproval} onCheckedChange={(v) => setStep(i, { requiresApproval: v === true })} /> Requiere aprobación
-                </label>
-              </div>
-              <Input value={s.subject} onChange={(e) => setStep(i, { subject: e.target.value })} />
-              <Textarea rows={7} value={s.body} onChange={(e) => setStep(i, { body: e.target.value })} className="text-xs" />
-            </div>
-          </details>
-        ))}
-        <details className="rounded-lg border bg-card p-3">
-          <summary className="cursor-pointer list-none text-sm font-medium">Recordatorio pedido por chat</summary>
-          <div className="mt-3 space-y-2">
-            <Input value={config.manualSubject} onChange={(e) => setConfig({ ...config, manualSubject: e.target.value })} />
-            <Textarea rows={7} value={config.manualBody} onChange={(e) => setConfig({ ...config, manualBody: e.target.value })} className="text-xs" />
-          </div>
-        </details>
-      </Section>
-
-      {extras.excludedContacts.length > 0 && (
-        <Section title="Clientes que no se contactan">
-          <ul className="space-y-1">
-            {extras.excludedContacts.map((c) => (
-              <li key={c.id} className="flex items-center justify-between rounded-md border px-2 py-1 text-sm">
-                {c.name}
-                <Button size="sm" variant="ghost" onClick={() => reinclude(c.id)}>Volver a incluir</Button>
-              </li>
-            ))}
-          </ul>
-        </Section>
+      {agent.kind === "COLLECTIONS" ? (
+        <CollectionsSettings config={config as CollectionsConfig} setConfig={setConfig} extras={extras} reinclude={reinclude} />
+      ) : (
+        <PrioritizerSettings config={config as PrioritizerConfig} setConfig={setConfig} extras={extras} />
       )}
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t bg-background/95 py-3 backdrop-blur">
@@ -563,6 +510,105 @@ function ConfigForm({ agent, extras, onChanged }: { agent: AgentDTO; extras: Age
         {msg && <span className={cn("text-xs", msg.ok ? "text-emerald-600" : "text-destructive")}>{msg.text}</span>}
       </div>
     </div>
+  );
+}
+
+
+function CollectionsSettings({
+  config,
+  setConfig,
+  extras,
+  reinclude,
+}: {
+  config: CollectionsConfig;
+  setConfig: (c: CollectionsConfig) => void;
+  extras: AgentDetailExtras;
+  reinclude: (contactId: string) => void;
+}) {
+  const setStep = (i: number, patch: Partial<CollectionsConfig["steps"][number]>) =>
+    setConfig({ ...config, steps: config.steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+
+  return (
+    <>
+      <Section title="Cobranza">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Plazo de ventas sin plan (días desde la venta)</Label>
+          <Input type="number" min={1} value={config.defaultTermDays} onChange={(e) => setConfig({ ...config, defaultTermDays: Number(e.target.value) })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Deja de escribir pasados (días de atraso)</Label>
+          <Input type="number" min={1} value={config.escalateAfterDays} onChange={(e) => setConfig({ ...config, escalateAfterDays: Number(e.target.value) })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Las respuestas llegan a</Label>
+          <Input type="email" value={config.replyTo} onChange={(e) => setConfig({ ...config, replyTo: e.target.value })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Firma</Label>
+          <Input value={config.signature} onChange={(e) => setConfig({ ...config, signature: e.target.value })} />
+        </div>
+      </div>
+    </Section>
+
+    <Section title="Secuencia y plantillas">
+      <p className="text-xs text-muted-foreground">
+        Días negativos = antes del vencimiento. Variables:{" "}
+        {extras.placeholders.map((p) => (
+          <code key={p.key} title={p.help} className="mr-1 rounded bg-muted px-1">{`{{${p.key}}}`}</code>
+        ))}
+      </p>
+      {config.steps.map((s, i) => (
+        <details key={s.key} className="rounded-lg border bg-card p-3">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{s.label}</span>
+            {!s.enabled && <Badge variant="outline" className="text-[10px]">Apagado</Badge>}
+            <Badge variant="outline" className="text-[10px]">{s.requiresApproval ? "Con aprobación" : "Sale solo"}</Badge>
+          </summary>
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Etiqueta</Label>
+                <Input value={s.label} onChange={(e) => setStep(i, { label: e.target.value })} className="h-8 w-44" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Día</Label>
+                <Input type="number" value={s.offsetDays} onChange={(e) => setStep(i, { offsetDays: Number(e.target.value) })} className="h-8 w-20" />
+              </div>
+              <label className="flex items-center gap-1.5 text-xs">
+                <Checkbox checked={s.enabled} onCheckedChange={(v) => setStep(i, { enabled: v === true })} /> Activo
+              </label>
+              <label className="flex items-center gap-1.5 text-xs">
+                <Checkbox checked={s.requiresApproval} onCheckedChange={(v) => setStep(i, { requiresApproval: v === true })} /> Requiere aprobación
+              </label>
+            </div>
+            <Input value={s.subject} onChange={(e) => setStep(i, { subject: e.target.value })} />
+            <Textarea rows={7} value={s.body} onChange={(e) => setStep(i, { body: e.target.value })} className="text-xs" />
+          </div>
+        </details>
+      ))}
+      <details className="rounded-lg border bg-card p-3">
+        <summary className="cursor-pointer list-none text-sm font-medium">Recordatorio pedido por chat</summary>
+        <div className="mt-3 space-y-2">
+          <Input value={config.manualSubject} onChange={(e) => setConfig({ ...config, manualSubject: e.target.value })} />
+          <Textarea rows={7} value={config.manualBody} onChange={(e) => setConfig({ ...config, manualBody: e.target.value })} className="text-xs" />
+        </div>
+      </details>
+    </Section>
+
+    {extras.excludedContacts.length > 0 && (
+      <Section title="Clientes que no se contactan">
+        <ul className="space-y-1">
+          {extras.excludedContacts.map((c) => (
+            <li key={c.id} className="flex items-center justify-between rounded-md border px-2 py-1 text-sm">
+              {c.name}
+              <Button size="sm" variant="ghost" onClick={() => reinclude(c.id)}>Volver a incluir</Button>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    )}
+    </>
   );
 }
 

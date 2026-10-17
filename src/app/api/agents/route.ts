@@ -42,7 +42,7 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  kind: z.enum(["COLLECTIONS"]),
+  kind: z.enum(["COLLECTIONS", "LEAD_PRIORITIZER"]),
   name: z.string().trim().min(1).max(80),
   instructions: z.string().trim().min(1).max(5000),
   scheduleTime: z.string().refine(isValidTime, "Hora inválida").nullable(),

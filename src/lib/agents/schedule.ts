@@ -74,3 +74,11 @@ export function startOfLocalMonth(d: Date = new Date()): Date {
 export function formatLocalDate(d: Date): string {
   return d.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" });
 }
+
+/** "lun 19/10, 08:30" en hora de Buenos Aires: para mostrarle al modelo, que si no lee la hora UTC del ISO. */
+export function formatLocalDateTime(d: Date): string {
+  return d.toLocaleString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+}

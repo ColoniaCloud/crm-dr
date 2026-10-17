@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag } from "lucide-react";
+import Link from "next/link";
+import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TaskDTO } from "@/lib/crm-tasks";
+import { LeadOutcomeDialog } from "@/components/assistant/lead-outcome-dialog";
 
 type Scope = "mine" | "team";
 interface TeamUser { id: string; name: string }
@@ -60,6 +62,9 @@ export function TaskPanel({
   const [assignee, setAssignee] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  // Tarea de un agente a la que se le está cargando el resultado.
+  const [outcomeTask, setOutcomeTask] = useState<TaskDTO | null>(null);
+  const [openNotes, setOpenNotes] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const qs = scope === "team" ? `?scope=team${teamFilter ? `&userId=${encodeURIComponent(teamFilter)}` : ""}` : "";
@@ -116,6 +121,11 @@ export function TaskPanel({
   }
 
   async function toggle(task: TaskDTO) {
+    // Cerrar una tarea "Contactar a X" del Priorizador pide cómo salió.
+    if (!task.done && task.agentId && task.contactId) {
+      setOutcomeTask(task);
+      return;
+    }
     setTasks((prev) => prev?.map((t) => (t.id === task.id ? { ...t, done: !t.done } : t)) ?? null);
     await fetch(`/api/tasks/${task.id}`, {
       method: "PATCH",
@@ -270,7 +280,23 @@ export function TaskPanel({
                     aria-label={t.done ? "Marcar como pendiente" : "Marcar como hecha"}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className={cn("text-sm leading-snug", t.done && "text-muted-foreground line-through")}>{t.title}</p>
+                    <p className={cn("text-sm leading-snug", t.done && "text-muted-foreground line-through")}>
+                      {t.agentId && <Bot className="mr-1 inline h-3.5 w-3.5 -translate-y-px text-primary" aria-label="Creada por un agente" />}
+                      {t.title}
+                    </p>
+                    {t.notes && !t.done && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenNotes(openNotes === t.id ? null : t.id)}
+                        className={cn(
+                          "mt-0.5 block w-full whitespace-pre-line text-left text-[11px] text-muted-foreground",
+                          openNotes !== t.id && "line-clamp-1"
+                        )}
+                        title={openNotes === t.id ? "Ver menos" : "Ver por qué y qué decirle"}
+                      >
+                        {t.notes}
+                      </button>
+                    )}
                     {(due || pr || showOwner || t.contactName || t.assignedByName) && (
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
                         {due && (
@@ -291,7 +317,13 @@ export function TaskPanel({
                             {pr.label}
                           </span>
                         )}
-                        {t.contactName && <span className="truncate">· {t.contactName}</span>}
+                        {t.contactName && (
+                          t.contactId ? (
+                            <Link href={`/leads/${t.contactId}`} className="truncate hover:text-foreground hover:underline">· {t.contactName}</Link>
+                          ) : (
+                            <span className="truncate">· {t.contactName}</span>
+                          )
+                        )}
                         {showOwner && (
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
@@ -327,6 +359,15 @@ export function TaskPanel({
           </button>
         )}
       </div>
+      <LeadOutcomeDialog
+        task={outcomeTask}
+        onClose={() => setOutcomeTask(null)}
+        onDone={() => {
+          setOutcomeTask(null);
+          load();
+          onChanged();
+        }}
+      />
     </section>
   );
 }

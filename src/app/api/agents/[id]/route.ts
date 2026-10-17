@@ -7,7 +7,10 @@ import { logOperatorAction } from "@/lib/notifications";
 import { canConfigureAgents } from "@/lib/agents/access";
 import { AGENT_MODELS } from "@/lib/agents/models";
 import { isValidTime, nextRunAfter, parseDays } from "@/lib/agents/schedule";
-import { collectionsConfigSchema, PLACEHOLDERS, readCollectionsConfig } from "@/lib/agents/collections/config";
+import { PLACEHOLDERS, readCollectionsConfig } from "@/lib/agents/collections/config";
+import { kindImpl } from "@/lib/agents/kinds";
+import { ZONE_OPTIONS } from "@/lib/agents/leads/geo";
+import { SECTOR_LABELS } from "@/lib/agents/leads/prioritizer/config";
 import { displayName } from "@/lib/agents/collections/debts";
 import { agentMailMode } from "@/lib/agents/mail";
 import { forbidden, loadAgentFor, requireActor, serializeAgent } from "@/lib/agents/api";
@@ -23,7 +26,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const agent = await serializeAgent(found.value, gate.value);
   let excludedContacts: Array<{ id: string; name: string }> = [];
-  if (canConfigureAgents(gate.value.role)) {
+  let users: Array<{ id: string; name: string; role: string }> = [];
+  if (canConfigureAgents(gate.value.role) && found.value.kind === "LEAD_PRIORITIZER") {
+    users = await prisma.user.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: "asc" },
+    });
+  }
+  if (canConfigureAgents(gate.value.role) && found.value.kind === "COLLECTIONS") {
     const ids = readCollectionsConfig(found.value.config).excludedContactIds;
     const contactos = ids.length
       ? await prisma.contact.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true, company: true } })
@@ -35,6 +46,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     excludedContacts,
     mailMode: agentMailMode(),
     placeholders: PLACEHOLDERS,
+    users,
+    zones: ZONE_OPTIONS,
+    sectors: Object.entries(SECTOR_LABELS).map(([key, label]) => ({ key, label })),
     models: Object.entries(AGENT_MODELS).map(([mid, m]) => ({ id: mid, label: m.label })),
   });
 }
@@ -48,7 +62,7 @@ const patchSchema = z.object({
   model: z.string().refine((m) => m in AGENT_MODELS, "Modelo inválido").optional(),
   monthlyBudgetUsd: z.number().min(0).max(1000).optional(),
   operatorCanChat: z.boolean().optional(),
-  config: collectionsConfigSchema.optional(),
+  config: z.unknown().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -77,7 +91,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (d.model !== undefined) data.model = d.model;
   if (d.operatorCanChat !== undefined) data.operatorCanChat = d.operatorCanChat;
   if (d.monthlyBudgetUsd !== undefined) data.monthlyBudgetUsd = new Prisma.Decimal(d.monthlyBudgetUsd);
-  if (d.config !== undefined) data.config = d.config as Prisma.InputJsonValue;
+  if (d.config !== undefined) {
+    // Cada tipo valida su propia configuración.
+    const cfg = kindImpl(actual.kind).configSchema.safeParse(d.config);
+    if (!cfg.success) {
+      const issue = cfg.error.issues[0];
+      return NextResponse.json(
+        { error: `config.${issue?.path.join(".") ?? ""}: ${issue?.message ?? "inválida"}` },
+        { status: 400 }
+      );
+    }
+    data.config = cfg.data as Prisma.InputJsonValue;
+  }
   if (d.status !== undefined) data.status = d.status;
 
   const scheduleTime = d.scheduleTime !== undefined ? d.scheduleTime : actual.scheduleTime;

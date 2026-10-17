@@ -1,5 +1,6 @@
 import type { AgentKind } from "@prisma/client";
 import { defaultCollectionsConfig } from "@/lib/agents/collections/config";
+import { defaultPrioritizerConfig } from "@/lib/agents/leads/prioritizer/config";
 
 /**
  * Catálogo de tipos de agente (decisión 3 de AGENTES.md): cada tipo trae sus
@@ -31,6 +32,18 @@ export const AGENT_CATALOG: Record<AgentKind, AgentKindInfo> = {
       "Sos el encargado de cobranzas. Tu prioridad es que los clientes paguen a tiempo sin desgastar la relación: tono cordial y directo, nunca amenazante. Ante la duda, dejá el caso para que lo vea una persona.",
     defaultConfig: defaultCollectionsConfig,
     defaultScheduleTime: "09:00",
+    defaultScheduleDays: "1,2,3,4,5",
+  },
+  LEAD_PRIORITIZER: {
+    kind: "LEAD_PRIORITIZER",
+    label: "Priorizador de leads",
+    description:
+      "Cada mañana ordena los leads sin contactar por sector y zona, reparte los que no tienen vendedor y le arma a cada uno su lista del día como tareas, con por qué y qué decirle. No le escribe a ningún lead.",
+    defaultName: "Priorizador",
+    defaultInstructions:
+      "Sos el encargado de que cada vendedor arranque el día sabiendo a quién llamar. Priorizá talleres y concesionarias con volumen, en la zona de cada vendedor. En el \"qué decirle\", sé concreto para el rubro: un taller piensa en margen y en garantía, una concesionaria en volumen y entrega, una vidriería en obra y certificaciones.",
+    defaultConfig: defaultPrioritizerConfig,
+    defaultScheduleTime: "08:30",
     defaultScheduleDays: "1,2,3,4,5",
   },
 };

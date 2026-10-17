@@ -38,6 +38,14 @@ enum ContactMethod {
   NONE
 }
 
+/// Cómo salió el último contacto con un lead (AGENTES.md, decisión L6).
+enum LeadOutcome {
+  INTERESTED
+  NOT_INTERESTED
+  NO_ANSWER
+  CALL_BACK
+}
+
 enum LeadSource {
   SCRAPPER
   MANUAL
@@ -265,9 +273,15 @@ model CrmTask {
   assignedById String?
   /// Contacto al que se refiere la tarea ("llamar a Juan"), si hay uno.
   contactId    String?
+  /// Agente que la creó (el Priorizador arma así la lista del día). Null = la
+  /// creó una persona.
+  agentId      String?
+  /// Contexto para quien la hace: por qué ese lead y qué decirle.
+  notes        String?   @db.Text
 
   @@index([userId, done])
   @@index([dueDate])
+  @@index([agentId, done])
   @@map("crm_tasks")
 }
 
@@ -332,6 +346,13 @@ model Contact {
   contacted                Boolean       @default(false)
   contactMethod            ContactMethod @default(NONE)
   contactDate              DateTime?
+  /// Último resultado de contacto, cargado al cerrar una tarea del Priorizador.
+  /// Vive acá (además de en LeadActivity) para que los agentes lo consulten sin
+  /// recorrer el historial.
+  leadOutcome              LeadOutcome?
+  leadOutcomeAt            DateTime?
+  /// "Volver a llamar el día X": cuándo retomarlo.
+  nextFollowUpAt           DateTime?
   vehicleFlowWeekly        Int?
   architecturalFlowMonthly Int?
   currentSupplier          String?       @db.Text
@@ -2553,6 +2574,9 @@ model SaleReturnItem {
 
 enum AgentKind {
   COLLECTIONS
+  /// Agentes de leads (sección "Agentes de leads" de AGENTES.md). Los tipos
+  /// nuevos van siempre AL FINAL: MySQL guarda el ENUM por posición.
+  LEAD_PRIORITIZER
 }
 
 enum AgentStatus {
