@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { anthropic, aiAvailable, modelFor } from "@/lib/agents/llm";
 import { addSpend, NO_SPEND, spendOf, type Spend } from "@/lib/agents/models";
+import type { ChatModelId } from "@/lib/chat-models";
 import { checkBudgetAfterSpend, hasBudget } from "@/lib/agents/budget";
 import { formatLocalDateTime } from "@/lib/agents/schedule";
 import { kindImpl } from "@/lib/agents/kinds";
@@ -135,6 +136,8 @@ export async function chatWithAgent(params: {
   agentId: string;
   actor: Actor;
   message: string;
+  /** Modelo elegido en el selector del chat; si no viene, el configurado en el agente. */
+  model?: ChatModelId;
 }): Promise<{ id: string; content: string; attachments: ChatCard[] }> {
   const agent = await prisma.agent.findUniqueOrThrow({ where: { id: params.agentId } });
 
@@ -174,7 +177,7 @@ export async function chatWithAgent(params: {
     );
   }
 
-  const model = modelFor(agent);
+  const model = params.model ?? modelFor(agent);
   const ctx: ToolContext = { agentId: agent.id, actor: params.actor, cards: [] };
   const calls: string[] = [];
   const conTraza = () => (calls.length ? [...ctx.cards, { type: "trace" as const, calls }] : ctx.cards);

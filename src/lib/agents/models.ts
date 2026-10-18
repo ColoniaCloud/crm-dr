@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { CHAT_MODELS } from "@/lib/chat-models";
 
 /**
  * Modelos que se le pueden asignar a un agente, con su precio por millón de
@@ -33,7 +34,10 @@ export const NO_SPEND: Spend = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 /** Costo de una respuesta. Los tokens leídos de caché se cobran como entrada normal: sobreestima un poco, nunca subestima. */
 export function spendOf(model: string, usage: Anthropic.Usage): Spend {
-  const precio = isAgentModel(model) ? AGENT_MODELS[model] : AGENT_MODELS[DEFAULT_AGENT_MODEL];
+  // Un modelo elegido en el chat que no se le puede asignar al agente (Haiku 4.5) igual tiene precio.
+  const precio = isAgentModel(model)
+    ? AGENT_MODELS[model]
+    : CHAT_MODELS.find((m) => m.id === model) ?? AGENT_MODELS[DEFAULT_AGENT_MODEL];
   const input =
     usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
   const output = usage.output_tokens;

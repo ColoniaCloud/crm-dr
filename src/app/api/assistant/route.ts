@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { runAssistant } from "@/lib/assistant-core";
+import { isChatModel } from "@/lib/chat-models";
 import type { AssistantApiResponse } from "@/types/assistant";
 
 const log = createLogger("api/assistant");
@@ -13,11 +14,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { message, history = [], csvRows, csvContactType } = await req.json() as {
+    const { message, history = [], csvRows, csvContactType, model } = await req.json() as {
       message: string;
       history: { role: "user" | "assistant"; content: string }[];
       csvRows?: Record<string, string>[];
       csvContactType?: string;
+      model?: string;
     };
 
     const { data, status } = await runAssistant({
@@ -25,6 +27,7 @@ export async function POST(req: Request) {
       history,
       csvRows,
       csvContactType,
+      model: isChatModel(model) ? model : undefined,
       actor: { userId: session.user.id, role: session.user.role },
       // The import_contacts_csv tool calls an internal /api/leads/import or
       // /api/installers/import-csv route, which is itself session-gated —

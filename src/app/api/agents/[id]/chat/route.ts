@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { chatWithAgent } from "@/lib/agents/chat";
 import { loadAgentFor, requireActor } from "@/lib/agents/api";
+import { isChatModel, type ChatModelId } from "@/lib/chat-models";
 
 const log = createLogger("api/agents/chat");
 
@@ -32,7 +33,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   });
 }
 
-const schema = z.object({ message: z.string().trim().min(1).max(4000) });
+const schema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  model: z.string().refine(isChatModel, "Modelo inválido").optional(),
+});
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireActor();
@@ -45,7 +49,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) return NextResponse.json({ error: "Mensaje vacío o demasiado largo" }, { status: 400 });
 
   try {
-    const reply = await chatWithAgent({ agentId: id, actor: gate.value, message: parsed.data.message });
+    const reply = await chatWithAgent({
+      agentId: id,
+      actor: gate.value,
+      message: parsed.data.message,
+      model: parsed.data.model as ChatModelId | undefined,
+    });
     return NextResponse.json({ reply });
   } catch (err) {
     log.error({ err }, "Error en el chat del agente");

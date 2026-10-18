@@ -12,10 +12,10 @@ import type {
   AssistantCampaignAction,
   AssistantFileAction,
 } from "@/types/assistant";
+import { DEFAULT_CHAT_MODEL, type ChatModelId } from "@/lib/chat-models";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MODEL = "claude-haiku-4-5-20251001";
 
 export function isAdminOrAbove(role: string): boolean {
   return role === "ADMIN" || role === "SUPERADMIN";
@@ -582,8 +582,11 @@ export async function runAssistant(params: {
   csvContactType?: string;
   actor: AssistantActor;
   internalFetchHeaders: Record<string, string>;
+  /** Elegido en el selector del chat; la app móvil no lo manda. */
+  model?: ChatModelId;
 }): Promise<AssistantResult> {
   const { message, history, csvRows, csvContactType, actor, internalFetchHeaders } = params;
+  const MODEL = params.model ?? DEFAULT_CHAT_MODEL;
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return { data: { message: "", error: "ANTHROPIC_API_KEY no configurada" }, status: 503 };

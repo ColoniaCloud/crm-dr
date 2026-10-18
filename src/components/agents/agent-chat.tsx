@@ -3,7 +3,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, ClipboardList, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { ChatInput, ChatInputSubmit, ChatInputTextArea } from "@/components/ui/chat-input";
+import { ChatInput, ChatInputKeys, ChatInputTextArea } from "@/components/ui/chat-input";
+import { ChatBrand, ChatFooterBar, ChatSuggestions, useChatModel } from "@/components/chat/chat-composer";
+import { DEFAULT_CHAT_MODEL, isChatModel } from "@/lib/chat-models";
 import { cn } from "@/lib/utils";
 import { apiJson, formatDateTimeAR, type AgentDTO, type AgentMessageDTO, type ChatCard } from "@/components/agents/types";
 
@@ -56,6 +58,8 @@ export function AgentChat({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Si nadie eligió otro, se conversa con el modelo configurado en el agente.
+  const [model, setModel] = useChatModel(`agent-model-${agent.id}`, isChatModel(agent.model) ? agent.model : DEFAULT_CHAT_MODEL);
 
   const load = useCallback(() => {
     apiJson<{ messages: AgentMessageDTO[] }>(`/api/agents/${agent.id}/chat`)
@@ -79,7 +83,7 @@ export function AgentChat({
       { id: `tmp-${Date.now()}`, role: "USER", userName: "Vos", content: msg, attachments: null, createdAt: new Date().toISOString() },
     ]);
     try {
-      await apiJson(`/api/agents/${agent.id}/chat`, { method: "POST", body: JSON.stringify({ message: msg }) });
+      await apiJson(`/api/agents/${agent.id}/chat`, { method: "POST", body: JSON.stringify({ message: msg, model }) });
       load();
       onChanged();
     } catch (e) {
@@ -93,37 +97,13 @@ export function AgentChat({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {vacio ? (
+        <ChatBrand className="min-h-0" />
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
         {messages === null && !error && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Cargando conversación…
-          </div>
-        )}
-
-        {vacio && (
-          <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-10 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-icon-chip">
-              <Bot className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <p className="font-medium">Hablá con {agent.name}</p>
-              <p className="text-sm text-muted-foreground">
-                Preguntale qué hizo, cómo salieron las rondas o pedile un reporte. Lo que implique mandar o cambiar algo te lo
-                va a dejar con un botón para confirmar.
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {(SUGERENCIAS[agent.kind] ?? SUGERENCIAS.COLLECTIONS).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => send(s)}
-                  className="rounded-full border px-3 py-1.5 text-xs transition-colors hover:bg-muted"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
           </div>
         )}
 
@@ -163,16 +143,24 @@ export function AgentChat({
           <div ref={bottomRef} />
         </div>
       </div>
+      )}
 
-      <div className="shrink-0 border-t bg-background/80 px-4 py-3 sm:px-6">
-        <div className="mx-auto max-w-2xl">
+      <div className="shrink-0 space-y-2 px-4 pb-3 pt-2 sm:px-6">
+        <div className="mx-auto max-w-2xl space-y-2">
+          {vacio && (
+            <ChatSuggestions
+              items={(SUGERENCIAS[agent.kind] ?? SUGERENCIAS.COLLECTIONS).map((t) => ({ label: t, message: t }))}
+              onPick={send}
+              disabled={sending}
+            />
+          )}
           <ChatInput value={input} onChange={setInput} onSubmit={() => send(input)} loading={sending}>
             <ChatInputTextArea placeholder={`Escribile a ${agent.name}… (Enter para enviar)`} />
-            <div className="flex w-full items-center justify-between pt-1.5">
-              <span className="text-[11px] text-muted-foreground">Chat compartido con el equipo</span>
-              <ChatInputSubmit />
+            <div className="flex w-full items-center justify-end pt-1.5">
+              <ChatInputKeys />
             </div>
           </ChatInput>
+          <ChatFooterBar model={model} onModelChange={setModel} currentAgentId={agent.id} />
         </div>
       </div>
     </div>

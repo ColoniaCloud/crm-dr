@@ -4,16 +4,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
+import { ChatInput, ChatInputTextArea, ChatInputKeys } from "@/components/ui/chat-input";
+import { ChatBrand, ChatFooterBar, ChatSuggestions, useChatModel } from "@/components/chat/chat-composer";
 import {
   Bot,
   ArrowRight,
-  BarChart2,
-  Users,
-  PhoneCall,
-  FileText,
   Package,
-  UserCheck,
   Mic,
   Paperclip,
   Plus,
@@ -75,14 +71,14 @@ function parseCSV(text: string): Record<string, string>[] {
   });
 }
 
-// ── Suggestion cards ──────────────────────────────────────────────────────────
+// ── Sugerencias ───────────────────────────────────────────────────────────────
 const SUGGESTIONS = [
-  { icon: Users,     label: "Leads sin contactar",    message: "Quiero ver los leads que todavía no han sido contactados" },
-  { icon: BarChart2, label: "Ventas del mes",          message: "¿Cuánto vendimos este mes?" },
-  { icon: UserCheck, label: "Ir a Clientes",           message: "Llevame a la sección de clientes" },
-  { icon: PhoneCall, label: "Calendario de llamadas",  message: "Quiero ver el calendario de llamadas programadas" },
-  { icon: FileText,  label: "Presupuestos pendientes", message: "¿Cuántos presupuestos tenemos pendientes?" },
-  { icon: Package,   label: "Ver stock",               message: "Mostrame los productos con su stock actual" },
+  { label: "Leads sin contactar",    message: "Quiero ver los leads que todavía no han sido contactados" },
+  { label: "Ventas del mes",          message: "¿Cuánto vendimos este mes?" },
+  { label: "Ir a Clientes",           message: "Llevame a la sección de clientes" },
+  { label: "Calendario de llamadas",  message: "Quiero ver el calendario de llamadas programadas" },
+  { label: "Presupuestos pendientes", message: "¿Cuántos presupuestos tenemos pendientes?" },
+  { label: "Ver stock",               message: "Mostrame los productos con su stock actual" },
 ];
 
 // ── Table render component ────────────────────────────────────────────────────
@@ -155,6 +151,7 @@ export default function AssistantPage() {
   const [isListening, setIsListening] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [campaignRunning, setCampaignRunning] = useState(false);
+  const [model, setModel] = useChatModel("assistant-model");
   const [pendingCSV, setPendingCSV] = useState<{ rows: Record<string, string>[]; filename: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<unknown>(null);
@@ -215,7 +212,7 @@ export default function AssistantPage() {
         .slice(-10)
         .map((m) => ({ role: m.role, content: m.content }));
 
-      const body: Record<string, unknown> = { message: trimmed, history };
+      const body: Record<string, unknown> = { message: trimmed, history, model };
       if (opts?.csvRows?.length) {
         body.csvRows = opts.csvRows;
         body.csvContactType = opts.csvContactType || "LEAD";
@@ -247,7 +244,7 @@ export default function AssistantPage() {
     } finally {
       setLoading(false);
     }
-  }, [messages, loading, conversationId]);
+  }, [messages, loading, conversationId, model]);
 
   // ── Voice input ─────────────────────────────────────────────────────────────
   function handleVoiceInput() {
@@ -440,9 +437,10 @@ export default function AssistantPage() {
                 onChange={handleFile}
               />
             </div>
-            <ChatInputSubmit />
+            <ChatInputKeys />
           </div>
         </ChatInput>
+        <ChatFooterBar model={model} onModelChange={setModel} currentAgentId={null} />
       </div>
     );
   }
@@ -499,40 +497,15 @@ export default function AssistantPage() {
       {/* ── Body: chat | panel ──────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
       {/* ── Columna izquierda: chat ──────────────────────────────────────── */}
-      <div className={cn("relative min-h-0 flex-col overflow-hidden", mobileTab === "chat" ? "flex" : "hidden", "lg:flex")}>
+      <div className={cn("relative min-h-0 flex-col overflow-clip", mobileTab === "chat" ? "flex" : "hidden", "lg:flex")}>
       <DottedSurface />
       {!hasMessages ? (
-        /* ── Landing state ──────────────────────────────────────────────── */
-        <div className="flex-1 overflow-y-auto min-h-0 flex items-center justify-center px-4 py-8">
-          <div className="animate-fade-in-down w-full max-w-2xl space-y-6">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-icon-chip">
-                <Bot className="h-7 w-7 text-primary" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight leading-snug">
-                El CRM evolucionó
-              </h2>
-              <p className="text-muted-foreground text-sm sm:text-base max-w-sm mx-auto">
-                Decime qué querés hacer y te ayudo en tiempo real
-              </p>
-            </div>
-
+        /* ── Pantalla vacía: el logo arriba, todo lo demás pegado abajo ──── */
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          <ChatBrand className="animate-fade-in-down min-h-0" />
+          <div className="shrink-0 w-full max-w-2xl mx-auto px-4 pb-3 space-y-2">
+            <ChatSuggestions items={SUGGESTIONS} onPick={(m) => sendMessage(m)} disabled={loading} />
             {InputToolbar()}
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s.label}
-                  onClick={() => sendMessage(s.message)}
-                  className="group flex items-start gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/60 hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors mt-0.5">
-                    <s.icon className="h-4 w-4 text-primary" />
-                  </div>
-                  <span className="text-sm font-medium leading-tight">{s.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       ) : (
@@ -624,12 +597,9 @@ export default function AssistantPage() {
           </div>
 
           {/* Pinned input */}
-          <div className="shrink-0 py-3">
+          <div className="relative shrink-0 pb-3 pt-2">
             <div className="max-w-2xl mx-auto px-4">
               {InputToolbar()}
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                Enter para enviar · Shift+Enter para nueva línea
-              </p>
             </div>
           </div>
         </>

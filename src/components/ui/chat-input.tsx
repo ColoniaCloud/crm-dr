@@ -123,4 +123,38 @@ function ChatInputSubmit({ className }: ChatInputSubmitProps) {
   );
 }
 
-export { ChatInput, ChatInputTextArea, ChatInputSubmit };
+// ── ChatInputKeys ─────────────────────────────────────────────────────────────
+// Teclas de teclado dibujadas: Supr (gris) limpia el texto, Enter (blanca) envía.
+const keyCap =
+  "inline-flex h-8 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold tracking-wide select-none " +
+  "transition-[transform,box-shadow] shadow-[0_2px_0_0_var(--key-edge)] active:translate-y-[2px] active:shadow-none " +
+  "disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function ChatInputKeys({ className }: { className?: string }) {
+  const { value, setValue, onSubmit, loading } = useChatInput();
+  return (
+    <div className={cn("flex shrink-0 items-center gap-1.5", className)}>
+      <button
+        type="button"
+        onClick={() => setValue("")}
+        disabled={!value || loading}
+        title="Borrar el texto"
+        className={cn(keyCap, "border-zinc-300 bg-zinc-200 text-zinc-600 [--key-edge:var(--color-zinc-400)]")}
+      >
+        Supr
+      </button>
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={!value.trim() || loading}
+        title="Enviar (Enter)"
+        className={cn(keyCap, "border-zinc-300 bg-white text-zinc-800 [--key-edge:var(--color-zinc-300)]")}
+      >
+        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Enter"}
+        <span aria-hidden className="text-sm leading-none">↵</span>
+      </button>
+    </div>
+  );
+}
+
+export { ChatInput, ChatInputTextArea, ChatInputSubmit, ChatInputKeys };
