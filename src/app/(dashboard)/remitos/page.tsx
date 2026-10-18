@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
-import { Download, CheckCircle2, Clock, PenLine } from "@/components/icons";
+import { Download, CheckCircle2, Clock, PenLine, Send } from "@/components/icons";
+import { RemitoSendDialog } from "@/components/remitos/remito-send-dialog";
 
 interface RemitoRaw {
   id: string;
@@ -55,6 +56,11 @@ const VIA_LABEL: Record<string, string> = {
   PAPER: "Firmado en papel",
 };
 
+/** Igual que la pantalla del remito: una venta anulada sin firma no se manda. */
+function canSend(remito: RemitoRaw) {
+  return !!remito.signedAt || remito.sale?.status !== "CANCELLED";
+}
+
 function RemitosPageInner() {
   const searchParams = useSearchParams();
   const saleIdFilter = searchParams.get("saleId");
@@ -64,6 +70,7 @@ function RemitosPageInner() {
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [signingId, setSigningId] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<RemitoRaw | null>(null);
 
   useEffect(() => {
     async function fetchRemitos() {
@@ -176,6 +183,11 @@ function RemitosPageInner() {
                     <Button variant="outline" size="sm" onClick={() => handleDownloadPDF(remito)} disabled={downloadingId === remito.id} className="h-7 text-xs">
                       <Download className="h-3 w-3 mr-1" />{downloadingId === remito.id ? "..." : "PDF"}
                     </Button>
+                    {canSend(remito) && (
+                      <Button variant="outline" size="sm" onClick={() => setSendTarget(remito)} className="h-7 text-xs">
+                        <Send className="h-3 w-3 mr-1" />Enviar
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -253,6 +265,12 @@ function RemitosPageInner() {
                           <Download className="h-4 w-4 mr-1" />
                           {downloadingId === remito.id ? "Generando..." : "PDF"}
                         </Button>
+                        {canSend(remito) && (
+                          <Button variant="outline" size="sm" onClick={() => setSendTarget(remito)}>
+                            <Send className="h-4 w-4 mr-1" />
+                            Enviar
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -271,6 +289,15 @@ function RemitosPageInner() {
           )}
         </CardContent>
       </Card>
+
+      {sendTarget && (
+        <RemitoSendDialog
+          remitoId={sendTarget.id}
+          remitoNumber={sendTarget.number}
+          open
+          onOpenChange={(o) => !o && setSendTarget(null)}
+        />
+      )}
     </div>
   );
 }
