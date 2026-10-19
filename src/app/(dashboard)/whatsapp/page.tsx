@@ -34,6 +34,7 @@ import {
   LogOut, Bold, Italic, Strikethrough, Code, Quote, Smile, Paperclip,
 } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import { canManageWhatsAppConnection } from "@/lib/whatsapp-access";
 
 interface ContactBrief {
   id: string;
@@ -163,10 +164,16 @@ export default function WhatsAppPage() {
     return null;
   }
 
-  return <WhatsAppPageInner isSuperAdmin={session.user.role === "SUPERADMIN"} />;
+  return (
+    <WhatsAppPageInner
+      isSuperAdmin={session.user.role === "SUPERADMIN"}
+      canConnect={canManageWhatsAppConnection(session.user)}
+    />
+  );
 }
 
-function WhatsAppPageInner({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+function WhatsAppPageInner({ isSuperAdmin, canConnect }: { isSuperAdmin: boolean; canConnect: boolean }) {
+  const tabCount = 1 + (canConnect ? 1 : 0) + (isSuperAdmin ? 3 : 0);
   return (
     <div className="space-y-6">
       <div>
@@ -175,20 +182,24 @@ function WhatsAppPageInner({ isSuperAdmin }: { isSuperAdmin: boolean }) {
           WhatsApp
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {isSuperAdmin ? "Conexión, envío de mensajes y configuración." : "Enviar un mensaje individual."}
+          {isSuperAdmin
+            ? "Conexión, envío de mensajes y configuración."
+            : canConnect
+              ? "Conexión del número y envío de mensajes individuales."
+              : "Enviar un mensaje individual."}
         </p>
       </div>
 
       <Tabs defaultValue="send" className="w-full">
-        <TabsList className="grid w-full sm:w-auto sm:inline-flex" style={{ gridTemplateColumns: `repeat(${isSuperAdmin ? 5 : 1}, minmax(0, 1fr))` }}>
-          {isSuperAdmin && <TabsTrigger value="connection">Conexión</TabsTrigger>}
+        <TabsList className="grid w-full sm:w-auto sm:inline-flex" style={{ gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }}>
+          {canConnect && <TabsTrigger value="connection">Conexión</TabsTrigger>}
           <TabsTrigger value="send">Enviar mensaje</TabsTrigger>
           {isSuperAdmin && <TabsTrigger value="data-update">Pedir datos</TabsTrigger>}
           {isSuperAdmin && <TabsTrigger value="history">Historial</TabsTrigger>}
           {isSuperAdmin && <TabsTrigger value="settings">Configuración</TabsTrigger>}
         </TabsList>
 
-        {isSuperAdmin && (
+        {canConnect && (
           <TabsContent value="connection" className="mt-4">
             <ConnectionTab />
           </TabsContent>

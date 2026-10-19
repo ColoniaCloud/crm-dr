@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
+import { canManageWhatsAppConnection } from "@/lib/whatsapp-access";
 
 const log = createLogger("api/whatsapp/qr");
 
 export async function GET() {
   const session = await auth();
-  if (session?.user?.role !== "SUPERADMIN") {
+  if (!canManageWhatsAppConnection(session?.user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

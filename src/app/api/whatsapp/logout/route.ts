@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
+import { logOperatorAction } from "@/lib/notifications";
+import { canManageWhatsAppConnection } from "@/lib/whatsapp-access";
 
 const log = createLogger("api/whatsapp/logout");
 
 export async function DELETE() {
   const session = await auth();
-  if (session?.user?.role !== "SUPERADMIN") {
+  if (!session?.user?.id || !canManageWhatsAppConnection(session.user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -38,6 +40,15 @@ export async function DELETE() {
         { status: 502 }
       );
     }
+    // Desvincular corta los envíos de todo el CRM hasta que alguien escanee un
+    // QR nuevo, y ya no lo hace solo un SUPERADMIN: que quede quién fue.
+    await logOperatorAction({
+      userId: session.user.id,
+      action: "WHATSAPP_LOGOUT",
+      entityType: "WHATSAPP",
+      description: `${session.user.name || session.user.email} desvinculó el número de WhatsApp del CRM`,
+      link: "/whatsapp",
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     log.error({ err: error }, "Error logging out WhatsApp");
