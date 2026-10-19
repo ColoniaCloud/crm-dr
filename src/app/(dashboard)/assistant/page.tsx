@@ -4,13 +4,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { ChatInput, ChatInputTextArea, ChatInputKeys } from "@/components/ui/chat-input";
+import { ChatInput, ChatInputTextArea, ChatInputKeys, ChatInputMic } from "@/components/ui/chat-input";
 import { ChatBrand, ChatFooterBar, ChatSuggestions, useChatModel } from "@/components/chat/chat-composer";
 import {
   Bot,
   ArrowRight,
   Package,
-  Mic,
   Paperclip,
   Plus,
   Send,
@@ -148,13 +147,11 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [campaignRunning, setCampaignRunning] = useState(false);
   const [model, setModel] = useChatModel("assistant-model");
   const [pendingCSV, setPendingCSV] = useState<{ rows: Record<string, string>[]; filename: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<unknown>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load conversation from URL ?conv= param
@@ -245,46 +242,6 @@ export default function AssistantPage() {
       setLoading(false);
     }
   }, [messages, loading, conversationId, model]);
-
-  // ── Voice input ─────────────────────────────────────────────────────────────
-  function handleVoiceInput() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      alert("Tu navegador no soporta reconocimiento de voz. Usá Chrome o Edge.");
-      return;
-    }
-
-    if (isListening) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (recognitionRef.current as any)?.stop();
-      setIsListening(false);
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recognition = new SR() as any;
-    recognitionRef.current = recognition;
-    recognition.lang = "es-AR";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (e: { results: { [x: string]: { [x: string]: { transcript: string } } } }) => {
-      const transcript = e.results[0][0].transcript as string;
-      setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
-      setIsListening(false);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-
-    setIsListening(true);
-    try {
-      recognition.start();
-    } catch {
-      setIsListening(false);
-    }
-  }
 
   // ── File attachment ─────────────────────────────────────────────────────────
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -408,19 +365,7 @@ export default function AssistantPage() {
           <ChatInputTextArea placeholder="Escribí tu consulta... (Enter para enviar, Shift+Enter para nueva línea)" />
           <div className="flex items-center justify-between w-full pt-1.5">
             <div className="flex gap-0.5">
-              <button
-                type="button"
-                onClick={handleVoiceInput}
-                disabled={loading}
-                title={isListening ? "Detener grabación" : "Hablar"}
-                className={cn(
-                  "flex items-center justify-center h-8 w-8 rounded-lg transition-colors",
-                  "text-muted-foreground hover:text-foreground hover:bg-muted",
-                  isListening && "text-red-500 animate-pulse hover:text-red-500 bg-red-50 dark:bg-red-950/30"
-                )}
-              >
-                <Mic className="h-4 w-4" />
-              </button>
+              <ChatInputMic />
               <label
                 htmlFor="file-attach"
                 title="Adjuntar archivo CSV"

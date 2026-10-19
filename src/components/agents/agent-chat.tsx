@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, ClipboardList, FileDown, Inbox, Loader2, Mail, Play, Send, Trash2, Wand2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { ChatInput, ChatInputKeys, ChatInputTextArea } from "@/components/ui/chat-input";
+import { ChatInput, ChatInputKeys, ChatInputMic, ChatInputTextArea } from "@/components/ui/chat-input";
 import { ChatBrand, ChatFooterBar, ChatSuggestions, useChatModel } from "@/components/chat/chat-composer";
 import { DEFAULT_CHAT_MODEL, isChatModel } from "@/lib/chat-models";
 import { cn } from "@/lib/utils";
@@ -156,7 +156,8 @@ export function AgentChat({
           )}
           <ChatInput value={input} onChange={setInput} onSubmit={() => send(input)} loading={sending}>
             <ChatInputTextArea placeholder={`Escribile a ${agent.name}… (Enter para enviar)`} />
-            <div className="flex w-full items-center justify-end pt-1.5">
+            <div className="flex w-full items-center justify-between pt-1.5">
+              <ChatInputMic />
               <ChatInputKeys />
             </div>
           </ChatInput>

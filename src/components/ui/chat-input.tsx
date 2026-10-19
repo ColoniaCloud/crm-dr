@@ -3,11 +3,13 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useRef,
+  useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Loader2, Send } from "@/components/icons";
+import { Loader2, Mic, Send } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTextareaResize } from "@/hooks/use-textarea-resize";
@@ -123,6 +125,91 @@ function ChatInputSubmit({ className }: ChatInputSubmitProps) {
   );
 }
 
+// ── ChatInputMic ──────────────────────────────────────────────────────────────
+// Dictado con el reconocimiento de voz del navegador (Chrome, Edge, Safari).
+// Lo dictado se suma al final de lo que ya hay escrito.
+type Recognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+function recognitionCtor(): (new () => Recognition) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+function ChatInputMic({ className }: { className?: string }) {
+  const { value, setValue, loading } = useChatInput();
+  const [supported, setSupported] = useState(true);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef<Recognition | null>(null);
+  // El texto cambia mientras se dicta; el resultado se suma a lo último escrito.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- solo se sabe en el navegador
+    setSupported(recognitionCtor() !== null);
+    return () => recRef.current?.stop();
+  }, []);
+
+  function toggle() {
+    if (listening) {
+      recRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const Ctor = recognitionCtor();
+    if (!Ctor) return;
+    const rec = new Ctor();
+    recRef.current = rec;
+    rec.lang = "es-AR";
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const dicho = e.results[0]?.[0]?.transcript?.trim();
+      if (dicho) setValue(valueRef.current ? `${valueRef.current} ${dicho}` : dicho);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    setListening(true);
+    try {
+      rec.start();
+    } catch {
+      setListening(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={loading || !supported}
+      aria-pressed={listening}
+      title={!supported ? "Tu navegador no permite dictar. Usá Chrome o Edge." : listening ? "Detener dictado" : "Dictar"}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+        "text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
+        listening && "animate-pulse bg-red-50 text-red-500 hover:text-red-500 dark:bg-red-950/30",
+        className
+      )}
+    >
+      <Mic className="h-4 w-4" />
+    </button>
+  );
+}
+
 // ── ChatInputKeys ─────────────────────────────────────────────────────────────
 // Teclas de teclado dibujadas: Supr (gris) limpia el texto, Enter (blanca) envía.
 const keyCap =
@@ -157,4 +244,4 @@ function ChatInputKeys({ className }: { className?: string }) {
   );
 }
 
-export { ChatInput, ChatInputTextArea, ChatInputSubmit, ChatInputKeys };
+export { ChatInput, ChatInputTextArea, ChatInputSubmit, ChatInputKeys, ChatInputMic };
