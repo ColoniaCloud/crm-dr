@@ -51,6 +51,16 @@ export async function confirmSale(
     const stockBefore = product.stock;
     const stockAfter = stockBefore - item.quantity;
     await tx.product.update({ where: { id: item.productId }, data: { stock: stockAfter } });
+    // Foto del costo al momento en que sale la mercadería: Product.cost es un
+    // promedio que se mueve con cada OC recibida, y el balance de Control de
+    // gastos necesita el costo de ESTA venta, no el de hoy. Va en su propia
+    // tabla (SaleItemCost) para que no salga en los `items: true` de nadie.
+    // Upsert: una venta que se anuló y se vuelve a confirmar saca la foto de nuevo.
+    await tx.saleItemCost.upsert({
+      where: { saleItemId: item.id },
+      create: { saleItemId: item.id, unitCost: product.cost },
+      update: { unitCost: product.cost },
+    });
     await tx.stockMovement.create({
       data: {
         productId: item.productId,

@@ -38,3 +38,12 @@ export function hideFactoryCost<T extends { cost?: unknown }>(product: T, role: 
   if (canSeeFactoryCost(role)) return product;
   return { ...product, cost: null };
 }
+
+/**
+ * Control de gastos y su balance: solo SUPERADMIN. El módulo entero es plata
+ * del negocio (sueldos, alquiler, margen), así que no hay una vista recortada
+ * para ADMIN — ni la API ni la pantalla le responden.
+ */
+export function canSeeExpenses(role: string | null | undefined): boolean {
+  return role === "SUPERADMIN";
+}

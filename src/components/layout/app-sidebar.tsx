@@ -33,6 +33,7 @@ import {
   MessageSquare,
   ShieldCheck,
   Assistant,
+  Wallet,
 } from "@/components/icons";
 import {
   Sidebar,
@@ -338,6 +339,22 @@ export function AppSidebar() {
                   </CollapsibleContent>
                 </SidebarMenuItem>
               </Collapsible>
+              )}
+
+              {/* Control de gastos — SUPERADMIN only (canSeeExpenses en money-visibility.ts) */}
+              {userRole === "SUPERADMIN" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive("/expenses")}
+                    tooltip="Control de gastos"
+                  >
+                    <Link href="/expenses" onClick={handleNavClick}>
+                      <Wallet className="sidebar-icon" />
+                      <span>Control de gastos</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               )}
 
               {/* Centro de Garantías — ADMIN/SUPERADMIN only */}

@@ -254,6 +254,8 @@ model User {
   messageTemplates            MessageTemplate[]
   reviewedPaymentDeclarations PaymentDeclaration[]        @relation("PaymentDeclarationReviewedBy")
   saleReturns                 SaleReturn[]                @relation("SaleReturnCreatedBy")
+  expenses                    Expense[]                   @relation("ExpenseCreatedBy")
+  recurringExpenses           RecurringExpense[]          @relation("RecurringExpenseCreatedBy")
 
   @@map("users")
 }
@@ -401,13 +403,13 @@ model Contact {
   workshopBookings    WorkshopBooking[]
   workshopPhotos      WorkshopPhoto[]
 
-  source              LeadSource            @default(MANUAL)
-  placeId             String?               @unique
-  lat                 Decimal?              @db.Decimal(10, 7)
-  lng                 Decimal?              @db.Decimal(10, 7)
+  source              LeadSource               @default(MANUAL)
+  placeId             String?                  @unique
+  lat                 Decimal?                 @db.Decimal(10, 7)
+  lng                 Decimal?                 @db.Decimal(10, 7)
   phoneE164           String?
-  phoneStatus         ContactPointStatus    @default(UNVERIFIED)
-  whatsappStatus      ContactPointStatus    @default(UNVERIFIED)
+  phoneStatus         ContactPointStatus       @default(UNVERIFIED)
+  whatsappStatus      ContactPointStatus       @default(UNVERIFIED)
   bizStatus           BusinessStatus?
   lastVerifiedAt      DateTime?
   verifications       ContactVerification[]
@@ -491,11 +493,11 @@ model DiscountTag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contacts Contact[]
-  sales    Sale[]
+  contacts                Contact[]
+  sales                   Sale[]
   // Las líneas de venta donde esta etiqueta se aplicó. Una etiqueta ahora se
   // usa en dos planos: general del contacto (`contacts`) y por línea.
-  saleItems SaleItem[]
+  saleItems               SaleItem[]
   // Los acuerdos producto por producto que la usan.
   contactProductDiscounts ContactProductDiscount[]
 
@@ -741,13 +743,13 @@ model Sale {
 }
 
 model SaleItem {
-  id            String           @id @default(cuid())
-  saleId        String
-  sale          Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId     String
-  product       Product          @relation(fields: [productId], references: [id])
-  quantity      Int
-  unitPrice     Decimal          @db.Decimal(10, 2)
+  id               String           @id @default(cuid())
+  saleId           String
+  sale             Sale             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product          @relation(fields: [productId], references: [id])
+  quantity         Int
+  unitPrice        Decimal          @db.Decimal(10, 2)
   /// **BRUTO**: quantity × unitPrice, sin descontar `tagDiscount`. El neto de la
   /// línea es `total - tagDiscount`.
   ///
@@ -755,11 +757,11 @@ model SaleItem {
   /// importe a devolver (ver returns.ts), y el remito y la cuenta corriente
   /// derivan de los totales de `Sale`. Lo que cambió al agregar el descuento por
   /// línea es que ahora hay un neto **además** del bruto, no en lugar de.
-  total         Decimal          @db.Decimal(10, 2)
+  total            Decimal          @db.Decimal(10, 2)
   /// La etiqueta que se aplicó EN ESTA LÍNEA. Null = esta línea no llevó
   /// descuento, que es lo normal en los productos sin acuerdo.
-  discountTagId String?
-  discountTag   DiscountTag?     @relation(fields: [discountTagId], references: [id], onDelete: SetNull)
+  discountTagId    String?
+  discountTag      DiscountTag?     @relation(fields: [discountTagId], references: [id], onDelete: SetNull)
   /// Copia legible de la etiqueta al momento de vender ("KRY16 — 16,66%"). Las
   /// etiquetas se editan y se borran; esto queda escrito para que una línea vieja
   /// siga explicando su propio precio — mismo criterio que Sale.discountTagLabel.
@@ -769,11 +771,12 @@ model SaleItem {
   /// Invariante: `Σ SaleItem.tagDiscount === Sale.tagDiscount`, al centavo. Se
   /// cumple por construcción porque cada línea calcula el suyo y no hay
   /// prorrateo — ver calcItemTagDiscount() en src/lib/discount-tag-calc.ts.
-  tagDiscount   Decimal          @default(0) @db.Decimal(10, 2)
-  productUnitId String?          @unique
-  productUnit   ProductUnit?     @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
-  warrantyRoll  WarrantyRoll?
-  returnItems   SaleReturnItem[]
+  tagDiscount      Decimal          @default(0) @db.Decimal(10, 2)
+  productUnitId    String?          @unique
+  productUnit      ProductUnit?     @relation(fields: [productUnitId], references: [id], onDelete: SetNull)
+  warrantyRoll     WarrantyRoll?
+  returnItems      SaleReturnItem[]
+  costSnapshot     SaleItemCost?
 
   @@map("sale_items")
 }
@@ -794,25 +797,25 @@ model Remito {
   /// Lo que va en la URL pública `/r/<token>`. Aleatorio y nunca el id: nada
   /// interno en una URL que se le manda al cliente. Se genera la primera vez
   /// que alguien pide el link (src/lib/remito-document.ts), no al crear.
-  publicToken     String?  @unique @db.VarChar(64)
+  publicToken     String? @unique @db.VarChar(64)
   /// Cómo se firmó: ONLINE (el cliente en /r/<token>), POS (en el teléfono del
   /// vendedor), PAPER (un operador registra que firmó en papel). String y no
   /// enum a propósito: MySQL guarda los ENUM por posición.
-  signedVia       String?  @db.VarChar(16)
-  signedByName    String?  @db.VarChar(191)
-  signedByDni     String?  @db.VarChar(32)
+  signedVia       String? @db.VarChar(16)
+  signedByName    String? @db.VarChar(191)
+  signedByDni     String? @db.VarChar(32)
   /// Quién registró la firma en el CRM, cuando fue un operador (PAPER).
   signedByUserId  String?
   /// El trazo, como data URL PNG. Ausente en las firmas en papel.
-  signatureImage  String?  @db.MediumText
-  signedIp        String?  @db.VarChar(64)
-  signedUserAgent String?  @db.VarChar(512)
+  signatureImage  String? @db.MediumText
+  signedIp        String? @db.VarChar(64)
+  signedUserAgent String? @db.VarChar(512)
   /// El contenido del remito congelado al firmar (RemitoDocument). Firmado, el
   /// PDF sale de acá y no de la venta: si después se edita el total o hay una
   /// devolución, el remito que firmó el cliente no cambia.
   snapshot        Json?
   /// sha256 del snapshot + la firma. Va impreso en el PDF.
-  snapshotHash    String?  @db.Char(64)
+  snapshotHash    String? @db.Char(64)
 
   @@map("remitos")
 }
@@ -978,7 +981,9 @@ model Supplier {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  purchaseOrders PurchaseOrder[]
+  purchaseOrders    PurchaseOrder[]
+  expenses          Expense[]
+  recurringExpenses RecurringExpense[]
 
   @@map("suppliers")
 }
@@ -2752,4 +2757,150 @@ model AgentMessage {
 
   @@index([agentId, createdAt])
   @@map("agent_messages")
+}
+
+// ─── Control de gastos (solo SUPERADMIN) ─────────────────────────────────────
+//
+// Los gastos del negocio que no son mercadería: alquiler, sueldos, publicidad,
+// impuestos, servicios. La mercadería NO se carga acá: entra al balance como
+// costo de lo vendido, desde SaleItemCost (ver src/lib/expense-balance.ts).
+//
+// Un gasto puede cubrir un período de meses ("seguro anual, ene–dic"). En ese
+// caso el balance lo **prorratea** en partes iguales entre esos meses; sin
+// período pesa entero en el mes en que se pagó. Los meses se guardan como clave
+// "YYYY-MM" (la misma de src/lib/dashboard-periods.ts) y no como fechas: un
+// período es una cantidad de meses calendario, no un rango de instantes, y así
+// no hay medianoche argentina vs UTC que pueda correr un gasto de mes.
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  /// Archivar en vez de borrar: los gastos viejos siguen apuntando acá.
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expenses          Expense[]
+  recurringExpenses RecurringExpense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id           String          @id @default(cuid())
+  number       Int             @unique @default(autoincrement())
+  categoryId   String
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description  String
+  amount       Decimal         @db.Decimal(12, 2)
+  currency     Currency        @default(ARS)
+  /// ARS por USD al momento de cargar. Null si el gasto es en ARS.
+  exchangeRate Decimal?        @db.Decimal(10, 4)
+  /// `amount` llevado a pesos con `exchangeRate`, fijado al guardar. El balance
+  /// suma esto y no recalcula con la cotización del día: un gasto en dólares de
+  /// marzo costó lo que costó en marzo.
+  amountARS    Decimal         @db.Decimal(12, 2)
+  /// Fecha en que salió la plata.
+  paidAt       DateTime
+  /// Primer y último mes que cubre ("2026-01" … "2026-12"). Los dos null = sin
+  /// período: el gasto pesa entero en el mes de `paidAt`.
+  periodStart  String?         @db.VarChar(7)
+  periodEnd    String?         @db.VarChar(7)
+  supplierId   String?
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  /// Proveedor en texto libre, cuando no es uno de los cargados en el CRM (la
+  /// inmobiliaria, Meta, la distribuidora de luz).
+  supplierName String?
+  method       String?
+  notes        String?         @db.Text
+
+  /// Si nació de un gasto recurrente: cuál y para qué mes. El índice único
+  /// impide cargar dos veces el alquiler de octubre desde la sugerencia.
+  recurringExpenseId String?
+  recurringExpense   RecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
+  recurringPeriod    String?           @db.VarChar(7)
+
+  createdById String
+  createdBy   User     @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  receipts ExpenseReceipt[]
+
+  @@unique([recurringExpenseId, recurringPeriod])
+  @@index([paidAt])
+  @@index([categoryId])
+  @@map("expenses")
+}
+
+/// Comprobante (foto o PDF) de un gasto. Tabla aparte, igual que
+/// WarrantyClaimPhoto, para que listar gastos no arrastre el base64.
+model ExpenseReceipt {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  data      String   @db.LongText
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@index([expenseId])
+  @@map("expense_receipts")
+}
+
+/// Plantilla de un gasto que se repite todos los meses (alquiler, sueldos,
+/// abonos). No genera nada sola: la pantalla de gastos propone cargar los del
+/// mes que todavía falten, y cargarlo es un clic que crea un `Expense` normal
+/// (editable, con su monto real si cambió).
+model RecurringExpense {
+  id           String          @id @default(cuid())
+  categoryId   String
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description  String
+  amount       Decimal         @db.Decimal(12, 2)
+  currency     Currency        @default(ARS)
+  supplierId   String?
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierName String?
+  method       String?
+  /// Día del mes en que se suele pagar (1-28), para la fecha propuesta.
+  dayOfMonth   Int             @default(1)
+  /// Primer mes en que corresponde ("2026-10"). Opcionalmente, el último.
+  startMonth   String          @db.VarChar(7)
+  endMonth     String?         @db.VarChar(7)
+  active       Boolean         @default(true)
+  notes        String?         @db.Text
+
+  createdById String
+  createdBy   User     @relation("RecurringExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  expenses Expense[]
+
+  @@map("recurring_expenses")
+}
+
+/// Costo landed unitario (ARS) de una línea de venta **al confirmarse** — la
+/// foto de `Product.cost` en el momento en que salió la mercadería. Lo usa el
+/// balance de Control de gastos para el costo de lo vendido: `Product.cost` es
+/// un promedio ponderado que se mueve con cada orden de compra recibida, y sin
+/// esta copia una venta de marzo se costearía con el promedio de hoy.
+///
+/// Tabla aparte y no una columna de SaleItem a propósito: el costo de fábrica es
+/// solo de SUPERADMIN (src/lib/money-visibility.ts) y hay muchos endpoints —el
+/// portal de clientes entre ellos— que devuelven `items: true`. Una columna
+/// saldría en todos; una relación solo sale si alguien la pide.
+///
+/// Las líneas confirmadas antes de que existiera no tienen fila: el balance cae
+/// al costo actual y las cuenta como estimadas.
+model SaleItemCost {
+  saleItemId String   @id
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  unitCost   Decimal? @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+
+  @@map("sale_item_costs")
 }
