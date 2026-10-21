@@ -33,6 +33,7 @@ import { clientIp } from "@/lib/request-ip";
 import {
   credentialVersionMatches,
 } from "@/lib/portal-credentials";
+import { resolveSupportSession } from "@/lib/portal-support";
 
 const KEY_PREFIX = "capi_";
 
@@ -132,15 +133,20 @@ export async function requireEnabledPortalAccount(
   contactId: string,
   request: Request
 ): Promise<{ success: true } | { success: false; response: NextResponse }> {
+  const soporte = await resolveSupportSession(request, contactId);
+  if (soporte === "invalid") return supportSessionExpired();
+
   const account = await prisma.clientPortalAccount.findUnique({
     where: { contactId },
     select: { enabled: true, passwordHash: true },
   });
 
-  // Sin `passwordHash` la cuenta está invitada pero sin activar, así que nunca
-  // pudo haberse emitido una sesión para ella. Se trata igual que "no tiene
-  // cuenta": falla cerrado.
-  if (!account || !account.enabled || !account.passwordHash) {
+  // Sin `passwordHash` la cuenta está invitada pero sin activar, así que el
+  // Cliente nunca pudo haber iniciado sesión. Se trata igual que "no tiene
+  // cuenta": falla cerrado. La excepción es una sesión de soporte, que existe
+  // justamente para configurarle el panel antes de que active (ver
+  // lib/portal-support.ts). `enabled: false` la corta igual.
+  if (!account || !account.enabled || (!account.passwordHash && soporte !== "valid")) {
     return {
       success: false,
       response: NextResponse.json(
@@ -149,7 +155,16 @@ export async function requireEnabledPortalAccount(
       ),
     };
   }
-  return checkCredentialVersion(request, account.passwordHash);
+  if (soporte === "valid") return { success: true };
+  return checkCredentialVersion(request, account.passwordHash!);
+}
+
+/** 401: la sesión de soporte venció o no es de este contacto. Mismo trato que una contraseña cambiada. */
+function supportSessionExpired(): { success: false; response: NextResponse } {
+  return {
+    success: false,
+    response: NextResponse.json({ error: "La sesión de soporte venció" }, { status: 401 }),
+  };
 }
 
 /**
@@ -204,6 +219,9 @@ export async function requireNivel(
   request: Request,
   niveles: readonly PortalAccessLevel[]
 ): Promise<{ success: true } | { success: false; response: NextResponse }> {
+  const soporte = await resolveSupportSession(request, contactId);
+  if (soporte === "invalid") return supportSessionExpired();
+
   const account = await prisma.clientPortalAccount.findUnique({
     where: { contactId },
     select: { enabled: true, accessLevel: true, passwordHash: true },
@@ -211,11 +229,12 @@ export async function requireNivel(
 
   // `!passwordHash`: invitada y sin activar — ver requireEnabledPortalAccount.
   // Una cuenta puede estar invitada YA con su nivel puesto, y aun así no debe
-  // pasar hasta que el Cliente elija su contraseña.
+  // pasar hasta que el Cliente elija su contraseña, salvo en una sesión de
+  // soporte. El nivel se exige igual: soporte ve lo mismo que vería el Cliente.
   if (
     !account ||
     !account.enabled ||
-    !account.passwordHash ||
+    (!account.passwordHash && soporte !== "valid") ||
     !niveles.includes(account.accessLevel)
   ) {
     return {
@@ -226,7 +245,8 @@ export async function requireNivel(
       ),
     };
   }
-  return checkCredentialVersion(request, account.passwordHash);
+  if (soporte === "valid") return { success: true };
+  return checkCredentialVersion(request, account.passwordHash!);
 }
 
 /**

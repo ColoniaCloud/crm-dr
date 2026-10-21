@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { KeyRound, Mail, AlertTriangle } from "@/components/icons";
+import { KeyRound, Mail, AlertTriangle, ExternalLink } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
 
 type AccessLevel = "BASIC" | "INSTALLER" | "RESELLER";
@@ -62,6 +62,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [entering, setEntering] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -159,6 +160,47 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
       setError(err instanceof Error ? err.message : "No se pudo enviar la invitación");
     } finally {
       setInviting(false);
+    }
+  }
+
+  /**
+   * Abre el panel del cliente en kristallfilm.com, ya adentro y sin contraseña,
+   * para configurárselo mientras se le preguntan los datos por WhatsApp. El
+   * link sirve una vez y vence en 5 minutos; la sesión, en 2 horas.
+   *
+   * La pestaña se abre ANTES del fetch: abierta después de un `await`, el
+   * navegador la toma como popup y la bloquea.
+   */
+  async function entrarComoCliente() {
+    const pestana = window.open("", "_blank");
+    setEntering(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch(`/api/clients/${clientId}/portal-support`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessLevel: form.accessLevel }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo entrar al panel");
+      if (pestana) {
+        pestana.opener = null;
+        pestana.location.href = data.url;
+      } else {
+        window.location.href = data.url;
+      }
+      setNotice(
+        info?.activatedAt
+          ? "Se abrió el panel del cliente en otra pestaña."
+          : "Se abrió el panel del cliente en otra pestaña. Cuando termines, mandale la invitación desde acá para que elija su contraseña."
+      );
+      await load();
+    } catch (err) {
+      pestana?.close();
+      setError(err instanceof Error ? err.message : "No se pudo entrar al panel");
+    } finally {
+      setEntering(false);
     }
   }
 
@@ -264,6 +306,28 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                     ? "Se aplica al guardar. El cliente lo ve la próxima vez que entre."
                     : "Elegilo antes de invitar: el cliente activa su cuenta ya con este nivel."}
                 </p>
+              </div>
+
+              {/* Configurar el panel por el cliente, sin tocar su contraseña */}
+              <div className="rounded-md border p-3">
+                <p className="mb-2 text-sm font-medium">Configurar el panel por el cliente</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Abre su panel en kristallfilm.com, ya adentro y con el nivel elegido arriba, para
+                  dejárselo armado mientras le preguntás los datos. No hace falta crearle contraseña:
+                  {info?.activatedAt
+                    ? " entrás con tu usuario del CRM y queda registrado."
+                    : " al terminar, mandale la invitación y la elige él."}
+                </p>
+                {info?.configured || info?.canInvite ? (
+                  <Button size="sm" variant="outline" onClick={entrarComoCliente} disabled={entering || (info?.configured && !info.enabled)}>
+                    <ExternalLink className="mr-1 h-4 w-4" />
+                    {entering ? "Abriendo…" : "Entrar al panel como el cliente"}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-destructive">
+                    Este cliente no tiene email en la ficha. Cargalo primero: es el que va a usar para entrar.
+                  </p>
+                )}
               </div>
 
               {/* Invitación: el cliente elige su propia contraseña */}

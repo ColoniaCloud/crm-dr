@@ -391,6 +391,7 @@ model Contact {
   portalNotifications PortalNotification[]
   accountAdjustments  AccountAdjustment[]
   portalTokens        PortalAccessToken[]
+  portalSupportSessions PortalSupportSession[]
   // Puntos de Reventa (stock consignado) que viven en el taller de este
   // Contact cuando es un instalador. Solo aplica a Location.type = PUNTO_REVENTA.
   locations           Location[]
@@ -1684,6 +1685,34 @@ model PortalAccessToken {
   @@index([contactId, purpose])
   @@index([expiresAt])
   @@map("portal_access_tokens")
+}
+
+// Un operador del CRM entra al panel de un Cliente para configurárselo
+// mientras habla con él por WhatsApp ("Entrar como el cliente", en la ficha).
+//
+// Primero es un link de un solo uso que vence en minutos (`linkTokenHash`,
+// SHA-256 como en PortalAccessToken). Al abrirlo, kristall-web lo canjea y la
+// fila pasa a ser la sesión: `startedAt` y `expiresAt` quedan puestos, y la
+// cookie del portal lleva `soporte:<id>` como versión de credencial. Los
+// porteros de la API del portal la aceptan aunque la cuenta todavía no tenga
+// contraseña, que es justamente el caso: el Cliente la elige al final, con la
+// invitación de siempre.
+model PortalSupportSession {
+  id            String    @id @default(cuid())
+  contactId     String
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  // Quién entró. Sin relación a User a propósito: es un registro, y el nombre
+  // congelado es el que se muestra en la banda del panel.
+  userId        String
+  userName      String
+  linkTokenHash String    @unique
+  linkExpiresAt DateTime
+  startedAt     DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([contactId])
+  @@map("portal_support_sessions")
 }
 
 model PortalNotification {
