@@ -32,11 +32,20 @@ export interface AssistantFileAction {
   label: string;
 }
 
+/** Vista previa de una actualización de precios desde CSV; el botón la confirma contra /api/products/prices. */
+export interface AssistantPriceUpdateAction {
+  type: "price_update";
+  label: string;
+  table: AssistantTableAction;
+  changes: { productId: string; sku: string; name: string; oldPrice: number; newPrice: number }[];
+}
+
 export type AssistantAction =
   | AssistantNavigateAction
   | AssistantTableAction
   | AssistantCampaignAction
-  | AssistantFileAction;
+  | AssistantFileAction
+  | AssistantPriceUpdateAction;
 
 export interface AssistantApiResponse {
   message: string;

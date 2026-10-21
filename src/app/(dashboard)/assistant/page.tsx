@@ -19,7 +19,7 @@ import {
   LayoutPanelLeft,
 } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction } from "@/types/assistant";
+import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction, AssistantPriceUpdateAction } from "@/types/assistant";
 import { DottedSurface } from "@/components/ui/dotted-surface";
 import { ActivityTicker } from "@/components/assistant/activity-ticker";
 import { TaskPanel } from "@/components/assistant/task-panel";
@@ -58,12 +58,33 @@ function saveConversation(record: ConversationRecord) {
 }
 
 // ── CSV parser ────────────────────────────────────────────────────────────────
+// Respeta los valores entre comillas ("7,5mil" es una sola celda) y acepta
+// ";" como separador, que es lo que exporta Excel en español.
+function splitCSVLine(line: string, sep: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === sep) { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = text.replace(/^﻿/, "").trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  const sep = (lines[0].match(/;/g)?.length ?? 0) > (lines[0].match(/,/g)?.length ?? 0) ? ";" : ",";
+  const headers = splitCSVLine(lines[0], sep);
   return lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+    const values = splitCSVLine(line, sep);
     const row: Record<string, string> = {};
     headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
     return row;
@@ -149,6 +170,7 @@ export default function AssistantPage() {
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [campaignRunning, setCampaignRunning] = useState(false);
+  const [pricesRunning, setPricesRunning] = useState(false);
   const [model, setModel] = useChatModel("assistant-model");
   const [pendingCSV, setPendingCSV] = useState<{ rows: Record<string, string>[]; filename: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -257,7 +279,7 @@ export default function AssistantPage() {
         return;
       }
       setPendingCSV({ rows, filename: file.name });
-      setInput((prev) => (prev ? prev : `Quiero importar este CSV de instaladores`));
+      setInput((prev) => (prev ? prev : `Quiero importar este CSV`));
     } else {
       setInput((prev) => (prev ? `${prev} [Archivo: ${file.name}]` : `[Archivo: ${file.name}]`));
     }
@@ -325,6 +347,44 @@ export default function AssistantPage() {
       setMessages(withError);
     } finally {
       setCampaignRunning(false);
+    }
+  }
+
+  // ── Price update action ─────────────────────────────────────────────────────
+  async function handlePriceUpdate(action: AssistantPriceUpdateAction) {
+    if (pricesRunning) return;
+    setPricesRunning(true);
+
+    const infoMsg: ChatMessage = { role: "user", content: "Confirmar cambios de precio" };
+    const loadingMsg: ChatMessage = { role: "assistant", content: "", loading: true };
+    setMessages([...messages, infoMsg, loadingMsg]);
+
+    try {
+      const res = await fetch("/api/products/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes: action.changes }),
+      });
+      const data = await res.json() as { updated?: number; skipped?: string[]; error?: string };
+
+      const skippedText = data.skipped?.length
+        ? `\n- No se tocaron porque su precio cambió después de la vista previa: ${data.skipped.join(", ")}`
+        : "";
+      const resultMsg: ChatMessage = {
+        role: "assistant",
+        content: res.ok
+          ? `✅ **Precios actualizados:** ${data.updated} producto(s).${skippedText}`
+          : `❌ No se actualizaron los precios: ${data.error || "Error desconocido"}`,
+      };
+
+      const convId = conversationId || `conv-${Date.now()}`;
+      const withResult = [...messages, infoMsg, resultMsg];
+      setMessages(withResult);
+      persist(convId, withResult);
+    } catch {
+      setMessages([...messages, infoMsg, { role: "assistant" as const, content: "Error de conexión al actualizar los precios." }]);
+    } finally {
+      setPricesRunning(false);
     }
   }
 
@@ -533,6 +593,25 @@ export default function AssistantPage() {
                           <><Send className="h-3.5 w-3.5" /> {(msg.action as AssistantCampaignAction).label}</>
                         )}
                       </Button>
+                    )}
+
+                    {msg.action?.type === "price_update" && (
+                      <>
+                        <TableMessage data={(msg.action as AssistantPriceUpdateAction).table} />
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => handlePriceUpdate(msg.action as AssistantPriceUpdateAction)}
+                          disabled={pricesRunning}
+                          className="gap-2 self-start"
+                        >
+                          {pricesRunning ? (
+                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Actualizando...</>
+                          ) : (
+                            (msg.action as AssistantPriceUpdateAction).label
+                          )}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

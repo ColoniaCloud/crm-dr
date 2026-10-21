@@ -11,7 +11,9 @@ import type {
   AssistantTableAction,
   AssistantCampaignAction,
   AssistantFileAction,
+  AssistantPriceUpdateAction,
 } from "@/types/assistant";
+import { buildPricePreview } from "@/lib/price-import";
 import { DEFAULT_CHAT_MODEL, type ChatModelId } from "@/lib/chat-models";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -57,6 +59,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para modificar stock, necesitás el nombre/ID del producto y la cantidad de ajuste.
 - Para campañas de WhatsApp: solo SUPERADMIN puede enviar. Ayudá al usuario a redactar mensajes profesionales y con el tono adecuado antes de ejecutar.
 - Cuando el usuario sube un CSV para importar contactos, analizá las columnas y confirmá antes de importar.
+- Cuando el usuario sube un CSV con precios y pide actualizarlos, usá update_prices_from_csv eligiendo la columna del SKU interno y la del precio de venta unitario. Si no está claro cuál es cada una, preguntá antes.
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
 - Para recordatorios y pendientes ("recordame...", "agendame una tarea...", "anotá que tengo que...") usá create_task. Convertí fechas relativas a fecha concreta; si no dijo hora, pasá solo el día (YYYY-MM-DD).
 - Para registrar un pago, necesitás la venta (por número o cliente), el monto y el método (CASH, TRANSFER, CHECK, CARD u OTHER).
@@ -67,7 +70,7 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para exportar actividad de operadores a CSV, convertí fechas relativas ("el mes pasado", "esta semana") a formato ISO 8601 (from/to). Si no se especifica operador, exportá la de todos.
 
 RESTRICCIONES DE ROL (si el usuario no tiene el rol necesario, explicá amablemente que no tiene permisos):
-- Solo ADMIN y SUPERADMIN pueden: crear/editar productos, ajustar stock, ver y registrar ventas, presupuestos y pagos, gestionar garantías (buscar rollos, listar y actualizar reclamos), y exportar actividad de operadores a CSV.
+- Solo ADMIN y SUPERADMIN pueden: crear/editar productos, actualizar precios desde CSV, ajustar stock, ver y registrar ventas, presupuestos y pagos, gestionar garantías (buscar rollos, listar y actualizar reclamos), y exportar actividad de operadores a CSV.
 - Solo SUPERADMIN puede: lanzar campañas de WhatsApp.
 - Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, agendar visitas o llamadas, y crearse tareas.
 - Solo ADMIN y SUPERADMIN pueden asignarle una tarea a otra persona del equipo.
@@ -276,6 +279,19 @@ const TOOLS: Anthropic.Tool[] = [
         message: { type: "string", description: "Mensaje de confirmación." },
       },
       required: ["product_search", "quantity", "message"],
+    },
+  },
+  {
+    name: "update_prices_from_csv",
+    description: "Actualiza el precio de venta de los productos a partir del CSV adjunto, cruzando por SKU. No aplica nada: arma una vista previa con los cambios y el usuario los confirma con un botón. Usalo cuando suben un CSV o lista de precios y piden actualizar precios.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sku_column: { type: "string", description: "Nombre exacto de la columna del CSV que tiene el SKU / código interno del producto (ej. \"Codigo Kristall\"), no el código de fábrica o proveedor." },
+        price_column: { type: "string", description: "Nombre exacto de la columna del CSV con el precio de venta unitario (ej. \"Unidad\" o \"Precio\"), no precios por cantidad ni costos." },
+        message: { type: "string", description: "Mensaje breve al usuario." },
+      },
+      required: ["sku_column", "price_column", "message"],
     },
   },
   {
@@ -593,8 +609,11 @@ export async function runAssistant(params: {
   }
 
   try {
+    // Las planillas exportadas suelen traer renglones vacíos o de título
+    // arriba: la muestra salta los vacíos para que se vea qué hay en cada columna.
+    const sampleRows = (csvRows ?? []).filter((r) => Object.values(r).filter((v) => v?.trim()).length > 1).slice(0, 3);
     const userContent = csvRows?.length
-      ? `${message}\n\n[CSV adjunto con ${csvRows.length} filas. Tipo: ${csvContactType || "LEAD"}. Columnas: ${Object.keys(csvRows[0] || {}).join(", ")}. Primeras 3 filas: ${JSON.stringify(csvRows.slice(0, 3))}]`
+      ? `${message}\n\n[CSV adjunto con ${csvRows.length} filas. Tipo: ${csvContactType || "LEAD"}. Columnas: ${Object.keys(csvRows[0] || {}).join(", ")}. Primeras 3 filas con datos: ${JSON.stringify(sampleRows)}]`
       : message;
 
     const messages: Anthropic.MessageParam[] = [
@@ -871,6 +890,69 @@ export async function runAssistant(params: {
         data: {
           message: `${msg}\n\n✅ Se importaron **${importData.imported}** contactos correctamente como ${contactType === "INSTALLER" ? "instaladores" : contactType === "CLIENT" ? "clientes" : "leads"}.`,
         },
+        status: 200,
+      };
+    }
+
+    // ── update_prices_from_csv ────────────────────────────────────────────────
+    if (toolBlock.name === "update_prices_from_csv") {
+      if (!isAdminOrAbove(actor.role)) {
+        return { data: { message: "Solo ADMIN/SUPERADMIN pueden actualizar precios." }, status: 200 };
+      }
+      // Las filas salen del request, no del input del modelo: el modelo solo
+      // vio una muestra de tres.
+      if (!csvRows?.length) {
+        return { data: { message: "Adjuntá el CSV con los precios (botón del clip) y pedímelo de nuevo." }, status: 200 };
+      }
+      const skuColumn = input.sku_column as string;
+      const priceColumn = input.price_column as string;
+      const columns = Object.keys(csvRows[0] || {});
+      const missing = [skuColumn, priceColumn].filter((c) => !columns.includes(c));
+      if (missing.length > 0) {
+        return {
+          data: { message: `No encontré la columna **${missing.join("** ni **")}** en el CSV. Las columnas son: ${columns.filter(Boolean).join(", ")}.` },
+          status: 200,
+        };
+      }
+
+      const preview = await buildPricePreview(csvRows, skuColumn, priceColumn);
+      const money = (n: number) => `$${n.toLocaleString("es-AR")}`;
+
+      const notes: string[] = [];
+      if (preview.unchanged > 0) notes.push(`${preview.unchanged} producto(s) ya tienen ese precio.`);
+      if (preview.notFound.length > 0) notes.push(`SKU que no están en el CRM (no se tocan): ${preview.notFound.join(", ")}.`);
+      if (preview.conflicts.length > 0) notes.push(`SKU repetidos con precios distintos (no se tocan): ${preview.conflicts.join(", ")}.`);
+      if (preview.invalidPrice.length > 0) {
+        notes.push(`Precios que no pude leer: ${preview.invalidPrice.map((p) => `${p.sku} ("${p.value}")`).join(", ")}.`);
+      }
+      const notesText = notes.length ? `\n\n${notes.map((n) => `• ${n}`).join("\n")}` : "";
+
+      if (preview.changes.length === 0) {
+        return { data: { message: `${input.message as string}\n\nNo hay precios para cambiar.${notesText}` }, status: 200 };
+      }
+
+      const action: AssistantPriceUpdateAction = {
+        type: "price_update",
+        label: `Confirmar ${preview.changes.length} cambio(s) de precio`,
+        changes: preview.changes.map(({ productId, sku, name, oldPrice, newPrice }) => ({ productId, sku, name, oldPrice, newPrice })),
+        table: {
+          type: "table",
+          title: `Cambios de precio (${preview.changes.length})`,
+          columns: ["SKU", "Producto", "Actual", "Nuevo", "Var.", "Revisar"],
+          rows: preview.changes.map((c) => ({
+            SKU: c.sku,
+            Producto: c.name,
+            Actual: money(c.oldPrice),
+            Nuevo: money(c.newPrice),
+            "Var.": c.oldPrice > 0 ? `${c.newPrice >= c.oldPrice ? "+" : ""}${(((c.newPrice - c.oldPrice) / c.oldPrice) * 100).toFixed(1)}%` : "-",
+            Revisar: c.warning ? `⚠️ ${c.warning}` : "",
+          })),
+          rowLinks: preview.changes.map((c) => `/products/${c.productId}`),
+        },
+      };
+
+      return {
+        data: { message: `${input.message as string}\n\nRevisá los cambios. No se aplica nada hasta que confirmes.${notesText}`, action },
         status: 200,
       };
     }
