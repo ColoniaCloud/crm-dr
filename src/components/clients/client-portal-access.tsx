@@ -63,6 +63,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [entering, setEntering] = useState(false);
+  const [reminding, setReminding] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -160,6 +161,27 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
       setError(err instanceof Error ? err.message : "No se pudo enviar la invitación");
     } finally {
       setInviting(false);
+    }
+  }
+
+  /**
+   * Para un cliente que ya activó y pregunta cómo entrar: le manda el link de
+   * ingreso, su email y un link para elegir otra contraseña si no se acuerda.
+   * La invitación no sirve acá, es para la primera contraseña.
+   */
+  async function reenviarAcceso() {
+    setReminding(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetch(`/api/clients/${clientId}/portal-access-reminder`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo enviar el mail");
+      setNotice(`Le mandamos a ${data.sentTo} cómo entrar y un link para elegir otra contraseña (vence en 1 h).`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo enviar el mail");
+    } finally {
+      setReminding(false);
     }
   }
 
@@ -330,21 +352,41 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                 )}
               </div>
 
-              {/* Invitación: el cliente elige su propia contraseña */}
+              {/* Ya activó: se le reenvía cómo entrar, no la invitación */}
+              {info?.activatedAt && (
+                <div className="rounded-md border p-3">
+                  <p className="mb-2 text-sm font-medium">Reenviar el acceso</p>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Para cuando pregunta cómo entrar. Le manda a {info.email} el link de ingreso, el
+                    email con el que entra y un link para elegir otra contraseña si no se acuerda. Su
+                    contraseña actual sigue valiendo.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={reenviarAcceso} disabled={reminding || !info.enabled}>
+                    <Mail className="mr-1 h-4 w-4" />
+                    {reminding ? "Enviando…" : "Reenviar acceso por mail"}
+                  </Button>
+                </div>
+              )}
+
+              {/* Invitación: el cliente elige su propia contraseña. Si ya se la
+                  mandaron y no la abrió, el mismo botón la reenvía: el link
+                  nuevo anula al anterior. */}
               {!info?.activatedAt && (
                 <div className="rounded-md border p-3">
-                  <p className="mb-2 text-sm font-medium">Invitar al cliente</p>
+                  <p className="mb-2 text-sm font-medium">
+                    {info?.configured ? "Reenviar la invitación" : "Invitar al cliente"}
+                  </p>
                   <p className="mb-3 text-xs text-muted-foreground">
-                    Le manda un mail para que cree su contraseña él mismo, y la cuenta le queda con el
-                    nivel elegido arriba. Es el camino recomendado: así no hay que pasarle una
-                    contraseña por WhatsApp.
+                    {info?.configured
+                      ? "Ya tiene la cuenta creada pero todavía no eligió su contraseña. Le manda un link nuevo (vence en 24 h) y el anterior deja de servir."
+                      : "Le manda un mail para que cree su contraseña él mismo, y la cuenta le queda con el nivel elegido arriba. Es el camino recomendado: así no hay que pasarle una contraseña por WhatsApp."}
                   </p>
                   {info?.canInvite ? (
                     <Button size="sm" variant="outline" onClick={invitar} disabled={inviting}>
                       <Mail className="mr-1 h-4 w-4" />
                       {inviting
                         ? "Enviando…"
-                        : `Invitar a ${info.contactEmail} como ${LEVEL_LABEL[form.accessLevel]}`}
+                        : `${info.configured ? "Reenviar invitación" : "Invitar"} a ${info.contactEmail} como ${LEVEL_LABEL[form.accessLevel]}`}
                     </Button>
                   ) : (
                     <p className="text-xs text-destructive">
