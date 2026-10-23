@@ -341,7 +341,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                     : " al terminar, mandale la invitación y la elige él."}
                 </p>
                 {info?.configured || info?.canInvite ? (
-                  <Button size="sm" variant="outline" onClick={entrarComoCliente} disabled={entering || (info?.configured && !info.enabled)}>
+                  <Button size="sm" variant="secondary" onClick={entrarComoCliente} disabled={entering || (info?.configured && !info.enabled)}>
                     <ExternalLink className="mr-1 h-4 w-4" />
                     {entering ? "Abriendo…" : "Entrar al panel como el cliente"}
                   </Button>
@@ -361,7 +361,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                     email con el que entra y un link para elegir otra contraseña si no se acuerda. Su
                     contraseña actual sigue valiendo.
                   </p>
-                  <Button size="sm" variant="outline" onClick={reenviarAcceso} disabled={reminding || !info.enabled}>
+                  <Button size="sm" variant="secondary" onClick={reenviarAcceso} disabled={reminding || !info.enabled}>
                     <Mail className="mr-1 h-4 w-4" />
                     {reminding ? "Enviando…" : "Reenviar acceso por mail"}
                   </Button>
@@ -382,7 +382,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                       : "Le manda un mail para que cree su contraseña él mismo, y la cuenta le queda con el nivel elegido arriba. Es el camino recomendado: así no hay que pasarle una contraseña por WhatsApp."}
                   </p>
                   {info?.canInvite ? (
-                    <Button size="sm" variant="outline" onClick={invitar} disabled={inviting}>
+                    <Button size="sm" variant="secondary" onClick={invitar} disabled={inviting}>
                       <Mail className="mr-1 h-4 w-4" />
                       {inviting
                         ? "Enviando…"
@@ -429,7 +429,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={saving}>
               Cancelar
             </Button>
             <Button onClick={save} disabled={saving || loading}>
