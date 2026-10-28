@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://maps.googleapis.com https://maps.gstatic.com https://maps.google.com https://*.googleapis.com https://*.gstatic.com",
               "font-src 'self' data: https://fonts.gstatic.com",
-              "connect-src 'self' https://maps.googleapis.com https://nominatim.openstreetmap.org",
+              "connect-src 'self' https://maps.googleapis.com https://nominatim.openstreetmap.org https://*.sentry.io",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
             ].join("; "),
