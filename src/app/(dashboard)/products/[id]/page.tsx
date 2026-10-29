@@ -3,6 +3,7 @@
 import { canSeeFactoryCost } from "@/lib/money-visibility";
 import { useState, useEffect, useRef, use } from "react";
 import { WarrantyRollCoverage } from "@/components/products/warranty-roll-coverage";
+import { ProductSkuQr } from "@/components/products/product-sku-qr";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -577,6 +578,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </TooltipProvider>
       )}
+
+      {/* ── QR del SKU: lo que va impreso en la caja y lee el POS ── */}
+      {product && <ProductSkuQr sku={product.sku} name={product.name} />}
 
       {/* ── Discounts display ── */}
       {product && product.discounts.length > 0 && (

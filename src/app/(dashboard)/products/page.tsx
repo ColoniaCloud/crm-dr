@@ -23,6 +23,7 @@ import {
   Ban, Power, Settings2,
 } from "@/components/icons";
 import { useCurrency } from "@/contexts/currency-context";
+import { ImportWebCatalog } from "@/components/products/import-web-catalog";
 
 // -- Constants ---------------------------------------------------------------
 const SUBCATEGORIES: Record<string, { value: string; label: string }[]> = {
@@ -223,12 +224,15 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold">Productos / Stock</h1>
-        <Link href="/products/new">
-          <Button className="gap-2">
-            <Plus size={16} />
-            Nuevo Producto
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {session?.user?.role === "SUPERADMIN" && <ImportWebCatalog onImported={fetchProducts} />}
+          <Link href="/products/new">
+            <Button className="gap-2">
+              <Plus size={16} />
+              Nuevo Producto
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Table Card */}
