@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logOperatorAction } from "@/lib/notifications";
-import { canManageTask, isAdminRole, toTaskDTOs } from "@/lib/crm-tasks";
+import { canManageTask, isAdminRole, setTaskTags, toTaskDTOs } from "@/lib/crm-tasks";
 
 export async function PATCH(
   request: Request,
@@ -41,6 +41,7 @@ export async function PATCH(
   }
 
   const task = await prisma.crmTask.update({ where: { id }, data });
+  if (body.tagIds !== undefined) await setTaskTags(id, body.tagIds);
   const desc = body.done !== undefined ? (body.done ? "Completó" : "Reabrió") : "Actualizó";
   await logOperatorAction({ userId: session.user.id, action: "UPDATE_TASK", entityType: "TASK", entityId: id, description: `${desc} tarea "${task.title}"` });
   const [dto] = await toTaskDTOs([task]);

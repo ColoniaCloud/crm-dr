@@ -9,6 +9,7 @@ const log = createLogger("api/tasks");
 /**
  * GET /api/tasks             → mis tareas (sigue devolviendo un array, lo usa el dashboard)
  * GET /api/tasks?scope=team  → las de todo el equipo (solo ADMIN+), con `userId` opcional para filtrar
+ * En los dos, `tagId` deja solo las que tienen esa etiqueta.
  */
 export async function GET(request: Request) {
   const session = await auth();
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const scope = url.searchParams.get("scope");
   const filterUser = url.searchParams.get("userId");
+  const filterTag = url.searchParams.get("tagId");
 
   let where: Record<string, unknown> = { userId: session.user.id };
   if (scope === "team") {
@@ -25,6 +27,7 @@ export async function GET(request: Request) {
     }
     where = filterUser ? { userId: filterUser } : {};
   }
+  if (filterTag) where.tags = { some: { tagId: filterTag } };
 
   const tasks = await prisma.crmTask.findMany({
     where,
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { title, dueDate, priority, assigneeId, contactId } = await request.json();
+  const { title, dueDate, priority, assigneeId, contactId, tagIds } = await request.json();
   if (!title?.trim()) return NextResponse.json({ error: "Título requerido" }, { status: 400 });
 
   try {
@@ -49,6 +52,7 @@ export async function POST(request: Request) {
       priority,
       assigneeId,
       contactId,
+      tagIds: Array.isArray(tagIds) ? tagIds : undefined,
     });
     return NextResponse.json(task, { status: 201 });
   } catch (err) {

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag, Bot } from "@/components/icons";
+import { CheckSquare, Plus, Trash2, Loader2, CalendarDays, User, Flag, Bot, Tag, X } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import type { TaskDTO } from "@/lib/crm-tasks";
+import type { TaskDTO, TaskTagDTO } from "@/lib/crm-tasks";
 import { LeadOutcomeDialog } from "@/components/assistant/lead-outcome-dialog";
+import { TaskTagChip, TaskTagPicker } from "@/components/assistant/task-tag-picker";
 
 type Scope = "mine" | "team";
 interface TeamUser { id: string; name: string }
@@ -55,11 +56,14 @@ export function TaskPanel({
   const [tasks, setTasks] = useState<TaskDTO[] | null>(null);
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [showDone, setShowDone] = useState(false);
+  const [allTags, setAllTags] = useState<TaskTagDTO[]>([]);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [priority, setPriority] = useState("");
   const [assignee, setAssignee] = useState("");
+  const [newTagIds, setNewTagIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   // Tarea de un agente a la que se le está cargando el resultado.
@@ -78,6 +82,22 @@ export function TaskPanel({
   }, [scope, teamFilter]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  const loadTags = useCallback(async () => {
+    try {
+      const res = await fetch("/api/task-tags", { cache: "no-store" });
+      const data = await res.json();
+      if (Array.isArray(data)) setAllTags(data.map((t: TaskTagDTO) => ({ id: t.id, name: t.name, color: t.color })));
+    } catch {
+      // Sin catálogo se puede seguir usando el panel; el selector queda vacío.
+    }
+  }, []);
+
+  useEffect(() => { loadTags(); }, [loadTags, refreshKey]);
+
+  const addToCatalog = useCallback((tag: TaskTagDTO) => {
+    setAllTags((prev) => (prev.some((t) => t.id === tag.id) ? prev : [...prev, tag]));
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -102,6 +122,7 @@ export function TaskPanel({
           dueDate: due ? `${due}T00:00:00-03:00` : null,
           priority: priority || null,
           assigneeId: assignee || null,
+          tagIds: newTagIds,
         }),
       });
       const data = await res.json();
@@ -113,6 +134,7 @@ export function TaskPanel({
       setDue("");
       setPriority("");
       setAssignee("");
+      setNewTagIds([]);
       await load();
       if (data.dueDate) onChanged();
     } finally {
@@ -135,6 +157,20 @@ export function TaskPanel({
     if (task.dueDate) onChanged();
   }
 
+  async function setTags(task: TaskDTO, tagIds: string[]) {
+    const tags = allTags.filter((t) => tagIds.includes(t.id));
+    setTasks((prev) => prev?.map((t) => (t.id === task.id ? { ...t, tags } : t)) ?? null);
+    const res = await fetch(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tagIds }),
+    });
+    if (!res.ok) return load();
+    // La respuesta trae también una etiqueta recién creada, que el catálogo de este render todavía no tenía.
+    const updated: TaskDTO = await res.json();
+    setTasks((prev) => prev?.map((t) => (t.id === task.id ? updated : t)) ?? null);
+  }
+
   async function remove(task: TaskDTO) {
     setTasks((prev) => prev?.filter((t) => t.id !== task.id) ?? null);
     await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
@@ -142,7 +178,7 @@ export function TaskPanel({
   }
 
   const { pending, done } = useMemo(() => {
-    const list = tasks ?? [];
+    const list = (tasks ?? []).filter((t) => !tagFilter || t.tags.some((tag) => tag.id === tagFilter));
     const pend = list
       .filter((t) => !t.done)
       .sort((a, b) => {
@@ -153,7 +189,8 @@ export function TaskPanel({
         return b.createdAt.localeCompare(a.createdAt);
       });
     return { pending: pend, done: list.filter((t) => t.done) };
-  }, [tasks]);
+  }, [tasks, tagFilter]);
+  const activeFilter = tagFilter ? allTags.find((t) => t.id === tagFilter) ?? null : null;
 
   const visible = showDone ? [...pending, ...done] : pending;
 
@@ -163,6 +200,19 @@ export function TaskPanel({
         <CheckSquare className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold">Tareas</h2>
         <span className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">{pending.length}</span>
+
+        {activeFilter && (
+          <button
+            type="button"
+            onClick={() => setTagFilter(null)}
+            className="flex items-center gap-1 rounded-full border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            title="Quitar filtro"
+          >
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: activeFilter.color }} />
+            {activeFilter.name}
+            <X className="h-3 w-3" />
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-1.5">
           {isAdmin && scope === "team" && (
@@ -250,6 +300,18 @@ export function TaskPanel({
                 ))}
               </select>
             )}
+            <TaskTagPicker allTags={allTags} selectedIds={newTagIds} onChange={setNewTagIds} onCreated={addToCatalog}>
+              <button
+                type="button"
+                className="flex h-7 items-center gap-1 rounded-md border bg-background px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Tag className="h-3 w-3" />
+                {newTagIds.length ? `Etiquetas (${newTagIds.length})` : "Etiquetas"}
+              </button>
+            </TaskTagPicker>
+            {allTags
+              .filter((t) => newTagIds.includes(t.id))
+              .map((t) => <TaskTagChip key={t.id} tag={t} />)}
           </div>
         )}
         {formError && <p className="text-xs text-destructive">{formError}</p>}
@@ -262,7 +324,7 @@ export function TaskPanel({
           </div>
         ) : visible.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {scope === "team" ? "Nadie del equipo tiene tareas pendientes." : "No tenés tareas pendientes. Podés pedírselas al asistente: “recordame…”"}
+            {activeFilter ? `No hay tareas pendientes con «${activeFilter.name}».` : scope === "team" ? "Nadie del equipo tiene tareas pendientes." : "No tenés tareas pendientes. Podés pedírselas al asistente: “recordame…”"}
           </p>
         ) : (
           <ul className="divide-y">
@@ -297,8 +359,16 @@ export function TaskPanel({
                         {t.notes}
                       </button>
                     )}
-                    {(due || pr || showOwner || t.contactName || t.assignedByName) && (
+                    {(due || pr || showOwner || t.contactName || t.assignedByName || t.tags.length > 0) && (
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                        {t.tags.map((tag) => (
+                          <TaskTagChip
+                            key={tag.id}
+                            tag={tag}
+                            active={tagFilter === tag.id}
+                            onClick={() => setTagFilter(tagFilter === tag.id ? null : tag.id)}
+                          />
+                        ))}
                         {due && (
                           <span
                             className={cn(
@@ -336,6 +406,21 @@ export function TaskPanel({
                       </div>
                     )}
                   </div>
+                  <TaskTagPicker
+                    allTags={allTags}
+                    selectedIds={t.tags.map((tag) => tag.id)}
+                    onChange={(ids) => setTags(t, ids)}
+                    onCreated={addToCatalog}
+                  >
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                      title="Etiquetas"
+                      aria-label="Editar etiquetas"
+                    >
+                      <Tag className="h-3.5 w-3.5" />
+                    </button>
+                  </TaskTagPicker>
                   <button
                     type="button"
                     onClick={() => remove(t)}

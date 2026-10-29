@@ -14,6 +14,12 @@ import { logOperatorAction } from "@/lib/notifications";
 
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
 
+export interface TaskTagDTO {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface TaskDTO {
   id: string;
   title: string;
@@ -30,6 +36,7 @@ export interface TaskDTO {
   agentId: string | null;
   /** Por qué ese lead y qué decirle, escrito por el agente. */
   notes: string | null;
+  tags: TaskTagDTO[];
   createdAt: string;
 }
 
@@ -60,7 +67,9 @@ export async function toTaskDTOs(tasks: TaskRow[]): Promise<TaskDTO[]> {
   const userIds = [...new Set(tasks.flatMap((t) => [t.userId, t.assignedById]).filter((x): x is string => !!x))];
   const contactIds = [...new Set(tasks.map((t) => t.contactId).filter((x): x is string => !!x))];
 
-  const [users, contacts] = await Promise.all([
+  const taskIds = tasks.map((t) => t.id);
+
+  const [users, contacts, taskTags] = await Promise.all([
     userIds.length
       ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
       : [],
@@ -70,7 +79,18 @@ export async function toTaskDTOs(tasks: TaskRow[]): Promise<TaskDTO[]> {
           select: { id: true, firstName: true, lastName: true, company: true },
         })
       : [],
+    taskIds.length
+      ? prisma.crmTaskTag.findMany({
+          where: { taskId: { in: taskIds } },
+          select: { taskId: true, tag: { select: { id: true, name: true, color: true } } },
+          orderBy: { tag: { name: "asc" } },
+        })
+      : [],
   ]);
+  const tagsByTask = new Map<string, TaskTagDTO[]>();
+  for (const { taskId, tag } of taskTags) {
+    tagsByTask.set(taskId, [...(tagsByTask.get(taskId) ?? []), tag]);
+  }
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const contactName = new Map(contacts.map((c) => [c.id, contactLabel(c)]));
 
@@ -88,6 +108,7 @@ export async function toTaskDTOs(tasks: TaskRow[]): Promise<TaskDTO[]> {
     contactName: t.contactId ? contactName.get(t.contactId) ?? null : null,
     agentId: t.agentId ?? null,
     notes: t.notes ?? null,
+    tags: tagsByTask.get(t.id) ?? [],
     createdAt: t.createdAt.toISOString(),
   }));
 }
@@ -99,6 +120,21 @@ export function canManageTask(
 ): boolean {
   if (isAdminRole(actor.role)) return true;
   return task.userId === actor.userId || task.assignedById === actor.userId;
+}
+
+/**
+ * Deja la tarea con exactamente estas etiquetas. Ignora ids que no existen
+ * (una etiqueta borrada mientras alguien tenía el formulario abierto).
+ */
+export async function setTaskTags(taskId: string, tagIds: unknown): Promise<void> {
+  const ids = Array.isArray(tagIds) ? [...new Set(tagIds.filter((x): x is string => typeof x === "string"))] : [];
+  const valid = ids.length
+    ? await prisma.taskTag.findMany({ where: { id: { in: ids } }, select: { id: true } })
+    : [];
+  await prisma.$transaction([
+    prisma.crmTaskTag.deleteMany({ where: { taskId } }),
+    prisma.crmTaskTag.createMany({ data: valid.map((t) => ({ taskId, tagId: t.id })) }),
+  ]);
 }
 
 export class TaskError extends Error {
@@ -118,6 +154,7 @@ export async function createTask(params: {
   priority?: string | null;
   assigneeId?: string | null;
   contactId?: string | null;
+  tagIds?: string[];
   via?: "assistant";
 }): Promise<TaskDTO> {
   const { actor } = params;
@@ -155,6 +192,7 @@ export async function createTask(params: {
       contactId: params.contactId || null,
     },
   });
+  if (params.tagIds?.length) await setTaskTags(task.id, params.tagIds);
 
   const prefix = params.via === "assistant" ? "Asistente IA creó" : "Creó";
   await logOperatorAction({

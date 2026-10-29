@@ -283,6 +283,8 @@ model CrmTask {
   /// Cuándo se marcó hecha. Sin esto no se puede medir cuánto tarda cada uno.
   doneAt       DateTime?
 
+  tags CrmTaskTag[]
+
   @@index([userId, done])
   @@index([dueDate])
   @@index([agentId, done])
@@ -308,6 +310,31 @@ model ContactTag {
 
   @@id([contactId, tagId])
   @@map("contact_tags")
+}
+
+/// Etiquetas de tareas ("Cobranza", "Llamar", "Depósito"…). Catálogo propio,
+/// separado de Tag: las de contactos se usan para filtrar leads y no conviene
+/// mezclarlas. Es uno solo para todo el equipo, así se reutilizan entre personas.
+model TaskTag {
+  id        String   @id @default(cuid())
+  name      String   @unique @db.VarChar(40)
+  color     String   @default("#6366f1")
+  createdAt DateTime @default(now())
+
+  tasks CrmTaskTag[]
+
+  @@map("task_tags")
+}
+
+model CrmTaskTag {
+  taskId String
+  task   CrmTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tagId  String
+  tag    TaskTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@index([tagId])
+  @@map("crm_task_tags")
 }
 
 model Contact {
