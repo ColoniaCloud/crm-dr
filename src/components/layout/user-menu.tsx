@@ -1,7 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, User, Settings, Sun, Moon } from "@/components/icons";
+import { LogOut, User, Settings, Sun, Moon, RefreshCw } from "@/components/icons";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import {
@@ -23,8 +32,10 @@ export function UserMenu() {
   const email = session?.user?.email ?? "";
   const avatarUrl = (session?.user as { avatarUrl?: string })?.avatarUrl ?? "";
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+  const [resetOpen, setResetOpen] = useState(false);
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-8 gap-2 px-2">
@@ -70,6 +81,10 @@ export function UserMenu() {
           {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
           {theme === "dark" ? "Modo Claro" : "Modo Oscuro"}
         </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => setResetOpen(true)}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Solucionar problemas
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive cursor-pointer"
@@ -80,5 +95,34 @@ export function UserMenu() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>¿Borrar la caché de la app?</DialogTitle>
+          <DialogDescription>
+            Sirve cuando el CRM muestra una versión vieja o algo no carga. Se recarga la página y se
+            pierden los filtros guardados de las listas y el modo claro/oscuro elegido. Tus datos no se tocan.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setResetOpen(false)}>Cancelar</Button>
+          <Button onClick={clearAppCache}>Borrar y recargar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
+}
+
+async function clearAppCache() {
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  const regs = await navigator.serviceWorker?.getRegistrations();
+  if (regs) await Promise.all(regs.map((r) => r.unregister()));
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.reload();
 }

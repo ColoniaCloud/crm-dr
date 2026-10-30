@@ -40,6 +40,11 @@
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
   --color-icon-chip: var(--icon-chip);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-foreground: var(--whatsapp-foreground);
 }
 
 :root {
@@ -57,7 +62,8 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
 
-  --primary: oklch(0.6 0.22 50);
+  /* L 0.55: con texto blanco da 5:1 (AA). Con 0.6 quedaba en 4:1. */
+  --primary: oklch(0.55 0.22 50);
   --primary-foreground: oklch(0.985 0 0);
 
   --secondary: oklch(0.93 0 0);
@@ -74,19 +80,28 @@
 
   --border: oklch(0.88 0 0);
   --input: oklch(0.88 0 0);
-  --ring: oklch(0.6 0.22 50);
+  --ring: oklch(0.55 0.22 50);
 
   --sidebar: oklch(0.96 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-accent: oklch(0.93 0 0);
   --sidebar-border: oklch(0.88 0 0);
-  --sidebar-primary: oklch(0.6 0.22 50);
+  --sidebar-primary: oklch(0.55 0.22 50);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-ring: oklch(0.6 0.22 50);
+  --sidebar-ring: oklch(0.55 0.22 50);
 
   --success: oklch(0.52 0.17 145);
   --success-subtle: oklch(0.96 0.04 145);
+
+  /* Avisos (agendas próximas, pendientes). Texto sobre el fondo suave: 7:1. */
+  --warning: oklch(0.75 0.15 80);
+  --warning-subtle: oklch(0.97 0.05 95);
+  --warning-foreground: oklch(0.45 0.11 75);
+
+  /* Verde de WhatsApp oscurecido para que el texto blanco pase AA (5.3:1). */
+  --whatsapp: oklch(0.5 0.15 150);
+  --whatsapp-foreground: oklch(0.985 0 0);
 }
 
 .dark {
@@ -101,7 +116,8 @@
   --popover-foreground: oklch(0.985 0 0);
 
   --primary: oklch(0.72 0.22 50);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Sobre el naranja claro del modo oscuro el blanco da 2.5:1; casi negro da 7.5:1. */
+  --primary-foreground: oklch(0.145 0 0);
 
   --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.985 0 0);
@@ -124,12 +140,19 @@
   --sidebar-accent: oklch(0.22 0 0);
   --sidebar-border: oklch(0.22 0 0);
   --sidebar-primary: oklch(0.72 0.22 50);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.145 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-ring: oklch(0.72 0.22 50);
 
   --success: oklch(0.65 0.17 145);
   --success-subtle: oklch(0.22 0.06 145);
+
+  --warning: oklch(0.75 0.15 80);
+  --warning-subtle: oklch(0.22 0.04 85);
+  --warning-foreground: oklch(0.85 0.13 90);
+
+  --whatsapp: oklch(0.5 0.15 150);
+  --whatsapp-foreground: oklch(0.985 0 0);
 }
 
 * {

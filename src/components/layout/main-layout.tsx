@@ -3,8 +3,10 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Mail, MessageCircle } from "@/components/icons";
+import { ChevronRight, Mail, MessageCircle } from "@/components/icons";
+import { getPageTitle } from "@/lib/page-titles";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -26,11 +28,30 @@ const UserMenu = dynamic(
 
 interface MainLayoutProps {
   children: React.ReactNode;
+  /** Reemplaza el título que sale de la ruta. */
   title?: string;
 }
 
-export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
+function PageHeading({ pathname, override }: { pathname: string; override?: string }) {
+  const { section, sectionHref, subpage } = getPageTitle(pathname);
+  return (
+    <div className="flex flex-1 min-w-0 items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+      {override ?? (subpage ? (
+        <>
+          <Link href={sectionHref} className="truncate text-muted-foreground transition-colors hover:text-foreground">
+            {section}
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="truncate">{subpage}</span>
+        </>
+      ) : section)}
+    </div>
+  );
+}
+
+export function MainLayout({ children, title }: MainLayoutProps) {
   const { status } = useSession();
+  const pathname = usePathname();
 
   return (
     <CurrencyProvider>
@@ -42,30 +63,13 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
           <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur-sm px-4">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mx-2 h-4" />
-            <span className="flex-1 text-sm font-medium text-muted-foreground">{title}</span>
-            <button
-              onClick={async () => {
-                if ("caches" in window) {
-                  const keys = await caches.keys();
-                  await Promise.all(keys.map((k) => caches.delete(k)));
-                }
-                const regs = await navigator.serviceWorker?.getRegistrations();
-                if (regs) await Promise.all(regs.map((r) => r.unregister()));
-                localStorage.clear();
-                sessionStorage.clear();
-                window.location.reload();
-              }}
-              className="hidden sm:inline text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-            >
-              Borrar caché
-            </button>
-            <Separator orientation="vertical" className="mx-2 h-4 hidden sm:block" />
+            <PageHeading pathname={pathname} override={title} />
             {status === "authenticated" && (
               <>
                 <Link
                   href="/mail"
                   aria-label="Mail"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-green-600 px-0 sm:px-5 text-xs font-semibold text-white transition-colors hover:bg-green-700"
+                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md border border-border bg-card px-0 sm:px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
                 >
                   <Mail className="h-4 w-4" />
                   <span className="hidden sm:inline">Mail</span>
@@ -73,7 +77,7 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
                 <Link
                   href="/whatsapp"
                   aria-label="WhatsApp"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-0 sm:px-5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-whatsapp px-0 sm:px-4 text-xs font-semibold text-whatsapp-foreground transition-colors hover:bg-whatsapp/90"
                 >
                   <MessageCircle className="h-4 w-4" />
                   <span className="hidden sm:inline">WhatsApp</span>
@@ -94,7 +98,7 @@ export function MainLayout({ children, title = "Dashboard" }: MainLayoutProps) {
           {/* Footer */}
           <footer className="flex items-center justify-end gap-2 border-t px-3 sm:px-6 py-2 text-xs text-muted-foreground">
             <PWAInstallFooterButton />
-            <Link href="/docs" className="text-orange-500 hover:text-orange-400 transition-colors font-medium">
+            <Link href="/docs" className="text-primary hover:text-primary/80 transition-colors font-medium">
               Docs
             </Link>
             <span className="hidden sm:inline opacity-40">·</span>

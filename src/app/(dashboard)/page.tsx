@@ -113,9 +113,9 @@ function formatDateTime(dateStr: string) {
 }
 
 const priorityConfig: Record<string, { label: string; color: string }> = {
-  HIGH:   { label: "Alta",  color: "text-red-500"    },
-  MEDIUM: { label: "Media", color: "text-yellow-500" },
-  LOW:    { label: "Baja",  color: "text-green-500"  },
+  HIGH:   { label: "Alta",  color: "text-destructive"    },
+  MEDIUM: { label: "Media", color: "text-warning-foreground" },
+  LOW:    { label: "Baja",  color: "text-success"  },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -365,17 +365,17 @@ export default function DashboardPage() {
 
       {/* ── Banner: próximas agendas ── */}
       {data.upcomingVisits.length > 0 && (
-        <div className="rounded-lg border border-yellow-300 dark:border-yellow-500/30 bg-yellow-50 dark:bg-yellow-950/20 px-4 py-3 space-y-2">
-          <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-400">
+        <div className="rounded-lg border border-warning/40 bg-warning-subtle px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-warning-foreground">
             Tenés {data.upcomingVisits.length} agenda{data.upcomingVisits.length > 1 ? "s" : ""} en las próximas 24 hs
           </p>
           <div className="flex flex-wrap gap-2">
             {data.upcomingVisits.map((v) => (
               <Link key={v.id} href={`/leads/${v.contact.id}`}
-                className="flex items-center gap-2 rounded-md bg-yellow-100 dark:bg-yellow-900/30 px-3 py-1.5 text-sm hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors">
+                className="flex items-center gap-2 rounded-md bg-warning/15 px-3 py-1.5 text-sm hover:bg-warning/25 transition-colors">
                 <span className="font-medium">{v.contact.firstName} {v.contact.lastName}</span>
-                {v.contact.company && <span className="text-yellow-700 dark:text-yellow-400">— {v.contact.company}</span>}
-                <span className="text-yellow-600 dark:text-yellow-500">{formatDateTime(v.scheduledDate)}</span>
+                {v.contact.company && <span className="text-warning-foreground">— {v.contact.company}</span>}
+                <span className="text-warning-foreground/80">{formatDateTime(v.scheduledDate)}</span>
               </Link>
             ))}
           </div>
@@ -657,7 +657,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-orange-500" />
+                <CheckCircle2 size={16} className="text-primary" />
                 Tareas Pendientes CRM
               </CardTitle>
               {pendingTasks.length > 0 && (
@@ -696,7 +696,7 @@ export default function DashboardPage() {
               <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
                 {pendingTasks.map((task) => (
                   <div key={task.id} className="flex items-center gap-2 group rounded-md hover:bg-muted/40 px-2 py-1.5 transition-colors">
-                    <button onClick={() => toggleTask(task)} className="shrink-0 text-muted-foreground hover:text-orange-500 transition-colors">
+                    <button onClick={() => toggleTask(task)} className="shrink-0 text-muted-foreground hover:text-primary transition-colors">
                       <Circle size={16} />
                     </button>
                     <span className="flex-1 text-sm truncate">{task.title}</span>
@@ -715,7 +715,7 @@ export default function DashboardPage() {
                     <div className="text-xs text-muted-foreground px-2 pt-2">Completadas</div>
                     {doneTasks.slice(0, 5).map((task) => (
                       <div key={task.id} className="flex items-center gap-2 group rounded-md hover:bg-muted/40 px-2 py-1.5 transition-colors opacity-50">
-                        <button onClick={() => toggleTask(task)} className="shrink-0 text-orange-500">
+                        <button onClick={() => toggleTask(task)} className="shrink-0 text-primary">
                           <CheckCircle2 size={16} />
                         </button>
                         <span className="flex-1 text-sm line-through truncate">{task.title}</span>

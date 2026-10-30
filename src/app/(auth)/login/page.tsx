@@ -100,7 +100,7 @@ export default function LoginPage() {
           />
         </div>
 
-        <p className="mb-6 text-sm text-white/50 text-center">
+        <p className="mb-6 text-sm text-white/65 text-center">
           Ingresá tus credenciales para acceder al sistema
         </p>
 
@@ -122,7 +122,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-white/30 focus:ring-0"
+              className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-0"
             />
           </div>
 
@@ -138,7 +138,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-white/30 focus:ring-0 pr-11"
+                className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-0 pr-11"
               />
               <button
                 type="button"
@@ -154,7 +154,7 @@ export default function LoginPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="mt-2 w-full h-12 bg-gradient-to-b from-orange-400 to-orange-600 text-white font-semibold shadow-md shadow-orange-900/40 hover:from-orange-500 hover:to-orange-700 transition-all"
+            className="mt-2 w-full h-12 bg-gradient-to-b from-orange-400 to-orange-500 text-neutral-950 font-semibold shadow-md shadow-orange-900/40 hover:from-orange-300 hover:to-orange-400 transition-all"
           >
             {loading ? "Ingresando..." : "Ingresar"}
           </Button>
@@ -163,14 +163,14 @@ export default function LoginPage() {
         <button
           type="button"
           onClick={() => { setShowForgot(true); setForgotMsg(""); setForgotError(""); setForgotEmail(""); }}
-          className="mt-4 text-xs text-white/40 hover:text-white/70 transition-colors"
+          className="mt-4 text-xs text-white/65 hover:text-white/90 transition-colors"
         >
           ¿Olvidaste tu contraseña?
         </button>
       </div>
 
       {/* Footer */}
-      <div className="fixed bottom-6 left-0 right-0 flex items-center justify-center gap-2 text-white/30 text-xs select-none">
+      <div className="fixed bottom-6 left-0 right-0 flex items-center justify-center gap-2 text-white/50 text-xs select-none">
         <span>© {new Date().getFullYear()} Copyright</span>
         <span className="opacity-40">·</span>
         <span>Desarrollado por</span>
@@ -194,7 +194,7 @@ export default function LoginPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#1a1a1a] p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-white mb-2">Recuperar contraseña</h3>
-            <p className="text-sm text-white/50 mb-6">
+            <p className="text-sm text-white/65 mb-6">
               Ingresá tu email y te enviaremos una nueva contraseña.
             </p>
 
@@ -228,7 +228,7 @@ export default function LoginPage() {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     required
-                    className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/25 focus:border-white/30 focus:ring-0"
+                    className="h-12 text-base border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-0"
                   />
                 </div>
                 <div className="flex gap-2">
