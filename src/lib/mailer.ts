@@ -1,5 +1,4 @@
-import nodemailer from "nodemailer";
-import type Mail from "nodemailer/lib/mailer";
+import nodemailer, { type Mail, type SendMailOptions, type SentMessageInfo } from "nodemailer";
 import { BRAND } from "@/lib/brand";
 import { esDemo } from "@/lib/demo-context";
 import { createLogger } from "@/lib/logger";
@@ -65,19 +64,21 @@ function getTransporter() {
  * secundario, y en la demo el efecto secundario correcto es ninguno.
  */
 export const transporter = {
-  sendMail: (...args: Parameters<Mail["sendMail"]>) => {
+  // Tipos explícitos y no Parameters<Mail["sendMail"]>: desde nodemailer 10 la
+  // última sobrecarga es la de callback, y Parameters tomaría esa.
+  sendMail: (data: SendMailOptions): Promise<SentMessageInfo> => {
     if (esDemo()) {
-      const destino = (args[0] as Mail.Options)?.to;
+      const destino = data?.to;
       log.info({ to: destino }, "Sesión de demostración: el correo NO se envía");
       return Promise.resolve({
         accepted: [],
         rejected: [],
         messageId: "demo-no-enviado",
-      } as unknown as ReturnType<Mail["sendMail"]>);
+      } as unknown as SentMessageInfo);
     }
-    return getTransporter().sendMail(...args);
+    return getTransporter().sendMail(data);
   },
-  verify: (...args: Parameters<Mail["verify"]>) => getTransporter().verify(...args),
+  verify: () => getTransporter().verify(),
 };
 
 export const isSmtpConfigured = () =>

@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/api-auth";
 import { escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { transporter, FROM } from "@/lib/mailer";
 import { BRAND } from "@/lib/brand";
-import nodemailer from "nodemailer";
+import type { SendMailOptions } from "nodemailer";
 import { createLogger } from "@/lib/logger";
 const log = createLogger("api/quotes/[id]/send");
 
@@ -82,7 +82,7 @@ export async function POST(
   </div>` : ""}
 </div>`;
 
-    const mailOptions: nodemailer.SendMailOptions = {
+    const mailOptions: SendMailOptions = {
       from: FROM(),
       to: email,
       subject: `Presupuesto #${quote.number} - ${BRAND.name}`,
