@@ -9,10 +9,15 @@ interface MapPickerProps {
   results?: { name: string; lat: number; lng: number; isInLeads: boolean }[];
   onPickPoint: (lat: number, lng: number) => void;
   className?: string;
+  /** Vista inicial sin centro elegido. Por defecto, Argentina. */
+  defaultView?: { lat: number; lng: number; zoom: number };
+  /** Texto del globo para un resultado ya guardado. */
+  savedLabel?: string;
 }
 
 const ARGENTINA_CENTER = { lat: -34.6, lng: -58.45 };
 const DEFAULT_ZOOM = 5;
+const DEFAULT_VIEW = { ...ARGENTINA_CENTER, zoom: DEFAULT_ZOOM };
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 const DARK_STYLES: google.maps.MapTypeStyle[] = [
@@ -102,6 +107,8 @@ export default function GoogleMapPicker({
   results,
   onPickPoint,
   className,
+  defaultView = DEFAULT_VIEW,
+  savedLabel = "Ya en leads",
 }: MapPickerProps) {
   const mapRef = useRef<google.maps.Map | null>(null);
   const circleRef = useRef<google.maps.Circle | null>(null);
@@ -124,8 +131,8 @@ export default function GoogleMapPicker({
       .then(() => {
         if (mapRef.current) return; // already init'd
         const map = new google.maps.Map(node, {
-          center: center ? { lat: center[0], lng: center[1] } : ARGENTINA_CENTER,
-          zoom: center ? 13 : DEFAULT_ZOOM,
+          center: center ? { lat: center[0], lng: center[1] } : { lat: defaultView.lat, lng: defaultView.lng },
+          zoom: center ? 13 : defaultView.zoom,
           styles: DARK_STYLES,
           disableDefaultUI: false,
           zoomControl: true,
@@ -156,8 +163,8 @@ export default function GoogleMapPicker({
     if (circleRef.current) { circleRef.current.setMap(null); circleRef.current = null; }
 
     if (!center) {
-      map.setCenter(ARGENTINA_CENTER);
-      map.setZoom(DEFAULT_ZOOM);
+      map.setCenter({ lat: defaultView.lat, lng: defaultView.lng });
+      map.setZoom(defaultView.zoom);
       return;
     }
 
@@ -183,6 +190,7 @@ export default function GoogleMapPicker({
 
     const bounds = circleRef.current.getBounds();
     if (bounds) map.fitBounds(bounds, 30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center, radiusKm, loaded]);
 
   // Update result markers
@@ -209,14 +217,14 @@ export default function GoogleMapPicker({
       marker.addListener("click", () => {
         if (infoWindowRef.current && mapRef.current) {
           infoWindowRef.current.setContent(
-            `<div style="color:#222;font-size:13px"><strong>${biz.name}</strong><br/>${biz.isInLeads ? "✅ Ya en leads" : "🆕 Nuevo"}</div>`
+            `<div style="color:#222;font-size:13px"><strong>${biz.name}</strong><br/>${biz.isInLeads ? `✅ ${savedLabel}` : "🆕 Nuevo"}</div>`
           );
           infoWindowRef.current.open(mapRef.current, marker);
         }
       });
       resultMarkersRef.current.push(marker);
     }
-  }, [results, loaded]);
+  }, [results, loaded, savedLabel]);
 
   if (error) {
     return (

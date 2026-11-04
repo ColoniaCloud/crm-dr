@@ -22,6 +22,7 @@ const SECTION_TITLES: Record<string, string> = {
   "/ai-insights": "AI Insights",
   "/social-creator": "RRSS Creator",
   "/scrapper": "Kristall Scrapp",
+  "/c-peru": "Contactos Perú",
   "/calendar": "Agenda",
   "/calendar/visits": "Visitas",
   "/calendar/calls": "Llamadas",

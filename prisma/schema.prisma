@@ -256,6 +256,7 @@ model User {
   saleReturns                 SaleReturn[]                @relation("SaleReturnCreatedBy")
   expenses                    Expense[]                   @relation("ExpenseCreatedBy")
   recurringExpenses           RecurringExpense[]          @relation("RecurringExpenseCreatedBy")
+  peruContacts                PeruContact[]               @relation("PeruContactCreatedBy")
 
   @@map("users")
 }
@@ -2959,4 +2960,41 @@ model SaleItemCost {
   createdAt  DateTime @default(now())
 
   @@map("sale_item_costs")
+}
+
+/// Contactos de Perú (módulo /c-peru). Tabla aparte de `Contact` a propósito:
+/// el scraper de Perú junta prospectos que todavía no son del negocio y no
+/// deben mezclarse con los leads de Argentina/Uruguay ni disparar sus
+/// automatizaciones (agentes, garantías, portal). `placeId` es el id de Google
+/// Places y evita cargar dos veces el mismo local.
+model PeruContact {
+  id           String   @id @default(cuid())
+  placeId      String?  @unique
+  name         String
+  category     String?
+  address      String?
+  district     String?
+  city         String?
+  department   String?
+  /// Teléfono en E.164 (+51...). Fijo o celular.
+  phone        String?
+  /// Solo dígitos con prefijo de país (51987654321): lo que pide wa.me.
+  whatsapp     String?
+  email        String?
+  website      String?
+  lat          Float?
+  lng          Float?
+  rating       Float?
+  ratingsTotal Int?
+  contacted    Boolean  @default(false)
+  notes        String?  @db.Text
+
+  createdById String?
+  createdBy   User?    @relation("PeruContactCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([department])
+  @@index([createdAt])
+  @@map("peru_contacts")
 }
