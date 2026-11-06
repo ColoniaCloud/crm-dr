@@ -19,7 +19,7 @@
 import { prisma, prismaReal } from "@/lib/prisma";
 import { enModoDemo, enModoReal, modoActual, esDemo, exigirDemo } from "@/lib/demo-context";
 import { transporter } from "@/lib/mailer";
-import { sendWhatsapp } from "@/lib/whatsapp";
+import { sendDataRequestNotice } from "@/lib/whatsapp/notices";
 import { notifyAdmins } from "@/lib/notifications";
 import { provisionarClonDemo, borrarClonesViejos, clonesVivos } from "@/lib/demo-plantilla";
 
@@ -202,10 +202,10 @@ async function main() {
     })) as unknown as { messageId?: string };
     check("el correo no se envía", r?.messageId === "demo-no-enviado", r?.messageId);
 
-    const antesWa = await prisma.whatsAppMessage.count();
-    const mandado = await sendWhatsapp({ to: "1100000000", message: "no debería salir" });
+    const antesWa = await prisma.whatsAppCloudMessage.count();
+    const mandado = await sendDataRequestNotice({ to: "1100000000", nombre: "Prueba", link: "https://example.invalid" });
     check("el WhatsApp no se envía", mandado === false);
-    check("y no deja registro del intento", (await prisma.whatsAppMessage.count()) === antesWa);
+    check("y no deja registro del intento", (await prisma.whatsAppCloudMessage.count()) === antesWa);
 
     const antesNotif = await prisma.notification.count();
     await notifyAdmins({ type: "PRUEBA", title: "no debería llegar", message: "x", email: true });

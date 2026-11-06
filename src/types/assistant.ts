@@ -15,15 +15,6 @@ export interface AssistantTableAction {
   rowLinks?: (string | null)[];
 }
 
-export interface AssistantCampaignAction {
-  type: "campaign";
-  label: string;
-  contactType: "LEAD" | "CLIENT" | "INSTALLER";
-  message: string;
-  delaySeconds: number;
-  recipientCount: number;
-}
-
 export interface AssistantFileAction {
   type: "file";
   filename: string;
@@ -43,7 +34,6 @@ export interface AssistantPriceUpdateAction {
 export type AssistantAction =
   | AssistantNavigateAction
   | AssistantTableAction
-  | AssistantCampaignAction
   | AssistantFileAction
   | AssistantPriceUpdateAction;
 

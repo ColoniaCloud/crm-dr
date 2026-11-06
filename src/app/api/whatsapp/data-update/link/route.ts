@@ -23,10 +23,9 @@ const schema = z.object({
  * Genera el link personal sin mandarlo, para que el operador lo mande a mano
  * desde la app de WhatsApp Business.
  *
- * Existe porque el número de Kristall está administrado por la plataforma de
- * Meta, y lo que sale por el servicio vinculado por QR le llega al cliente como
- * "Esperando mensaje" (2026-10-09). Hasta pasar a la API oficial, este es el
- * camino que funciona.
+ * Es la alternativa al envío automático por la Cloud API (plantilla
+ * `kristall_pedir_datos`): sirve cuando la plantilla todavía no está aprobada, o
+ * cuando conviene mandarlo a mano desde la app de WhatsApp Business.
  *
  * Cada llamada emite un link nuevo e invalida el anterior: los tokens se guardan
  * hasheados, así que uno ya emitido no se puede volver a mostrar.

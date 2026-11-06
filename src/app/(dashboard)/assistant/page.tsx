@@ -12,14 +12,13 @@ import {
   Package,
   Paperclip,
   Plus,
-  Send,
   Loader2,
   Download,
   MessageSquare,
   LayoutPanelLeft,
 } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantCampaignAction, AssistantFileAction, AssistantPriceUpdateAction } from "@/types/assistant";
+import type { AssistantApiResponse, AssistantAction, AssistantNavigateAction, AssistantTableAction, AssistantFileAction, AssistantPriceUpdateAction } from "@/types/assistant";
 import { DottedSurface } from "@/components/ui/dotted-surface";
 import { ActivityTicker } from "@/components/assistant/activity-ticker";
 import { TaskPanel } from "@/components/assistant/task-panel";
@@ -169,7 +168,6 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [campaignRunning, setCampaignRunning] = useState(false);
   const [pricesRunning, setPricesRunning] = useState(false);
   const [model, setModel] = useChatModel("assistant-model");
   const [pendingCSV, setPendingCSV] = useState<{ rows: Record<string, string>[]; filename: string } | null>(null);
@@ -305,49 +303,6 @@ export default function AssistantPage() {
     a.download = action.filename;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  // ── Campaign action ─────────────────────────────────────────────────────────
-  async function handleCampaign(action: AssistantCampaignAction) {
-    if (campaignRunning) return;
-    setCampaignRunning(true);
-
-    const infoMsg: ChatMessage = { role: "user", content: "Confirmar envío de campaña" };
-    const loadingMsg: ChatMessage = { role: "assistant", content: "", loading: true };
-
-    const withLoading = [...messages, infoMsg, loadingMsg];
-    setMessages(withLoading);
-
-    try {
-      const res = await fetch("/api/whatsapp/campaign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contactType: action.contactType,
-          message: action.message,
-          delaySeconds: action.delaySeconds,
-        }),
-      });
-
-      const data = await res.json() as { success?: boolean; sent?: number; failed?: number; total?: number; error?: string };
-
-      const resultMsg: ChatMessage = {
-        role: "assistant",
-        content: data.success
-          ? `✅ **Campaña completada**\n- Total enviados: **${data.sent}** de ${data.total}\n- Fallidos: ${data.failed}`
-          : `❌ Error en la campaña: ${data.error || "Error desconocido"}`,
-      };
-
-      const convId = conversationId || `conv-${Date.now()}`;
-      const withResult = [...messages, infoMsg, resultMsg];
-      setMessages(withResult);
-      persist(convId, withResult);
-    } catch {
-      const withError = [...messages, infoMsg, { role: "assistant" as const, content: "Error de conexión al ejecutar la campaña." }];
-      setMessages(withError);
-    } finally {
-      setCampaignRunning(false);
-    }
   }
 
   // ── Price update action ─────────────────────────────────────────────────────
@@ -576,22 +531,6 @@ export default function AssistantPage() {
                       >
                         <Download className="h-3.5 w-3.5" />
                         {(msg.action as AssistantFileAction).label}
-                      </Button>
-                    )}
-
-                    {msg.action?.type === "campaign" && (
-                      <Button
-                        size="sm"
-                        variant="default"
-                        onClick={() => handleCampaign(msg.action as AssistantCampaignAction)}
-                        disabled={campaignRunning}
-                        className="gap-2 self-start"
-                      >
-                        {campaignRunning ? (
-                          <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Enviando...</>
-                        ) : (
-                          <><Send className="h-3.5 w-3.5" /> {(msg.action as AssistantCampaignAction).label}</>
-                        )}
                       </Button>
                     )}
 

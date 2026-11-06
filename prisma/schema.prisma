@@ -1141,25 +1141,6 @@ model LeadActivity {
 
 // ─── WhatsApp ────────────────────────────────────────────────────────────────
 
-enum WhatsAppMessageStatus {
-  SENT
-  FAILED
-}
-
-model WhatsAppMessage {
-  id        String                @id @default(cuid())
-  contactId String?
-  phone     String
-  message   String                @db.Text
-  status    WhatsAppMessageStatus
-  error     String?               @db.Text
-  sentById  String?
-  sentAt    DateTime              @default(now())
-
-  @@index([sentAt])
-  @@map("whatsapp_messages")
-}
-
 enum MessageChannel {
   MAIL
   WHATSAPP
@@ -2997,4 +2978,63 @@ model PeruContact {
   @@index([department])
   @@index([createdAt])
   @@map("peru_contacts")
+}
+
+// ─── WhatsApp Business Cloud API (API oficial de Meta) ───────────────────────
+//
+// Lo que Meta nos notifica por webhook (mensajes entrantes, ecos de lo que se
+// escribe desde la app del celular en modo coexistencia, y estados de entrega) y
+// lo que mandamos por la Cloud API. Reemplazó al viejo servicio de Baileys.
+
+/// Un mensaje de la Cloud API, entrante o saliente. `wamid` es el id que le
+/// pone WhatsApp y es la clave natural: Meta reintenta los webhooks, así que
+/// escribir dos veces el mismo `wamid` tiene que ser un no-op, no un duplicado.
+model WhatsAppCloudMessage {
+  id              String    @id @default(cuid())
+  wamid           String    @unique
+  /// "inbound" | "outbound"
+  direction       String
+  /// Número E.164 sin "+", como lo manda Meta (wa_id).
+  from            String    @map("from_number")
+  to              String    @map("to_number")
+  /// text, image, video, audio, document, interactive, button, reaction, ...
+  type            String
+  /// El objeto del mensaje tal cual vino (por ejemplo `{ text: { body } }`).
+  content         Json
+  timestamp       DateTime
+  /// sent | delivered | read | failed. Solo tiene sentido en `outbound`.
+  status          String?
+  statusUpdatedAt DateTime?
+  /// Errores que reporta Meta en un estado `failed` (arreglo de `{ code, title, ... }`).
+  errors          Json?
+  phoneNumberId   String
+  wabaId          String
+  /// Solo en los salientes que manda el CRM (no en los ecos del celular): a qué
+  /// ficha se le escribió, quién lo disparó (null = lo mandó el sistema) y con
+  /// qué plantilla. Permiten ver el mensaje en la ficha del contacto.
+  contactId       String?
+  sentById        String?
+  templateName    String?
+  /// El `value` completo del webhook que originó la fila (o, en un saliente del
+  /// CRM, la respuesta de la Graph API). Sirve para depurar y para reprocesar.
+  rawPayload      Json
+  createdAt       DateTime  @default(now())
+
+  @@index([from])
+  @@index([to])
+  @@index([timestamp])
+  @@index([contactId])
+  @@map("whatsapp_cloud_messages")
+}
+
+/// Perfil de WhatsApp de quien nos escribe (viene en `value.contacts[]`).
+model WhatsAppCloudContact {
+  /// wa_id: número en E.164 sin "+".
+  waId      String   @id
+  name      String?
+  profile   Json?
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+
+  @@map("whatsapp_cloud_contacts")
 }

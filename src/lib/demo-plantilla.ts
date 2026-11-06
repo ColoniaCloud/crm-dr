@@ -530,7 +530,7 @@ export async function borrarClonesViejos(horas = HORAS_DE_VIDA): Promise<number>
   await prisma.saleItem.deleteMany({ where: { sale: { contactId: { in: ids } } } });
   await prisma.payment.deleteMany({ where: { contactId: { in: ids } } });
   await prisma.sale.deleteMany({ where: { contactId: { in: ids } } });
-  await prisma.whatsAppMessage.deleteMany({ where: { contactId: { in: ids } } });
+  await prisma.whatsAppCloudMessage.deleteMany({ where: { contactId: { in: ids } } });
   await prisma.portalNotification.deleteMany({ where: { contactId: { in: ids } } });
   await prisma.portalAccessToken.deleteMany({ where: { contactId: { in: ids } } });
   await prisma.clientPortalAccount.deleteMany({ where: { contactId: { in: ids } } });

@@ -1,6 +1,6 @@
 import QRCode from "qrcode";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { normalizeWhatsappNumber } from "@/lib/whatsapp";
+import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import { ensureRemitoPublicToken, loadRemitoById, remitoPublicUrl } from "@/lib/remito-document";
 import { buildRemitoPdfBuffer, remitoPdfFilename } from "@/lib/remito-pdf-server";
 import { renderRemitoFirmado, renderRemitoParaFirmar } from "@/lib/mail-remito";
@@ -59,7 +59,7 @@ function celularArgentino(nacional: string): string | null {
  * El número en el formato que exige `wa.me`. Para Argentina eso es
  * `549 + área + número`, sin 0 ni 15: `011 15 5555-1234` → `5491155551234`.
  *
- * Más estricto que normalizeWhatsappNumber (lib/whatsapp.ts), que deja pasar
+ * Más estricto que normalizeWhatsappNumber (lib/whatsapp/phone.ts), que deja pasar
  * `54111555551234`: el servicio de WhatsApp lo tolera, pero `wa.me` abre un
  * chat con un número que no existe. Uruguay (598) y lo que no se reconoce
  * pasan por el normalizador general.

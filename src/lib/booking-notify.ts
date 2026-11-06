@@ -7,7 +7,8 @@ import {
 } from "@/lib/property-types";
 import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
-import { sendWhatsapp, isWhatsappConfigured } from "@/lib/whatsapp";
+import { sendBookingNotice } from "@/lib/whatsapp/notices";
+import { isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { BRAND } from "@/lib/brand";
 import { portalBaseUrl } from "@/lib/portal-tokens";
 
@@ -156,25 +157,24 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
 
       // ── whatsapp ────────────────────────────────────────────────────────
       (async () => {
-        if (!b.contact.phone || !isWhatsappConfigured()) return;
-        await sendWhatsapp({
+        if (!b.contact.phone || !isCloudApiConfigured()) return;
+        await sendBookingNotice({
           to: b.contact.phone,
           contactId: b.contactId,
-          message:
-            `*Nuevo pedido de turno*\n\n` +
-            `${b.serviceName}\n` +
-            `${cuando}\n\n` +
-            `${b.clientName} — ${b.clientPhone}\n` +
-            // La direccion es lo unico imprescindible de una visita, asi que va
-            // tambien en el WhatsApp, que es lo que el taller mira de verdad.
-            (b.category === "ARCHITECTURAL"
+          serviceName: b.serviceName,
+          cuando,
+          clientLine: `${b.clientName} — ${b.clientPhone}`,
+          // La direccion es lo unico imprescindible de una visita, asi que va
+          // tambien en el WhatsApp, que es lo que el taller mira de verdad.
+          detalle:
+            b.category === "ARCHITECTURAL"
               ? b.siteAddress
-                ? `Direccion: ${b.siteAddress}\n`
+                ? `dirección ${b.siteAddress}`
                 : ""
               : b.plate
-                ? `Patente: ${b.plate}\n`
-                : "") +
-            `\nConfirmalo desde tu panel:\n${linkBandeja}`,
+                ? `patente ${b.plate}`
+                : "",
+          linkBandeja,
         });
       })(),
     ]);

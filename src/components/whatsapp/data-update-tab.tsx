@@ -9,14 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Check, Copy, ExternalLink, Link2, Loader2, RefreshCw, Send } from "@/components/icons";
 
 /**
- * Pestaña "Pedir datos" de /whatsapp: mandarles a los Clientes sin email un
+ * Pantalla "Pedir datos" de /whatsapp: mandarles a los Clientes sin email un
  * link personal para que lo carguen. El flujo está en `src/lib/data-update.ts`.
  */
 
@@ -63,7 +62,7 @@ export function DataUpdateTab() {
   const [generando, setGenerando] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
 
-  async function cargar(conservarMensaje = false) {
+  async function cargar() {
     setCargando(true);
     setError("");
     try {
@@ -72,7 +71,7 @@ export function DataUpdateTab() {
       if (!res.ok) throw new Error(data.error || "Error al cargar");
       setFilas(data.contactos);
       setConfigurado(data.whatsappConfigurado);
-      if (!conservarMensaje) setMensaje(data.mensajePorDefecto);
+      setMensaje(data.mensajePorDefecto);
       setElegidos(new Set((data.contactos as Fila[]).filter(elegiblePorDefecto).map((f) => f.id)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cargar");
@@ -86,8 +85,7 @@ export function DataUpdateTab() {
   }, []);
 
   const conNumero = useMemo(() => filas.filter((f) => f.numero), [filas]);
-  const faltaLink = !mensaje.includes("{{link}}");
-  const primero = filas.find((f) => elegidos.has(f.id));
+    const primero = filas.find((f) => elegidos.has(f.id));
   const vistaPrevia = mensaje
     .replaceAll("{{nombre}}", primero?.nombre.split(" ")[0] ?? "Juan")
     .replaceAll("{{link}}", "https://kristallfilm.com/cliente/mis-datos/…");
@@ -114,7 +112,7 @@ export function DataUpdateTab() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo generar el link");
       setManual({ fila, texto: data.texto, numero: data.numero });
-      await cargar(true);
+      await cargar();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo generar el link");
     } finally {
@@ -139,12 +137,12 @@ export function DataUpdateTab() {
       const res = await fetch("/api/whatsapp/data-update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactIds: [...elegidos], message: mensaje }),
+        body: JSON.stringify({ contactIds: [...elegidos] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar");
       setResultado(data);
-      await cargar(true);
+      await cargar();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo enviar");
     } finally {
@@ -164,7 +162,7 @@ export function DataUpdateTab() {
               recién entra a la ficha cuando lo confirma desde su casilla.
             </CardDescription>
           </div>
-          <Button variant="outline" size="icon" onClick={() => cargar(true)} disabled={cargando} aria-label="Actualizar">
+          <Button variant="outline" size="icon" onClick={() => cargar()} disabled={cargando} aria-label="Actualizar">
             <RefreshCw className={cargando ? "size-4 animate-spin" : "size-4"} />
           </Button>
         </CardHeader>
@@ -198,7 +196,7 @@ export function DataUpdateTab() {
                     variant="outline"
                     size="sm"
                     className="shrink-0"
-                    disabled={!f.numero || faltaLink || generando !== null}
+                    disabled={!f.numero || !mensaje || generando !== null}
                     onClick={() => generarLink(f)}
                     title="Generar el mensaje con su link para mandarlo a mano"
                   >
@@ -216,32 +214,25 @@ export function DataUpdateTab() {
         <CardHeader>
           <CardTitle>Mensaje</CardTitle>
           <CardDescription>
-            <code>{"{{nombre}}"}</code> es el nombre de pila y <code>{"{{link}}"}</code> el link personal.
+            Sale con una plantilla aprobada por Meta, así que el texto no se edita desde acá.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="du-mensaje">Texto</Label>
-            <Textarea id="du-mensaje" rows={8} value={mensaje} onChange={(e) => setMensaje(e.target.value)} />
-            {faltaLink && <p className="text-xs text-destructive">El mensaje tiene que incluir {"{{link}}"}.</p>}
-          </div>
-
           <div className="space-y-1.5">
             <Label>Vista previa</Label>
             <p className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">{vistaPrevia}</p>
           </div>
 
           <p className="text-xs text-muted-foreground">
-            {elegidos.size} de {conNumero.length} con número elegidos. Salen de a uno, con una pausa de 4 a 9
-            segundos entre cada mensaje.
+            {elegidos.size} de {conNumero.length} con número elegidos.
           </p>
 
-          {!configurado && <p className="text-sm text-destructive">El servicio de WhatsApp no está configurado.</p>}
+          {!configurado && <p className="text-sm text-destructive">WhatsApp (Cloud API) no está configurado.</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button
             className="w-full"
-            disabled={elegidos.size === 0 || faltaLink || !configurado || enviando}
+            disabled={elegidos.size === 0 || !configurado || enviando}
             onClick={() => setConfirmar(true)}
           >
             {enviando ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
@@ -299,7 +290,7 @@ export function DataUpdateTab() {
             <DialogTitle>¿Enviar {elegidos.size} WhatsApp?</DialogTitle>
             <DialogDescription>
               Cada Cliente recibe su propio link, que vale 7 días. Si ya tenía uno, el anterior deja de
-              funcionar. Tarda alrededor de {Math.ceil((elegidos.size * 6.5) / 60)} minuto(s): no cierres esta pestaña.
+              funcionar. No cierres esta pestaña hasta que termine.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

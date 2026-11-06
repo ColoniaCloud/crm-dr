@@ -50,7 +50,7 @@ function PageHeading({ pathname, override }: { pathname: string; override?: stri
 }
 
 export function MainLayout({ children, title }: MainLayoutProps) {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const pathname = usePathname();
 
   return (
@@ -74,14 +74,16 @@ export function MainLayout({ children, title }: MainLayoutProps) {
                   <Mail className="h-4 w-4" />
                   <span className="hidden sm:inline">Mail</span>
                 </Link>
-                <Link
-                  href="/whatsapp"
-                  aria-label="WhatsApp"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-whatsapp px-0 sm:px-4 text-xs font-semibold text-whatsapp-foreground transition-colors hover:bg-whatsapp/90"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  <span className="hidden sm:inline">WhatsApp</span>
-                </Link>
+                {session?.user?.role === "SUPERADMIN" && (
+                  <Link
+                    href="/whatsapp"
+                    aria-label="WhatsApp"
+                    className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-whatsapp px-0 sm:px-4 text-xs font-semibold text-whatsapp-foreground transition-colors hover:bg-whatsapp/90"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </Link>
+                )}
                 <NotificationBell />
                 <Separator orientation="vertical" className="mx-2 h-4" />
               </>

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
-import { normalizeWhatsappNumber } from "@/lib/whatsapp";
+import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 /**
@@ -9,7 +9,8 @@ import { WHERE_COMPRADOR } from "@/lib/contact-types";
  * ─── El flujo ──────────────────────────────────────────────────────────────
  *
  *   1. Desde /whatsapp (pestaña "Pedir datos") un SUPERADMIN elige Clientes sin
- *      email y les manda un link personal: `/cliente/mis-datos/<token>` en
+ *      email y les manda, con la plantilla `kristall_pedir_datos` de la Cloud API,
+ *      un link personal: `/cliente/mis-datos/<token>` en
  *      kristall-web. Token DATA_UPDATE, 7 días.
  *   2. El Cliente abre el link, corrige sus datos básicos y escribe su email.
  *      Los datos básicos se guardan en ese momento. **El email no**: se le
@@ -49,6 +50,11 @@ export const NOMBRE_CAMPO: Record<CampoBasico, string> = {
   state: "Provincia",
 };
 
+/**
+ * El texto de la plantilla `kristall_pedir_datos` (ver notices.ts), con
+ * {{nombre}} y {{link}} en lugar de {{1}} y {{2}}. Lo usa el envío "a mano"
+ * (copiar o abrir en wa.me); el envío automático usa el texto aprobado en Meta.
+ */
 export const MENSAJE_POR_DEFECTO =
   "¡Hola {{nombre}}! Te escribimos de Kristall Film. " +
   "Para mandarte por mail tus comprobantes y garantías nos falta tu email. " +

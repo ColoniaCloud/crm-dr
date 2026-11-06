@@ -9,7 +9,6 @@ import type {
   AssistantApiResponse,
   AssistantNavigateAction,
   AssistantTableAction,
-  AssistantCampaignAction,
   AssistantFileAction,
   AssistantPriceUpdateAction,
 } from "@/types/assistant";
@@ -39,7 +38,7 @@ SECCIONES DEL CRM:
 - /suppliers → Proveedores
 - /competitors → Competencia
 - /activities → Actividad de operadores
-- /whatsapp → Módulo WhatsApp
+- /whatsapp → Pedir el email por WhatsApp a clientes que no lo tienen (solo SUPERADMIN)
 - /warranty-claims → Centro de Garantías (reclamos y trazabilidad de rollos)
 
 TIPOS DE CONTACTO: LEAD (prospecto), CLIENT (cliente), INSTALLER (instalador)
@@ -57,7 +56,6 @@ REGLAS PARA GESTIÓN DE DATOS:
 - Para crear contactos, necesitás MÍNIMO firstName y lastName.
 - Para agregar productos, necesitás nombre y precio.
 - Para modificar stock, necesitás el nombre/ID del producto y la cantidad de ajuste.
-- Para campañas de WhatsApp: solo SUPERADMIN puede enviar. Ayudá al usuario a redactar mensajes profesionales y con el tono adecuado antes de ejecutar.
 - Cuando el usuario sube un CSV para importar contactos, analizá las columnas y confirmá antes de importar.
 - Cuando el usuario sube un CSV con precios y pide actualizarlos, usá update_prices_from_csv eligiendo la columna del SKU interno y la del precio de venta unitario. Si no está claro cuál es cada una, preguntá antes.
 - Para agendar visitas o llamadas, necesitás el contacto y la fecha/hora (convertí fechas relativas como "mañana a las 10" a formato ISO 8601 usando la fecha actual).
@@ -71,7 +69,6 @@ REGLAS PARA GESTIÓN DE DATOS:
 
 RESTRICCIONES DE ROL (si el usuario no tiene el rol necesario, explicá amablemente que no tiene permisos):
 - Solo ADMIN y SUPERADMIN pueden: crear/editar productos, actualizar precios desde CSV, ajustar stock, ver y registrar ventas, presupuestos y pagos, gestionar garantías (buscar rollos, listar y actualizar reclamos), y exportar actividad de operadores a CSV.
-- Solo SUPERADMIN puede: lanzar campañas de WhatsApp.
 - Cualquier rol autenticado (OPERATOR, ADMIN, SUPERADMIN) puede: crear/buscar contactos, convertir leads, importar CSV, agendar visitas o llamadas, y crearse tareas.
 - Solo ADMIN y SUPERADMIN pueden asignarle una tarea a otra persona del equipo.
 
@@ -292,20 +289,6 @@ const TOOLS: Anthropic.Tool[] = [
         message: { type: "string", description: "Mensaje breve al usuario." },
       },
       required: ["sku_column", "price_column", "message"],
-    },
-  },
-  {
-    name: "plan_whatsapp_campaign",
-    description: "Planifica y lanza una campaña de WhatsApp a leads, clientes o instaladores. Ayudá al usuario a redactar un mensaje profesional antes de ejecutar. Verificá la cantidad de destinatarios antes de confirmar.",
-    input_schema: {
-      type: "object",
-      properties: {
-        contact_type: { type: "string", enum: ["LEAD", "CLIENT", "INSTALLER"] },
-        message: { type: "string", description: "Mensaje de WhatsApp a enviar." },
-        delay_seconds: { type: "number", description: "Segundos de espera entre mensajes. Mínimo 2, máximo 10. Default 3." },
-        assistant_message: { type: "string", description: "Mensaje al usuario explicando la campaña." },
-      },
-      required: ["contact_type", "message", "assistant_message"],
     },
   },
   {
@@ -1188,53 +1171,6 @@ export async function runAssistant(params: {
       return {
         data: {
           message: `${msg}\n\n✅ Stock de **${product.name}** actualizado: ${quantity > 0 ? "+" : ""}${quantity} → **${newStock} unidades**`,
-        },
-        status: 200,
-      };
-    }
-
-    // ── plan_whatsapp_campaign ────────────────────────────────────────────────
-    if (toolBlock.name === "plan_whatsapp_campaign") {
-      if (actor.role !== "SUPERADMIN") {
-        return { data: { message: "Solo los SUPERADMIN pueden enviar campañas de WhatsApp." }, status: 200 };
-      }
-
-      const contactType = input.contact_type as string;
-      const campaignMessage = (input.message as string || "").trim();
-      const delaySeconds = Math.min(10, Math.max(2, Number(input.delay_seconds) || 3));
-      const assistantMsg = input.assistant_message as string;
-
-      const count = await prisma.contact.count({
-        where: {
-          type: contactType as "LEAD" | "CLIENT" | "INSTALLER",
-          OR: [{ phone: { not: null } }, { whatsapp: { not: null } }],
-        },
-      });
-
-      const cappedCount = Math.min(count, 200);
-
-      if (count === 0) {
-        return {
-          data: { message: `No hay ${contactType === "LEAD" ? "leads" : contactType === "CLIENT" ? "clientes" : "instaladores"} con número de teléfono registrado.` },
-          status: 200,
-        };
-      }
-
-      const estimatedMinutes = Math.ceil((cappedCount * delaySeconds) / 60);
-
-      const action: AssistantCampaignAction = {
-        type: "campaign",
-        label: `Enviar campaña a ${cappedCount} ${contactType === "LEAD" ? "leads" : contactType === "CLIENT" ? "clientes" : "instaladores"}`,
-        contactType: contactType as "LEAD" | "CLIENT" | "INSTALLER",
-        message: campaignMessage,
-        delaySeconds,
-        recipientCount: cappedCount,
-      };
-
-      return {
-        data: {
-          message: `${assistantMsg}\n\n📊 **Resumen de la campaña:**\n- Destinatarios: **${cappedCount}** ${count > 200 ? `(máx. 200 de ${count} totales)` : ""}\n- Delay entre mensajes: **${delaySeconds} segundos**\n- Tiempo estimado: ~${estimatedMinutes} minuto${estimatedMinutes !== 1 ? "s" : ""}\n\nMensaje a enviar:\n> ${campaignMessage}\n\nConfirmá para iniciar el envío.`,
-          action,
         },
         status: 200,
       };

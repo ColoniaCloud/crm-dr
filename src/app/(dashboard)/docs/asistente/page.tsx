@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Bot, ChevronLeft, Mic, Paperclip, MessageSquare, Compass, Users2,
-  Package, ShoppingCart, CalendarDays, ShieldCheck, MessageCircle,
+  Package, ShoppingCart, CalendarDays, ShieldCheck,
   CheckCircle2, AlertTriangle, Activity,
 } from "@/components/icons";
 import { Tip, Step, FeatureCard } from "@/components/docs/doc-ui";
@@ -139,11 +139,6 @@ export default function AssistantDocsPage() {
           <div>
             <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold"><Activity className="size-4 text-primary" /> Actividad de Operadores</h3>
             <FunctionRow name="Exportar actividad a CSV" description="Genera y ofrece para descargar un CSV con la actividad de contacto y auditoría, filtrado por operador y rango de fechas." role="ADMIN+" />
-          </div>
-
-          <div>
-            <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold"><MessageCircle className="size-4 text-primary" /> WhatsApp</h3>
-            <FunctionRow name="Planificar campaña" description="Redacta el mensaje junto al usuario, calcula destinatarios y tiempo estimado antes de lanzar (tope 200 destinatarios)." role="SUPERADMIN" />
           </div>
         </CardContent>
       </Card>

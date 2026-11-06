@@ -5,9 +5,10 @@ import { requireRole } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
-import { isWhatsappConfigured, sendWhatsapp } from "@/lib/whatsapp";
+import { isCloudApiConfigured } from "@/lib/whatsapp/client";
+import { sendDataRequestNotice } from "@/lib/whatsapp/notices";
 import {
-  TIPO_DESTINO, MENSAJE_POR_DEFECTO, clientesSinEmail, emitirLinkDatos, armarMensaje, numeroDestino,
+  TIPO_DESTINO, MENSAJE_POR_DEFECTO, clientesSinEmail, emitirLinkDatos, numeroDestino,
 } from "@/lib/data-update";
 
 const log = createLogger("api/whatsapp/data-update");
@@ -27,7 +28,7 @@ export async function GET() {
     return NextResponse.json({
       contactos: await clientesSinEmail(),
       mensajePorDefecto: MENSAJE_POR_DEFECTO,
-      whatsappConfigurado: isWhatsappConfigured(),
+      whatsappConfigurado: isCloudApiConfigured(),
     });
   } catch (error) {
     log.error({ err: error }, "Error listing clients without email");
@@ -35,22 +36,13 @@ export async function GET() {
   }
 }
 
-// Pausa entre mensajes, al azar entre estos dos valores. Es un WhatsApp
-// vinculado por QR (no la API oficial): una ráfaga de mensajes iguales con
-// link es lo que WhatsApp marca como spam.
-const PAUSA_MIN_MS = 4000;
-const PAUSA_MAX_MS = 9000;
-// Tope por envío: con la pausa de arriba son unos 6 minutos de request.
+// Tope por envío. Ya no hay pausa entre mensajes (era para el WhatsApp vinculado
+// por QR, que marcaba como spam una ráfaga de mensajes iguales con link): la
+// Cloud API manda con plantilla aprobada y el request dura unos segundos.
 const MAX_POR_ENVIO = 40;
 
 const schema = z.object({
   contactIds: z.array(z.string().min(1)).min(1).max(MAX_POR_ENVIO),
-  message: z
-    .string()
-    .trim()
-    .min(1, "El mensaje está vacío")
-    .max(1000)
-    .refine((m) => m.includes("{{link}}"), "El mensaje tiene que incluir {{link}}"),
 });
 
 export async function POST(request: Request) {
@@ -60,10 +52,10 @@ export async function POST(request: Request) {
 
   const validation = validateBody(schema, await request.json().catch(() => null));
   if (!validation.success) return validation.response;
-  const { contactIds, message } = validation.data;
+  const { contactIds } = validation.data;
 
-  if (!isWhatsappConfigured()) {
-    return NextResponse.json({ error: "El servicio de WhatsApp no está configurado" }, { status: 503 });
+  if (!isCloudApiConfigured()) {
+    return NextResponse.json({ error: "WhatsApp (Cloud API) no está configurado" }, { status: 503 });
   }
 
   // Se vuelve a filtrar acá, no se confía en la lista que mandó la pantalla:
@@ -76,7 +68,7 @@ export async function POST(request: Request) {
 
   const resultados: { id: string; nombre: string; ok: boolean; error?: string }[] = [];
 
-  for (const [i, c] of contactos.entries()) {
+  for (const c of contactos) {
     const nombre = `${c.firstName} ${c.lastName}`.trim();
     const numero = numeroDestino(c);
     if (!numero) {
@@ -86,11 +78,10 @@ export async function POST(request: Request) {
 
     try {
       const { link } = await emitirLinkDatos(c.id, numero);
-      const ok = await sendWhatsapp({
+      const ok = await sendDataRequestNotice({
         to: numero,
-        message: armarMensaje(message, c.firstName.trim(), link),
-        // El historial no guarda el link: es una llave y lo lee cualquier SUPERADMIN.
-        messageForLog: armarMensaje(message, c.firstName.trim(), "[link personal para cargar datos]"),
+        nombre: c.firstName.trim(),
+        link,
         contactId: c.id,
         sentById: session.user.id,
       });
@@ -98,10 +89,6 @@ export async function POST(request: Request) {
     } catch (err) {
       log.error({ err, contactId: c.id }, "Error sending data-update link");
       resultados.push({ id: c.id, nombre, ok: false, error: "Error al generar el link" });
-    }
-
-    if (i < contactos.length - 1) {
-      await new Promise((r) => setTimeout(r, PAUSA_MIN_MS + Math.random() * (PAUSA_MAX_MS - PAUSA_MIN_MS)));
     }
   }
 

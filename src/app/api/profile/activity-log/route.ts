@@ -51,25 +51,43 @@ async function fetchEmails(search: string, take: number, skip: number) {
   return { items, hasMore };
 }
 
+/** Una línea legible de lo que contiene un mensaje de la Cloud API. */
+function summarize(type: string, content: unknown): string {
+  const c = (content ?? {}) as Record<string, unknown>;
+  if (type === "text") return String((c.text as { body?: string } | undefined)?.body ?? "");
+  if (type === "template") return `[Plantilla ${String((c.template as { name?: string } | undefined)?.name ?? "")}]`;
+  if (type === "interactive") {
+    const i = c.interactive as { button_reply?: { title?: string }; list_reply?: { title?: string } } | undefined;
+    return i?.button_reply?.title ?? i?.list_reply?.title ?? "[interactive]";
+  }
+  if (type === "button") return String((c.button as { text?: string } | undefined)?.text ?? "[button]");
+  const media = c[type] as { caption?: string } | undefined;
+  return media?.caption ? `[${type}] ${media.caption}` : `[${type}]`;
+}
+
+/**
+ * Mensajes de la WhatsApp Cloud API, entrantes y salientes. Los que el equipo
+ * escribe desde el celular (modo coexistencia) entran como ecos salientes.
+ */
 async function fetchWhatsapp(search: string, take: number, skip: number) {
-  const userMatches = search
-    ? await prisma.user.findMany({ where: { name: { contains: search } }, select: { id: true } })
+  const userIds = search
+    ? (await prisma.user.findMany({ where: { name: { contains: search } }, select: { id: true } })).map((u) => u.id)
     : [];
-  const userIds = userMatches.map((u) => u.id);
 
   const where = search
     ? {
         OR: [
-          { message: { contains: search } },
-          { phone: { contains: search } },
+          { from: { contains: search } },
+          { to: { contains: search } },
+          { templateName: { contains: search } },
           ...(userIds.length ? [{ sentById: { in: userIds } }] : []),
         ],
       }
     : {};
 
-  const rows = await prisma.whatsAppMessage.findMany({
+  const rows = await prisma.whatsAppCloudMessage.findMany({
     where,
-    orderBy: { sentAt: "desc" },
+    orderBy: { timestamp: "desc" },
     take: take + 1,
     skip,
   });
@@ -91,17 +109,21 @@ async function fetchWhatsapp(search: string, take: number, skip: number) {
   const senderMap = new Map(senders.map((u) => [u.id, u.name]));
   const contactMap = new Map(contacts.map((c) => [c.id, c]));
 
-  const items = page.map((m) => ({
-    id: m.id,
-    kind: "whatsapp" as const,
-    status: m.status,
-    error: m.error,
-    phone: m.phone,
-    message: m.message,
-    userName: m.sentById ? senderMap.get(m.sentById) ?? null : null,
-    contactName: m.contactId ? contactLabel(contactMap.get(m.contactId) ?? null) : null,
-    createdAt: m.sentAt,
-  }));
+  const items = page.map((m) => {
+    const errors = Array.isArray(m.errors) ? (m.errors as { title?: string; message?: string }[]) : [];
+    return {
+      id: m.id,
+      kind: "whatsapp" as const,
+      direction: m.direction,
+      status: m.status === "failed" ? ("FAILED" as const) : ("SENT" as const),
+      error: m.status === "failed" ? (errors[0]?.title || errors[0]?.message || "No entregado") : null,
+      phone: m.direction === "inbound" ? m.from : m.to,
+      message: summarize(m.type, m.content),
+      userName: m.sentById ? senderMap.get(m.sentById) ?? null : null,
+      contactName: m.contactId ? contactLabel(contactMap.get(m.contactId) ?? null) : null,
+      createdAt: m.timestamp,
+    };
+  });
 
   return { items, hasMore };
 }
