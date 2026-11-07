@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,10 +18,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Globe, Mail, MapPin, Phone, Search, Trash2, Users } from "@/components/icons";
+import { Download, Globe, Mail, MapPin, MessageCircle, Phone, Search, Trash2, Users } from "@/components/icons";
+import { BulkTemplateDialog, type BulkTarget } from "@/components/whatsapp/contact/bulk-template-dialog";
 import { PE_DEPARTMENTS } from "@/lib/peru-geo";
 import { formatPeruPhone } from "@/lib/peru/phone";
 import { WhatsAppLink } from "./peru-scrapper";
+
+/** Radix Select no admite un valor vacío: este representa "sin filtro". */
+const ANY = "__any__";
+
+const CONTACTED_OPTIONS = [
+  { value: ANY, label: "Contactados y pendientes" },
+  { value: "0", label: "Pendientes" },
+  { value: "1", label: "Contactados" },
+];
 
 type PeruContact = {
   id: string;
@@ -85,6 +96,14 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
 
+  // La selección para el envío masivo. Guarda la ficha entera (no solo el id) para que
+  // sobreviva a cambiar de filtro: se puede juntar gente de varios departamentos.
+  const [selected, setSelected] = useState<Map<string, PeruContact>>(new Map());
+  // Foto de la selección al abrir el envío: mientras corre, la lista de la pantalla se va
+  // vaciando (los enviados salen de la selección) y el diálogo no debe verlo.
+  const [bulkTargets, setBulkTargets] = useState<BulkTarget[] | null>(null);
+  const lastToggled = useRef<string | null>(null);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
     return () => clearTimeout(t);
@@ -128,7 +147,74 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "No se pudo actualizar");
     setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+    setSelected((prev) => {
+      const current = prev.get(id);
+      return current ? new Map(prev).set(id, { ...current, ...data }) : prev;
+    });
     return data as PeruContact;
+  }
+
+  // ─── Selección para el envío masivo ────────────────────────────────────────
+
+  /** Solo se puede mandar a quien tiene WhatsApp. */
+  const selectable = contacts.filter((c) => c.whatsapp);
+
+  /** Tilda o destilda una ficha; con Shift, todo el tramo desde la última que se tocó. */
+  function toggleSelect(c: PeruContact, shiftKey: boolean) {
+    const turnOn = !selected.has(c.id);
+    const anchor = shiftKey ? selectable.findIndex((x) => x.id === lastToggled.current) : -1;
+    const target = selectable.findIndex((x) => x.id === c.id);
+    const range = anchor >= 0 && target >= 0 ? selectable.slice(Math.min(anchor, target), Math.max(anchor, target) + 1) : [c];
+
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const item of range) {
+        if (turnOn) next.set(item.id, item);
+        else next.delete(item.id);
+      }
+      return next;
+    });
+    lastToggled.current = c.id;
+  }
+
+  /** Suma a la selección las fichas de la lista actual que cumplan la condición. */
+  function selectMatching(match: (c: PeruContact) => boolean) {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const c of selectable) if (match(c)) next.set(c.id, c);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    const allOn = selectable.length > 0 && selectable.every((c) => selected.has(c.id));
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const c of selectable) {
+        if (allOn) next.delete(c.id);
+        else next.set(c.id, c);
+      }
+      return next;
+    });
+  }
+
+  /** Tras el envío, lo que salió (o ya tenía conversación) pasa a "contactado" y sale de la selección. */
+  async function handleBulkFinished(reachedIds: string[]) {
+    if (reachedIds.length === 0) return;
+    const reached = new Set(reachedIds);
+    setSelected((prev) => new Map([...prev].filter(([id]) => !reached.has(id))));
+    setContacts((prev) => prev.map((c) => (reached.has(c.id) ? { ...c, contacted: true } : c)));
+    try {
+      const res = await fetch("/api/c-peru/contacts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: reachedIds, contacted: true }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Los mensajes ya salieron; que no se pueda marcar la ficha no es motivo para alarmar.
+      setError("La plantilla salió, pero no se pudieron marcar los contactos como contactados.");
+    }
   }
 
   async function toggleContacted(c: PeruContact) {
@@ -169,6 +255,12 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo eliminar");
       setContacts((prev) => prev.filter((x) => x.id !== c.id));
+      setSelected((prev) => {
+        if (!prev.has(c.id)) return prev;
+        const next = new Map(prev);
+        next.delete(c.id);
+        return next;
+      });
       setTotal((t) => t - 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo eliminar");
@@ -213,25 +305,28 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input className="pl-9" placeholder="Buscar por nombre, teléfono, email, ciudad..." value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
-            <select
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              aria-label="Departamento"
-            >
-              <option value="">Todos los departamentos</option>
-              {PE_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <select
-              value={contacted}
-              onChange={(e) => setContacted(e.target.value as "" | "0" | "1")}
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              aria-label="Estado de contacto"
-            >
-              <option value="">Contactados y pendientes</option>
-              <option value="0">Pendientes</option>
-              <option value="1">Contactados</option>
-            </select>
+            {/* Select de shadcn y no <select> nativo: el desplegable nativo ignora el tema oscuro (letra blanca sobre fondo blanco). */}
+            <Select value={department || ANY} onValueChange={(v) => setDepartment(v === ANY ? "" : v)}>
+              <SelectTrigger className="w-full" aria-label="Departamento">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Todos los departamentos</SelectItem>
+                {PE_DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={contacted || ANY} onValueChange={(v) => setContacted(v === ANY ? "" : (v as "0" | "1"))}>
+              <SelectTrigger className="w-full" aria-label="Estado de contacto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTACTED_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -246,6 +341,58 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
             <Button type="button" size="sm" variant="outline" className="ml-auto gap-1.5" onClick={exportCsv} disabled={contacts.length === 0}>
               <Download className="h-3.5 w-3.5" />
               Exportar CSV
+            </Button>
+          </div>
+
+          {/* Envío masivo: elegir a quiénes, de varias maneras, y mandarles una plantilla de una vez. */}
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3 mt-2">
+            <span className="text-sm font-medium">Envío masivo</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => selectMatching(() => true)}
+              disabled={selectable.length === 0}
+              title="Suma a la selección todos los de la lista actual que tienen WhatsApp"
+            >
+              Todos los de la lista ({selectable.length})
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => selectMatching((c) => !c.contacted)}
+              disabled={!selectable.some((c) => !c.contacted)}
+              title="Suma a la selección los de la lista actual que todavía no fueron contactados"
+            >
+              Solo pendientes ({selectable.filter((c) => !c.contacted).length})
+            </Button>
+            {selected.size > 0 && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
+                Limpiar selección
+              </Button>
+            )}
+            <span className="text-xs text-muted-foreground">
+              Tildá fichas a mano (con Shift, un tramo) o cambiá el filtro y sumá más: la selección se conserva.
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              className="ml-auto gap-1.5"
+              onClick={() =>
+                setBulkTargets(
+                  [...selected.values()].map((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    number: c.whatsapp ?? "",
+                    contacted: c.contacted,
+                  }))
+                )
+              }
+              disabled={selected.size === 0}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Enviar plantilla{selected.size > 0 ? ` a ${selected.size}` : ""}
             </Button>
           </div>
         </CardHeader>
@@ -280,7 +427,16 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                 {contacts.map((c) => (
                   <div key={c.id} className="p-4 space-y-1.5">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium text-sm">{c.name}</p>
+                      <div className="flex items-center gap-2">
+                        {c.whatsapp && (
+                          <Checkbox
+                            checked={selected.has(c.id)}
+                            onClick={(e) => toggleSelect(c, e.shiftKey)}
+                            aria-label={`Elegir a ${c.name} para el envío masivo`}
+                          />
+                        )}
+                        <p className="font-medium text-sm">{c.name}</p>
+                      </div>
                       {c.contacted && <Badge variant="secondary" className="shrink-0">Contactado</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -322,7 +478,22 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-10" title="Contactado"></TableHead>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            selectable.length > 0 && selectable.every((c) => selected.has(c.id))
+                              ? true
+                              : selectable.some((c) => selected.has(c.id))
+                                ? "indeterminate"
+                                : false
+                          }
+                          onCheckedChange={toggleAllVisible}
+                          disabled={selectable.length === 0}
+                          aria-label="Elegir todos los de la lista que tienen WhatsApp"
+                          title="Elegir todos los de la lista que tienen WhatsApp"
+                        />
+                      </TableHead>
+                      <TableHead className="w-10" title="Contactado">Cont.</TableHead>
                       <TableHead>Nombre</TableHead>
                       <TableHead>Ubicación</TableHead>
                       <TableHead>Teléfono</TableHead>
@@ -335,7 +506,16 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                   </TableHeader>
                   <TableBody>
                     {contacts.map((c) => (
-                      <TableRow key={c.id}>
+                      <TableRow key={c.id} data-state={selected.has(c.id) ? "selected" : undefined}>
+                        <TableCell>
+                          {c.whatsapp && (
+                            <Checkbox
+                              checked={selected.has(c.id)}
+                              onClick={(e) => toggleSelect(c, e.shiftKey)}
+                              aria-label={`Elegir a ${c.name} para el envío masivo`}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell>
                           <Checkbox
                             checked={c.contacted}
@@ -398,6 +578,14 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
           )}
         </CardContent>
       </Card>
+
+      {bulkTargets && (
+        <BulkTemplateDialog
+          targets={bulkTargets}
+          onFinished={(reached) => void handleBulkFinished(reached)}
+          onClose={() => setBulkTargets(null)}
+        />
+      )}
 
       {editing && (
         <div

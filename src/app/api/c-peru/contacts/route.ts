@@ -71,6 +71,31 @@ export async function GET(request: Request) {
   return NextResponse.json({ contacts, total, truncated: total > contacts.length });
 }
 
+const bulkContactedSchema = z.object({
+  ids: z.array(z.string().min(1).max(64)).min(1).max(500),
+  contacted: z.boolean(),
+});
+
+/** Marca varios contactos como contactados (o pendientes) de una vez, tras un envío masivo. */
+export async function PATCH(request: Request) {
+  const gate = await requireRole();
+  if (!gate.success) return gate.response;
+
+  const parsed = validateBody(bulkContactedSchema, await request.json().catch(() => null));
+  if (!parsed.success) return parsed.response;
+
+  try {
+    const { count } = await prisma.peruContact.updateMany({
+      where: { id: { in: parsed.data.ids } },
+      data: { contacted: parsed.data.contacted },
+    });
+    return NextResponse.json({ updated: count });
+  } catch (err) {
+    log.error({ err }, "Error al actualizar contactos de Perú en lote");
+    return NextResponse.json({ error: "Error al actualizar los contactos" }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   const gate = await requireRole();
   if (!gate.success) return gate.response;
