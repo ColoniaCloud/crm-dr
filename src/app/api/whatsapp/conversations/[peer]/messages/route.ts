@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/api-auth";
+import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
@@ -14,7 +15,7 @@ type Ctx = { params: Promise<{ peer: string }> };
 
 /** Un chat. `?before=<ISO>` trae los mensajes anteriores a esa fecha. */
 export async function GET(request: Request, { params }: Ctx) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(WHATSAPP_ROLES);
   if (!gate.success) return gate.response;
 
   const peer = peerKey((await params).peer);
@@ -46,7 +47,7 @@ const schema = z.discriminatedUnion("kind", [
 
 /** Manda un texto libre (dentro de las 24 h) o una plantilla aprobada. */
 export async function POST(request: Request, { params }: Ctx) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(WHATSAPP_ROLES);
   if (!gate.success) return gate.response;
 
   if (esDemo()) return NextResponse.json({ error: "No disponible en la demostración" }, { status: 403 });

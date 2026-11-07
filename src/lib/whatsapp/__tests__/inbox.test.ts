@@ -245,3 +245,28 @@ describe("envío", () => {
     expect(WINDOW_MS).toBe(24 * HOUR);
   });
 });
+
+describe("estado de un número", () => {
+  it("sin mensajes: no hay conversación ni ventana", async () => {
+    const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
+    expect(await getPeerStatus("51987654321")).toEqual({ peer: "51987654321", hasConversation: false, windowOpen: false });
+  });
+
+  it("con un entrante reciente: conversación y ventana abierta (también con la otra forma del número)", async () => {
+    const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
+    await inbound("a", HOUR);
+    expect(await getPeerStatus(CUSTOMER_RECIPIENT)).toMatchObject({ hasConversation: true, windowOpen: true });
+  });
+
+  it("si solo le escribimos nosotros hay conversación pero la ventana está cerrada", async () => {
+    const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
+    await outbound("a", HOUR, "51987654321", "delivered");
+    expect(await getPeerStatus("51987654321")).toMatchObject({ hasConversation: true, windowOpen: false });
+  });
+
+  it("con un entrante de hace más de 24 h: hay conversación y la ventana está cerrada", async () => {
+    const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
+    await inbound("a", 30 * HOUR);
+    expect(await getPeerStatus(CUSTOMER_WA)).toMatchObject({ hasConversation: true, windowOpen: false });
+  });
+});

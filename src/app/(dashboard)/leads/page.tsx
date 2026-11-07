@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/tooltip";
 import { SoporteModal } from "@/components/soporte-modal";
 import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
+import { WhatsAppTrigger } from "@/components/whatsapp/contact/whatsapp-contact";
 import { SearchableSelect } from "@/components/searchable-select";
 import { cn } from "@/lib/utils";
 import {
@@ -1216,9 +1217,9 @@ export default function LeadsPage() {
                             <a href={`tel:${lead.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{lead.phone}</a>
                           )}
                           {waNum && (
-                            <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
+                            <WhatsAppTrigger number={lead.whatsapp!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()} className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
                               <WhatsAppIcon size={14} />
-                            </a>
+                            </WhatsAppTrigger>
                           )}
                           {lead.email && (
                             <button onClick={() => { setEmailLead(lead); setEmailForm({ subject: "", body: "" }); setEmailResult(null); }} className="text-primary" title="Email">
@@ -1391,11 +1392,10 @@ export default function LeadsPage() {
                             </TableCell>
                             <TableCell className="p-2 w-9">
                               {lead.whatsapp ? (
-                                <a href={`https://wa.me/${normalizeWhatsApp(lead.whatsapp)}`}
-                                  target="_blank" rel="noreferrer"
+                                <WhatsAppTrigger number={lead.whatsapp} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()}
                                   className="flex items-center justify-center h-8 w-8 transition-colors text-[#25d366] hover:text-[#25d366]/80" title={lead.whatsapp}>
                                   <WhatsAppIcon size={16} />
-                                </a>
+                                </WhatsAppTrigger>
                               ) : <span className="text-muted-foreground text-xs">-</span>}
                             </TableCell>
                           </TableRow>

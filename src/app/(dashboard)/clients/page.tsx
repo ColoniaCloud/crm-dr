@@ -34,6 +34,7 @@ import { SoporteModal } from "@/components/soporte-modal";
 import { useCurrency } from "@/contexts/currency-context";
 import { SECTOR_COLORS } from "@/lib/design-tokens";
 import { ClientCreateDialog } from "@/components/clients/client-create-dialog";
+import { WhatsAppTrigger } from "@/components/whatsapp/contact/whatsapp-contact";
 
 // ── WhatsApp SVG ──────────────────────────────────────────────────────────────
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
@@ -1023,9 +1024,9 @@ export default function ClientsPage() {
                           <a href={`tel:${client.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{client.phone}</a>
                         )}
                         {waNum && (
-                          <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="text-[#25d366]" title="WhatsApp">
+                          <WhatsAppTrigger number={client.whatsapp!} name={client.company || `${client.firstName} ${client.lastName}`.trim()} className="text-[#25d366]" title="WhatsApp">
                             <WhatsAppIcon size={14} />
-                          </a>
+                          </WhatsAppTrigger>
                         )}
                         {client.email && (
                           <button onClick={() => { setEmailClient(client); setEmailForm({ subject: "", body: "" }); setEmailResult(null); }} className="text-primary" title="Email">
@@ -1186,16 +1187,15 @@ export default function ClientsPage() {
                         </TableCell>
                         <TableCell>
                           {waNum ? (
-                            <a
-                              href={`https://wa.me/${waNum}`}
-                              target="_blank"
-                              rel="noreferrer"
+                            <WhatsAppTrigger
+                              number={client.whatsapp!}
+                              name={client.company || `${client.firstName} ${client.lastName}`.trim()}
                               className="inline-flex items-center gap-1.5 text-sm text-[#25d366] hover:text-[#25d366]/80 transition-colors whitespace-nowrap"
-                              title="Abrir WhatsApp"
+                              title="WhatsApp"
                             >
                               <WhatsAppIcon size={13} />
                               <span>{client.whatsapp}</span>
-                            </a>
+                            </WhatsAppTrigger>
                           ) : "-"}
                         </TableCell>
                         <TableCell className="whitespace-nowrap font-medium">

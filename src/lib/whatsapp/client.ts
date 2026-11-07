@@ -54,7 +54,15 @@ function config() {
 }
 
 type GraphErrorBody = {
-  error?: { message?: string; code?: number; error_data?: { details?: string }; fbtrace_id?: string };
+  error?: {
+    message?: string;
+    code?: number;
+    /** En los errores de plantillas, el texto pensado para mostrarle a una persona. */
+    error_user_title?: string;
+    error_user_msg?: string;
+    error_data?: { details?: string };
+    fbtrace_id?: string;
+  };
 };
 
 async function graphFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -77,7 +85,8 @@ async function failFrom(res: Response): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as GraphErrorBody;
   const e = body.error;
   const detail = e?.error_data?.details;
-  const message = [e?.message, detail].filter(Boolean).join(" — ") || `HTTP ${res.status}`;
+  const message =
+    [e?.error_user_msg || e?.message, detail].filter(Boolean).join(" — ") || `HTTP ${res.status}`;
   log.warn({ status: res.status, code: e?.code, fbtraceId: e?.fbtrace_id }, "La Graph API rechazó el pedido");
   throw new WhatsAppApiError(message.slice(0, 500), res.status, e?.code, e?.fbtrace_id);
 }
@@ -172,10 +181,14 @@ export async function downloadMedia(
 
 /** Una plantilla tal como la devuelve `GET /{waba-id}/message_templates`. */
 export type GraphTemplate = {
+  id?: string;
   name: string;
   language: string;
   status: string;
   category?: string;
+  /** Solo en las rechazadas: NONE, o el motivo (ej. INVALID_FORMAT, ABUSIVE_CONTENT). */
+  rejected_reason?: string;
+  quality_score?: { score?: string };
   components?: { type: string; format?: string; text?: string; buttons?: { type: string; text?: string; url?: string }[] }[];
 };
 
@@ -190,7 +203,7 @@ export async function listTemplates(): Promise<GraphTemplate[]> {
 
   const out: GraphTemplate[] = [];
   let url: string | undefined =
-    `${base}/${waba}/message_templates?fields=name,language,status,category,components&limit=100`;
+    `${base}/${waba}/message_templates?fields=id,name,language,status,category,rejected_reason,quality_score,components&limit=100`;
 
   // Se sigue la paginación, con un tope por si Meta devolviera un ciclo.
   for (let page = 0; url && page < 10; page++) {
@@ -201,4 +214,37 @@ export async function listTemplates(): Promise<GraphTemplate[]> {
     url = body.paging?.next;
   }
   return out;
+}
+
+/** Lo que pide `POST /{waba-id}/message_templates` para crear una plantilla. */
+export type NewGraphTemplate = {
+  name: string;
+  language: string;
+  category: "UTILITY" | "MARKETING";
+  components: {
+    type: "HEADER" | "BODY" | "FOOTER";
+    format?: "TEXT";
+    text: string;
+    example?: { body_text?: string[][] };
+  }[];
+};
+
+/**
+ * Manda una plantilla nueva a revisión de Meta. Queda en PENDING; la aprobación
+ * (o el rechazo) llega después, y Meta puede cambiarle la categoría.
+ */
+export async function createTemplate(
+  template: NewGraphTemplate
+): Promise<{ id: string; status: string; category: string }> {
+  const { base } = config();
+  const waba = process.env.WHATSAPP_WABA_ID;
+  if (!waba) throw new WhatsAppApiError("Falta WHATSAPP_WABA_ID para crear plantillas", 503);
+
+  const res = await graphFetch(
+    `${base}/${waba}/message_templates`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(template) },
+    SEND_TIMEOUT_MS
+  );
+  if (!res.ok) return failFrom(res);
+  return (await res.json()) as { id: string; status: string; category: string };
 }

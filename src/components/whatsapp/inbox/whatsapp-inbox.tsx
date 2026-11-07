@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -28,13 +29,15 @@ export function WhatsAppInbox() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  // /whatsapp?c=<número> abre ese chat directamente. La pantalla recién se monta
-  // con la sesión cargada (ver page.tsx), o sea siempre en el navegador.
-  const [selected, setSelected] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    const c = new URLSearchParams(window.location.search).get("c");
-    return c && looksLikeWaNumber(peerKey(c)) ? peerKey(c) : null;
-  });
+  // /whatsapp?c=<número> abre ese chat directamente (lo usan los botones de WhatsApp
+  // de las listas). Se lee con `useSearchParams` y no de `window.location`, porque al
+  // llegar por navegación interna la URL todavía no cambió cuando la pantalla se monta.
+  // Mientras no se elija otro chat a mano, manda la URL.
+  const fromUrl = useSearchParams().get("c");
+  const urlPeer = fromUrl && looksLikeWaNumber(peerKey(fromUrl)) ? peerKey(fromUrl) : null;
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const selected = picked === undefined ? urlPeer : picked;
+  const setSelected = setPicked;
 
   const [templates, setTemplates] = useState<InboxTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);

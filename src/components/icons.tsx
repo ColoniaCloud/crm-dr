@@ -87,6 +87,7 @@ import {
   Mail01Icon,
   Maximize01Icon,
   Message01Icon,
+  MetaIcon,
   Mic01Icon,
   Minimize01Icon,
   Moon02Icon,
@@ -256,6 +257,7 @@ export const MapPin = hugeicon(Location01Icon, "MapPin");
 export const Maximize2 = hugeicon(Maximize01Icon, "Maximize2");
 export const MessageCircle = hugeicon(BubbleChatIcon, "MessageCircle");
 export const MessageSquare = hugeicon(Message01Icon, "MessageSquare");
+export const Meta = hugeicon(MetaIcon, "Meta");
 export const Mic = hugeicon(Mic01Icon, "Mic");
 export const Minimize2 = hugeicon(Minimize01Icon, "Minimize2");
 export const Monitor = hugeicon(ComputerIcon, "Monitor");

@@ -328,3 +328,36 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
     throw err;
   }
 }
+
+// ─── Estado de un número ─────────────────────────────────────────────────────
+
+export type PeerStatus = {
+  peer: string;
+  /** Alguna vez hubo mensajes con este número (en cualquier sentido). */
+  hasConversation: boolean;
+  /** Pasaron menos de 24 h desde el último mensaje del cliente. */
+  windowOpen: boolean;
+};
+
+/**
+ * Qué pasó ya con un número, para decidir qué hacer al tocar su botón de
+ * WhatsApp: si nunca se le escribió hay que abrir con una plantilla; si ya hay
+ * conversación, se sigue en la bandeja.
+ */
+export async function getPeerStatus(peer: string): Promise<PeerStatus> {
+  const key = peerKey(peer);
+  const variants = peerVariants(key);
+  const side = {
+    OR: [
+      { direction: "inbound", from: { in: variants } },
+      { direction: "outbound", to: { in: variants } },
+    ],
+  };
+
+  const any = await prisma.whatsAppCloudMessage.findFirst({ where: side, select: { id: true } });
+  const open = await prisma.whatsAppCloudMessage.findFirst({
+    where: { direction: "inbound", from: { in: variants }, timestamp: { gte: new Date(Date.now() - WINDOW_MS) } },
+    select: { id: true },
+  });
+  return { peer: key, hasConversation: Boolean(any), windowOpen: Boolean(open) };
+}

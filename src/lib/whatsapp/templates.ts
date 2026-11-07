@@ -1,4 +1,20 @@
-import { listTemplates, type GraphTemplate } from "@/lib/whatsapp/client";
+import { createTemplate, listTemplates, type GraphTemplate, type NewGraphTemplate } from "@/lib/whatsapp/client";
+import {
+  stateOf,
+  validateNewTemplate,
+  type NewTemplateInput,
+  type TemplateRow,
+} from "@/lib/whatsapp/template-rules";
+
+export {
+  PERU_OUTREACH_TEMPLATE,
+  TEMPLATE_LANGUAGES,
+  stateOf,
+  validateNewTemplate,
+  type NewTemplateInput,
+  type TemplateRow,
+  type TemplateState,
+} from "@/lib/whatsapp/template-rules";
 
 /**
  * Plantillas aprobadas de Meta, listas para ofrecerse en la bandeja.
@@ -87,4 +103,62 @@ function unsupportedReason(
     return "Tiene un botón con link variable";
   }
   return undefined;
+}
+
+// ─── Todas las plantillas, con su estado ─────────────────────────────────────
+
+export function toTemplateRows(raw: GraphTemplate[]): TemplateRow[] {
+  return raw
+    .filter((t) => t.status !== "DELETED" && t.status !== "ARCHIVED" && t.status !== "PENDING_DELETION")
+    .map((t): TemplateRow => {
+      const parts = t.components ?? [];
+      const header = parts.find((c) => c.type === "HEADER");
+      return {
+        id: t.id ?? null,
+        name: t.name,
+        language: t.language,
+        category: t.category ?? "",
+        status: t.status,
+        state: stateOf(t.status),
+        body: parts.find((c) => c.type === "BODY")?.text ?? "",
+        header: header?.format === "TEXT" ? header.text : undefined,
+        footer: parts.find((c) => c.type === "FOOTER")?.text,
+        rejectedReason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : undefined,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name) || a.language.localeCompare(b.language));
+}
+
+const ALL_TTL_MS = 60 * 1000;
+let allCache: { at: number; rows: TemplateRow[] } | null = null;
+
+/** Todas las plantillas de la cuenta con su estado (caché de 1 min; `force` la salta). */
+export async function getAllTemplates(force = false): Promise<TemplateRow[]> {
+  if (!force && allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
+  const rows = toTemplateRows(await listTemplates());
+  allCache = { at: Date.now(), rows };
+  return rows;
+}
+
+// ─── Crear una plantilla ─────────────────────────────────────────────────────
+
+/** Valida y manda la plantilla a revisión. Tira `Error` con un mensaje legible si no pasa la validación. */
+export async function submitNewTemplate(t: NewTemplateInput) {
+  const problem = validateNewTemplate(t);
+  if (problem) throw new Error(problem);
+
+  const components: NewGraphTemplate["components"] = [];
+  if (t.header?.trim()) components.push({ type: "HEADER", format: "TEXT", text: t.header.trim() });
+  const variables = new Set([...t.body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => m[1])).size;
+  components.push({
+    type: "BODY",
+    text: t.body.trim(),
+    ...(variables ? { example: { body_text: [t.examples.map((e) => e.trim())] } } : {}),
+  });
+  if (t.footer?.trim()) components.push({ type: "FOOTER", text: t.footer.trim() });
+
+  const created = await createTemplate({ name: t.name, language: t.language, category: t.category, components });
+  allCache = null;
+  cache = null;
+  return created;
 }

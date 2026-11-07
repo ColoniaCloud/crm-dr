@@ -27,6 +27,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { AR_PROVINCES, UY_DEPARTMENTS } from "@/lib/argentina-geo";
+import { WhatsAppContactDialog } from "@/components/whatsapp/contact/whatsapp-contact";
+import { countryFromName } from "@/lib/whatsapp/phone";
 
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
   return (
@@ -75,15 +77,6 @@ const emptyForm = {
   installerDepartment: "",
 };
 
-function normalizeWhatsApp(raw: string): string {
-  const d = raw.replace(/\D/g, "");
-  if (!d) return "";
-  if (d.startsWith("598") || d.startsWith("54")) return d;
-  if (d.startsWith("0")) return "54" + d.slice(1);
-  if (d.length <= 10) return "54" + d;
-  return d;
-}
-
 export default function InstallersPage() {
   const { data: session } = useSession();
   const userRole = session?.user?.role || "OPERATOR";
@@ -118,6 +111,8 @@ export default function InstallersPage() {
 
   // Email dialog
   const [emailInstaller, setEmailInstaller] = useState<Installer | null>(null);
+  // El menú se cierra al elegir una opción, así que el modal de WhatsApp vive acá y no dentro del menú.
+  const [waInstaller, setWaInstaller] = useState<Installer | null>(null);
   const [emailForm, setEmailForm] = useState({ subject: "", body: "" });
   const [emailSending, setEmailSending] = useState(false);
   const [emailResult, setEmailResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -605,6 +600,15 @@ export default function InstallersPage() {
       </Dialog>
 
       {/* ── Email Dialog ── */}
+      {waInstaller?.whatsapp && (
+        <WhatsAppContactDialog
+          number={waInstaller.whatsapp}
+          country={countryFromName(waInstaller.installerCountry)}
+          name={`${waInstaller.firstName} ${waInstaller.lastName}`.trim()}
+          onClose={() => setWaInstaller(null)}
+        />
+      )}
+
       <Dialog open={!!emailInstaller} onOpenChange={(open) => { if (!open) { setEmailInstaller(null); setEmailForm({ subject: "", body: "" }); setEmailResult(null); } }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -788,15 +792,8 @@ export default function InstallersPage() {
                           </DropdownMenuItem>
                         )}
                         {installer.whatsapp && (
-                          <DropdownMenuItem asChild>
-                            <a
-                              href={`https://wa.me/${normalizeWhatsApp(installer.whatsapp)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-2"
-                            >
-                              <WhatsAppIcon size={14} /> Contactar por WhatsApp
-                            </a>
+                          <DropdownMenuItem onClick={() => setWaInstaller(installer)} className="flex items-center gap-2">
+                            <WhatsAppIcon size={14} /> Contactar por WhatsApp
                           </DropdownMenuItem>
                         )}
                         {installer.phone && (

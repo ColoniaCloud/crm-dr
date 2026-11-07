@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
+import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { createLogger } from "@/lib/logger";
 import { WhatsAppApiError, downloadMedia, isCloudApiConfigured } from "@/lib/whatsapp/client";
 
@@ -10,10 +11,10 @@ const log = createLogger("api/whatsapp/media");
  *
  * Meta guarda el archivo y da una URL que vence a los 5 minutos, así que no se
  * puede guardar el link: se pide el archivo por su id cada vez que se mira, y el
- * navegador lo cachea. Solo SUPERADMIN, igual que el resto de la bandeja.
+ * navegador lo cachea. Mismos roles que el resto de la bandeja (ver `access.ts`).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ mediaId: string }> }) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(WHATSAPP_ROLES);
   if (!gate.success) return gate.response;
 
   const { mediaId } = await params;

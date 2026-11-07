@@ -33,6 +33,7 @@ import {
 import { PE_CITIES, PE_DEPARTMENTS, PE_DISTRICTS, matchPeruDepartment } from "@/lib/peru-geo";
 import { formatPeruPhone } from "@/lib/peru/phone";
 import { CityAutocomplete, SearchableSelect } from "./pickers";
+import { PeruWhatsAppButton } from "./peru-whatsapp";
 
 // El mapa de Google se carga recién en el cliente.
 const GoogleMapPicker = dynamic(
@@ -625,7 +626,7 @@ export function PeruScrapper({ onSaved }: { onSaved?: () => void }) {
                             ) : "—"}
                           </TableCell>
                           <TableCell className="text-sm whitespace-nowrap">
-                            {biz.whatsapp ? <WhatsAppLink number={biz.whatsapp} /> : <span className="text-muted-foreground">—</span>}
+                            {biz.whatsapp ? <WhatsAppLink number={biz.whatsapp} name={biz.name} /> : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell className="text-sm max-w-[200px]">
                             {biz.email ? (
@@ -679,19 +680,12 @@ function SavedBadge({ saved }: { saved: boolean }) {
   );
 }
 
-export function WhatsAppLink({ number }: { number: string }) {
-  return (
-    <a
-      href={`https://wa.me/${number}`}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 text-green-600 hover:underline"
-      title="Abrir chat de WhatsApp"
-    >
-      <MessageCircle className="h-3.5 w-3.5" />
-      {formatPeruPhone(`+${number}`)}
-    </a>
-  );
+/**
+ * El botón de WhatsApp de cada negocio: la primera vez manda la plantilla de
+ * presentación y después abre la conversación en el Inbox (ver `peru-whatsapp.tsx`).
+ */
+export function WhatsAppLink({ number, name, onSent }: { number: string; name?: string; onSent?: () => void }) {
+  return <PeruWhatsAppButton number={number} name={name} onSent={onSent} />;
 }
 
 function ContactLines({ biz }: { biz: PeruBusiness }) {
@@ -705,7 +699,7 @@ function ContactLines({ biz }: { biz: PeruBusiness }) {
       )}
       {biz.whatsapp && (
         <p className="text-xs flex items-center gap-1">
-          <WhatsAppLink number={biz.whatsapp} />
+          <WhatsAppLink number={biz.whatsapp} name={biz.name} />
         </p>
       )}
       {biz.email && (

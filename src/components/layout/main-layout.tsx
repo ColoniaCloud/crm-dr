@@ -10,6 +10,7 @@ import { getPageTitle } from "@/lib/page-titles";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { ReleaseNotice } from "@/components/layout/release-notice";
 import logoColonia from "@/public/Logo.png";
@@ -74,7 +75,7 @@ export function MainLayout({ children, title }: MainLayoutProps) {
                   <Mail className="h-4 w-4" />
                   <span className="hidden sm:inline">Mail</span>
                 </Link>
-                {session?.user?.role === "SUPERADMIN" && (
+                {canUseWhatsApp(session?.user?.role) && (
                   <Link
                     href="/whatsapp"
                     aria-label="WhatsApp"

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-auth";
+import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { createLogger } from "@/lib/logger";
 import { listConversations } from "@/lib/whatsapp/inbox";
 
@@ -7,7 +8,7 @@ const log = createLogger("api/whatsapp/conversations");
 
 /** Lista de conversaciones de la bandeja, la más reciente primero. `?q=` busca por nombre o número. */
 export async function GET(request: Request) {
-  const gate = await requireRole(["SUPERADMIN"]);
+  const gate = await requireRole(WHATSAPP_ROLES);
   if (!gate.success) return gate.response;
 
   try {

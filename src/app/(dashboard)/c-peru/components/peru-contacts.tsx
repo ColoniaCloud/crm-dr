@@ -139,6 +139,16 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
     }
   }
 
+  /** Tras mandar la presentación por WhatsApp, el contacto pasa a "contactado". */
+  async function markContacted(c: PeruContact) {
+    if (c.contacted) return;
+    try {
+      await patch(c.id, { contacted: true });
+    } catch {
+      // La plantilla ya salió; que no se pueda marcar no es motivo para avisar de un error.
+    }
+  }
+
   async function saveNotes() {
     if (!editing) return;
     setSavingNotes(true);
@@ -282,7 +292,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                         <a href={`tel:${c.phone}`}>{formatPeruPhone(c.phone)}</a>
                       </p>
                     )}
-                    {c.whatsapp && <p className="text-xs"><WhatsAppLink number={c.whatsapp} /></p>}
+                    {c.whatsapp && <p className="text-xs"><WhatsAppLink number={c.whatsapp} name={c.name} onSent={() => markContacted(c)} /></p>}
                     {c.email && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Mail className="h-3 w-3 shrink-0" />
@@ -349,7 +359,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                           {c.phone ? <a href={`tel:${c.phone}`} className="hover:text-primary">{formatPeruPhone(c.phone)}</a> : "—"}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {c.whatsapp ? <WhatsAppLink number={c.whatsapp} /> : <span className="text-muted-foreground">—</span>}
+                          {c.whatsapp ? <WhatsAppLink number={c.whatsapp} name={c.name} onSent={() => markContacted(c)} /> : <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-sm max-w-[200px]">
                           {c.email ? <a href={`mailto:${c.email}`} className="block truncate hover:text-primary" title={c.email}>{c.email}</a> : <span className="text-muted-foreground">—</span>}
