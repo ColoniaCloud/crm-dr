@@ -33,6 +33,12 @@ const CONTACTED_OPTIONS = [
   { value: "1", label: "Contactados" },
 ];
 
+const WA_ACTIVITY_OPTIONS = [
+  { value: ANY, label: "Con o sin mensajes de WhatsApp" },
+  { value: "never", label: "Nunca se les escribió por WhatsApp" },
+  { value: "written", label: "Ya hay mensajes de WhatsApp" },
+];
+
 type PeruContact = {
   id: string;
   name: string;
@@ -91,6 +97,8 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
   const [onlyWhatsApp, setOnlyWhatsApp] = useState(false);
   const [onlyEmail, setOnlyEmail] = useState(false);
   const [contacted, setContacted] = useState<"" | "0" | "1">("");
+  // Si ya hubo mensajes de WhatsApp con ese número (distinto de la marca manual "contactado").
+  const [waActivity, setWaActivity] = useState<"" | "never" | "written">("");
 
   const [editing, setEditing] = useState<PeruContact | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
@@ -119,6 +127,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
       if (onlyWhatsApp) params.set("whatsapp", "1");
       if (onlyEmail) params.set("email", "1");
       if (contacted) params.set("contacted", contacted);
+      if (waActivity) params.set("wa", waActivity);
       const res = await fetch(`/api/c-peru/contacts?${params}`);
       const data: ListResponse & { error?: string } = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudieron cargar los contactos");
@@ -132,7 +141,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
     }
     // refreshKey cambia cuando el scraper guarda algo nuevo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQ, department, onlyWhatsApp, onlyEmail, contacted, refreshKey]);
+  }, [debouncedQ, department, onlyWhatsApp, onlyEmail, contacted, waActivity, refreshKey]);
 
   useEffect(() => {
     load();
@@ -300,7 +309,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-3">
             <div className="relative sm:col-span-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input className="pl-9" placeholder="Buscar por nombre, teléfono, email, ciudad..." value={q} onChange={(e) => setQ(e.target.value)} />
@@ -323,6 +332,16 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
               </SelectTrigger>
               <SelectContent>
                 {CONTACTED_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={waActivity || ANY} onValueChange={(v) => setWaActivity(v === ANY ? "" : (v as "never" | "written"))}>
+              <SelectTrigger className="w-full" aria-label="Mensajes de WhatsApp">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WA_ACTIVITY_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -417,7 +436,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
           ) : contacts.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground text-sm">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p>Todavía no hay contactos{debouncedQ || department || onlyWhatsApp || onlyEmail || contacted ? " con esos filtros" : ""}.</p>
+              <p>Todavía no hay contactos{debouncedQ || department || onlyWhatsApp || onlyEmail || contacted || waActivity ?" con esos filtros" : ""}.</p>
               <p className="mt-1">Buscalos en la pestaña Scrapper y agregalos con el botón &quot;Agregar a Contactos&quot;.</p>
             </div>
           ) : (

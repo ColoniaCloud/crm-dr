@@ -6,11 +6,19 @@ import { requireRole } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import {
+  filterByWhatsappActivity,
+  getWrittenPeers,
+  type WhatsappActivityFilter,
+} from "@/lib/whatsapp/written-peers";
 
 const log = createLogger("api/c-peru/contacts");
 
 // Tope de la lista: es una herramienta de prospección, no un archivo histórico.
 const LIST_LIMIT = 2000;
+
+// Cuántas fichas se revisan al filtrar por actividad de WhatsApp (antes de aplicar el tope).
+const ACTIVITY_SCAN_LIMIT = 10000;
 
 const optionalText = (max: number) => z.string().max(max).nullable().optional();
 
@@ -46,10 +54,13 @@ export async function GET(request: Request) {
   const onlyWhatsApp = searchParams.get("whatsapp") === "1";
   const onlyEmail = searchParams.get("email") === "1";
   const contacted = searchParams.get("contacted");
+  // "never": nunca se les escribió por WhatsApp. "written": ya hay mensajes con ese número.
+  const rawActivity = searchParams.get("wa");
+  const activity: WhatsappActivityFilter | null = rawActivity === "never" || rawActivity === "written" ? rawActivity : null;
 
   const where: Prisma.PeruContactWhereInput = {};
   if (department) where.department = department;
-  if (onlyWhatsApp) where.whatsapp = { not: null };
+  if (onlyWhatsApp || activity) where.whatsapp = { not: null };
   if (onlyEmail) where.email = { not: null };
   if (contacted === "1") where.contacted = true;
   if (contacted === "0") where.contacted = false;
@@ -61,6 +72,27 @@ export async function GET(request: Request) {
       { city: { contains: q } },
       { district: { contains: q } },
     ];
+  }
+
+  // Si "se les escribió o no" es lo que se filtra, no se puede decidir en la consulta
+  // (los mensajes viven en otra tabla y los números se normalizan): se trae todo lo que
+  // cumple lo demás, se descarta en memoria y recién entonces se aplica el tope.
+  if (activity) {
+    try {
+      const [candidates, written] = await Promise.all([
+        prisma.peruContact.findMany({ where, orderBy: { createdAt: "desc" }, take: ACTIVITY_SCAN_LIMIT }),
+        getWrittenPeers(),
+      ]);
+      const matching = filterByWhatsappActivity(candidates, written, activity);
+      return NextResponse.json({
+        contacts: matching.slice(0, LIST_LIMIT),
+        total: matching.length,
+        truncated: matching.length > LIST_LIMIT,
+      });
+    } catch (err) {
+      log.error({ err }, "Error al filtrar contactos de Perú por actividad de WhatsApp");
+      return NextResponse.json({ error: "No se pudo filtrar por WhatsApp" }, { status: 500 });
+    }
   }
 
   const [contacts, total] = await Promise.all([
