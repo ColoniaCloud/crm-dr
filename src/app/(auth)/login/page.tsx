@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Image from "next/image";
+import Link from "next/link";
 import { Eye, EyeOff } from "@/components/icons";
 import logoColonia from "@/public/Logo.png";
 import { GridPattern } from "@/components/ui/grid-pattern";
@@ -170,8 +171,16 @@ export default function LoginPage() {
       </div>
 
       {/* Footer */}
-      <div className="fixed bottom-6 left-0 right-0 flex items-center justify-center gap-2 text-white/50 text-xs select-none">
-        <span>© {new Date().getFullYear()} Copyright</span>
+      <div className="fixed bottom-6 left-0 right-0 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 text-white/50 text-xs">
+        <Link href="/privacidad" className="hover:text-white/80 transition-colors">
+          Privacidad
+        </Link>
+        <span className="opacity-40">·</span>
+        <Link href="/terminos" className="hover:text-white/80 transition-colors">
+          Términos
+        </Link>
+        <span className="opacity-40">·</span>
+        <span className="select-none">© {new Date().getFullYear()} Copyright</span>
         <span className="opacity-40">·</span>
         <span>Desarrollado por</span>
         <a

@@ -103,6 +103,14 @@ export function MainLayout({ children, title }: MainLayoutProps) {
             <Link href="/docs" className="text-primary hover:text-primary/80 transition-colors font-medium">
               Docs
             </Link>
+            <span className="opacity-40">·</span>
+            <Link href="/privacidad" className="hover:text-foreground transition-colors">
+              Privacidad
+            </Link>
+            <span className="opacity-40">·</span>
+            <Link href="/terminos" className="hover:text-foreground transition-colors">
+              Términos
+            </Link>
             <span className="hidden sm:inline opacity-40">·</span>
             <span className="hidden sm:inline">© {new Date().getFullYear()}</span>
             <span className="opacity-40">·</span>

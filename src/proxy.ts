@@ -88,6 +88,13 @@ export default auth((req) => {
     return noSharedCache(NextResponse.next());
   }
 
+  // Política de privacidad y términos: públicos a propósito (los lee cualquiera,
+  // y Meta exige una URL abierta para la app de WhatsApp). Son páginas estáticas
+  // sin datos del negocio.
+  if (pathname === "/privacidad" || pathname === "/terminos") {
+    return noSharedCache(NextResponse.next());
+  }
+
   // Invalidated sessions (JWT revalidation cleared token) → redirect to login
   if (req.auth && !req.auth.user?.id) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
