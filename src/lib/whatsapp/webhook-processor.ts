@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import { resolveContactForPeer } from "@/lib/whatsapp/contact-link";
+import { STUB_CONTENT, STUB_TYPE } from "@/lib/whatsapp/stub";
 import type {
   WhatsAppEchoesValue,
   WhatsAppEchoMessage,
@@ -89,7 +91,12 @@ async function saveInboundMessage(
   message: WhatsAppInboundMessage,
   rawValue: WhatsAppMessagesValue
 ): Promise<void> {
-  await insertIgnoringDuplicate({
+  // Quien nos escribe puede no estar en el CRM: se lo busca por teléfono y, si
+  // no está, se crea una ficha provisoria (ver contact-link.ts).
+  const profileName = rawValue.contacts?.find((c) => c.wa_id === message.from)?.profile?.name;
+  const contactId = await resolveContactForPeer({ waId: message.from, profileName, allowCreate: true });
+
+  await saveMessage({
     wamid: message.id,
     direction: "inbound",
     from: message.from,
@@ -100,6 +107,7 @@ async function saveInboundMessage(
     status: null,
     phoneNumberId: metadata.phone_number_id,
     wabaId,
+    contactId,
     rawPayload: toJson(rawValue),
   });
 }
@@ -123,49 +131,67 @@ async function applyStatus(
   const at = fromEpochSeconds(status.timestamp);
   const errors = status.errors ? toJson(status.errors) : undefined;
 
-  const existing = await prisma.whatsAppCloudMessage.findUnique({
-    where: { wamid: status.id },
-    select: { status: true },
-  });
-
-  if (!existing) {
-    // El estado llegó antes que el mensaje (o el mensaje salió por otra vía que
-    // no lo registró). Se deja una fila mínima para no perder el estado; si el
-    // mensaje aparece después, `insertIgnoringDuplicate` no la pisa, pero el
-    // `type` "unknown" delata que falta el contenido.
-    await insertIgnoringDuplicate({
-      wamid: status.id,
-      direction: "outbound",
-      from: digitsOnly(metadata.display_phone_number),
-      to: status.recipient_id,
-      type: "unknown",
-      content: {},
-      timestamp: at,
-      status: status.status,
-      statusUpdatedAt: at,
-      errors,
-      phoneNumberId: metadata.phone_number_id,
-      wabaId,
-      rawPayload: toJson(rawValue),
+  // Un solo UPDATE condicionado, en vez de leer y después escribir: dos estados
+  // pegados (delivered y read) no se pisan entre sí. Los estados pueden llegar
+  // desordenados ("read" antes que "delivered") y uno más viejo no tiene que
+  // pisar a uno más nuevo; `failed` se acepta siempre.
+  const advance = () =>
+    prisma.whatsAppCloudMessage.updateMany({
+      where: {
+        wamid: status.id,
+        ...(status.status === "failed"
+          ? {}
+          : { OR: [{ status: null }, { status: { in: statusesBelow(status.status) } }] }),
+      },
+      data: {
+        status: status.status,
+        statusUpdatedAt: at,
+        ...(errors ? { errors } : {}),
+      },
     });
-    return;
-  }
 
-  // Los estados pueden llegar desordenados ("read" antes que "delivered").
-  // Un estado más viejo no tiene que pisar a uno más nuevo.
-  const current = existing.status as WhatsAppStatusValue | null;
-  if (current && STATUS_RANK[current] >= STATUS_RANK[status.status] && status.status !== "failed") {
-    return;
-  }
+  if ((await advance()).count > 0) return;
 
-  await prisma.whatsAppCloudMessage.update({
+  // Cero filas: o el mensaje no existe, o ya estaba en un estado igual o más
+  // avanzado (reintento de Meta, o llegada desordenada). Solo el primer caso
+  // pide una fila nueva.
+  const exists = await prisma.whatsAppCloudMessage.findUnique({
     where: { wamid: status.id },
-    data: {
-      status: status.status,
-      statusUpdatedAt: at,
-      ...(errors ? { errors } : {}),
-    },
+    select: { id: true },
   });
+  if (exists) return;
+
+  // El estado llegó antes que el mensaje, o el mensaje salió por una vía que no
+  // lo registró (el celular sin el eco suscripto, la consola de Meta, otra
+  // herramienta). Se deja una fila mínima marcada como tal para no perder el
+  // estado. Si el mensaje aparece después (`saveMessage`), la completa.
+  const contactId = await resolveContactForPeer({ waId: status.recipient_id, allowCreate: false });
+  const created = await createIfAbsent({
+    wamid: status.id,
+    direction: "outbound",
+    from: digitsOnly(metadata.display_phone_number),
+    to: status.recipient_id,
+    type: STUB_TYPE,
+    content: STUB_CONTENT,
+    timestamp: at,
+    status: status.status,
+    statusUpdatedAt: at,
+    errors,
+    phoneNumberId: metadata.phone_number_id,
+    wabaId,
+    contactId,
+    rawPayload: toJson(rawValue),
+  });
+  if (created) return;
+
+  // Perdimos la carrera contra otra entrega del mismo mensaje: la fila ya
+  // existe, así que ahora sí alcanza con avanzarla.
+  await advance();
+}
+
+/** Los estados que `next` puede reemplazar (los de menor rango). */
+function statusesBelow(next: WhatsAppStatusValue): WhatsAppStatusValue[] {
+  return (Object.keys(STATUS_RANK) as WhatsAppStatusValue[]).filter((s) => STATUS_RANK[s] < STATUS_RANK[next]);
 }
 
 // ─── field: "smb_message_echoes" ─────────────────────────────────────────────
@@ -181,7 +207,11 @@ async function saveEcho(
   value: WhatsAppEchoesValue,
   echo: WhatsAppEchoMessage
 ): Promise<void> {
-  await insertIgnoringDuplicate({
+  // Lo escribimos nosotros: se vincula a una ficha que exista, pero no se crea
+  // una nueva (no es alguien que nos buscó).
+  const contactId = await resolveContactForPeer({ waId: echo.to, allowCreate: false });
+
+  await saveMessage({
     wamid: echo.id,
     direction: "outbound",
     from: echo.from,
@@ -194,6 +224,7 @@ async function saveEcho(
     statusUpdatedAt: fromEpochSeconds(echo.timestamp),
     phoneNumberId: value.metadata.phone_number_id,
     wabaId,
+    contactId,
     rawPayload: toJson(value),
   });
 }
@@ -213,20 +244,50 @@ type NewMessage = {
   errors?: Prisma.InputJsonValue;
   phoneNumberId: string;
   wabaId: string;
+  /** Ficha del CRM a la que se vincula, si se la encontró. */
+  contactId?: string | null;
   rawPayload: Prisma.InputJsonValue;
 };
 
 /**
- * Inserta el mensaje; si ya existe ese `wamid` (reintento de Meta, o dos
- * entregas simultáneas) no hace nada. Va con `create` + captura de P2002 en vez
- * de `upsert` porque dos upserts concurrentes sobre una clave única también
- * chocan, y acá el choque es el resultado esperado, no un error.
+ * Guarda un mensaje real (entrante o eco del celular). Idempotente por `wamid`:
+ *   - no existe → se crea;
+ *   - existe y es una fila mínima de un estado que llegó antes → se completa con
+ *     el contenido real, **sin tocar el estado**, que ya es el más avanzado que
+ *     vimos (un eco entra como "sent", el rango más bajo);
+ *   - existe y ya es un mensaje → reintento de Meta, no se hace nada.
  */
-async function insertIgnoringDuplicate(data: NewMessage): Promise<void> {
+async function saveMessage(data: NewMessage): Promise<void> {
+  if (await createIfAbsent(data)) return;
+
+  await prisma.whatsAppCloudMessage.updateMany({
+    where: { wamid: data.wamid, type: STUB_TYPE },
+    data: {
+      direction: data.direction,
+      from: data.from,
+      to: data.to,
+      type: data.type,
+      content: data.content,
+      timestamp: data.timestamp,
+      phoneNumberId: data.phoneNumberId,
+      wabaId: data.wabaId,
+      ...(data.contactId ? { contactId: data.contactId } : {}),
+      rawPayload: data.rawPayload,
+    },
+  });
+}
+
+/**
+ * Crea la fila; devuelve `false` si ese `wamid` ya existía. Va con `create` +
+ * captura de P2002 en vez de `upsert` porque dos upserts concurrentes sobre una
+ * clave única también chocan, y acá el choque es el resultado esperado.
+ */
+async function createIfAbsent(data: NewMessage): Promise<boolean> {
   try {
     await prisma.whatsAppCloudMessage.create({ data });
+    return true;
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return;
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return false;
     throw err;
   }
 }

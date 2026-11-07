@@ -50,6 +50,10 @@ enum LeadSource {
   SCRAPPER
   MANUAL
   IMPORT
+  // Contacto creado solo, porque escribió por WhatsApp un número que no estaba
+  // en el CRM (ver src/lib/whatsapp/contact-link.ts). Va AL FINAL: MySQL guarda
+  // los ENUM por posición, y meter uno en el medio reescribe la columna.
+  WHATSAPP
 }
 
 enum ContactPointStatus {
@@ -3056,8 +3060,14 @@ model WhatsAppCloudContact {
   waId      String   @id
   name      String?
   profile   Json?
+  /// La ficha del CRM a la que corresponde este número (id de `Contact`), una
+  /// vez que se la encontró por teléfono o se la creó sola. Sin relación a
+  /// propósito, igual que `WhatsAppCloudMessage.contactId`: si la ficha se borra
+  /// el id queda colgado y se vuelve a resolver en el próximo mensaje.
+  contactId String?
   firstSeen DateTime @default(now())
   lastSeen  DateTime @default(now())
 
+  @@index([contactId])
   @@map("whatsapp_cloud_contacts")
 }

@@ -33,6 +33,9 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Tests
+        run: npm test
+
   build:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
