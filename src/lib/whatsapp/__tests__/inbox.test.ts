@@ -233,6 +233,14 @@ describe("envío", () => {
     expect(rows[0]).toMatchObject({ type: "text", status: "delivered", sentById: "user_1" });
   });
 
+  it("el saliente guarda como origen el número del negocio, no el id de la API", async () => {
+    await inbound("a", HOUR);
+
+    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1");
+
+    expect(messages().find((m) => m.wamid === "wamid.SENT_1")?.from).toBe(BUSINESS_DISPLAY);
+  });
+
   it("la ventana es de 24 horas exactas", () => {
     expect(WINDOW_MS).toBe(24 * HOUR);
   });

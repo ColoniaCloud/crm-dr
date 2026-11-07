@@ -32,7 +32,7 @@ export async function recordOutbound(args: {
   sentById?: string | null;
 }): Promise<void> {
   const rawPayload = args.response as unknown as Prisma.InputJsonValue;
-  const from = (process.env.WHATSAPP_BUSINESS_NUMBER || process.env.WHATSAPP_PHONE_NUMBER_ID || "").replace(/\D/g, "");
+  const from = await businessNumber();
 
   try {
     await prisma.whatsAppCloudMessage.create({
@@ -88,4 +88,29 @@ export function cleanParam(value: string): string {
     .trim()
     .slice(0, 1000);
   return clean || "-";
+}
+
+/**
+ * El número del negocio, el que ven los clientes (ej. 5491160484312).
+ *
+ * `WHATSAPP_BUSINESS_NUMBER` si está; si no, el que Meta puso como destino en el
+ * último mensaje entrante (`to`), que es siempre ese número. Solo si todavía no
+ * entró ningún mensaje se cae al id del número de la API, que no es un teléfono
+ * pero al menos identifica de qué número salió.
+ */
+async function businessNumber(): Promise<string> {
+  const fromEnv = (process.env.WHATSAPP_BUSINESS_NUMBER ?? "").replace(/\D/g, "");
+  if (fromEnv) return fromEnv;
+
+  try {
+    const lastInbound = await prisma.whatsAppCloudMessage.findFirst({
+      where: { direction: "inbound" },
+      orderBy: { timestamp: "desc" },
+      select: { to: true },
+    });
+    if (lastInbound?.to) return lastInbound.to;
+  } catch (err) {
+    log.warn({ err }, "No se pudo averiguar el número del negocio");
+  }
+  return (process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").replace(/\D/g, "");
 }
