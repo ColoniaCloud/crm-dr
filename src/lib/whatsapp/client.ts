@@ -169,3 +169,36 @@ export async function downloadMedia(
   const buffer = Buffer.from(await fileRes.arrayBuffer());
   return { buffer, mimeType: info.mime_type, fileSize: buffer.length };
 }
+
+/** Una plantilla tal como la devuelve `GET /{waba-id}/message_templates`. */
+export type GraphTemplate = {
+  name: string;
+  language: string;
+  status: string;
+  category?: string;
+  components?: { type: string; format?: string; text?: string; buttons?: { type: string; text?: string; url?: string }[] }[];
+};
+
+/**
+ * Las plantillas de la cuenta (WABA). Necesita `WHATSAPP_WABA_ID` además del
+ * token; devuelve todas, el que llama filtra por estado.
+ */
+export async function listTemplates(): Promise<GraphTemplate[]> {
+  const { base } = config();
+  const waba = process.env.WHATSAPP_WABA_ID;
+  if (!waba) throw new WhatsAppApiError("Falta WHATSAPP_WABA_ID para listar las plantillas", 503);
+
+  const out: GraphTemplate[] = [];
+  let url: string | undefined =
+    `${base}/${waba}/message_templates?fields=name,language,status,category,components&limit=100`;
+
+  // Se sigue la paginación, con un tope por si Meta devolviera un ciclo.
+  for (let page = 0; url && page < 10; page++) {
+    const res = await graphFetch(url, { method: "GET" }, SEND_TIMEOUT_MS);
+    if (!res.ok) return failFrom(res);
+    const body = (await res.json()) as { data?: GraphTemplate[]; paging?: { next?: string } };
+    out.push(...(body.data ?? []));
+    url = body.paging?.next;
+  }
+  return out;
+}

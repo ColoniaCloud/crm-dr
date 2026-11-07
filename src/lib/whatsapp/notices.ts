@@ -1,8 +1,7 @@
-import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
 import { isCloudApiConfigured, sendTemplateMessage, WhatsAppApiError } from "@/lib/whatsapp/client";
+import { cleanParam, recordOutbound } from "@/lib/whatsapp/outbound";
 import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import type { WhatsAppSendResponse, WhatsAppTemplateComponent } from "@/types/whatsapp";
 
@@ -128,100 +127,28 @@ async function sendTemplateNotice(args: {
     await recordOutbound({
       wamid,
       to,
-      templateName: args.templateName,
-      components: [
-        {
-          type: "body",
-          parameters: args.variables.map((v, i) => ({
-            type: "text" as const,
-            text: args.redact?.includes(i) ? "[tapado]" : cleanParam(v),
-          })),
+      type: "template",
+      content: {
+        type: "template",
+        template: {
+          name: args.templateName,
+          language: { code: LANGUAGE },
+          components: [
+            {
+              type: "body",
+              parameters: args.variables.map((v, i) => ({
+                type: "text",
+                text: args.redact?.includes(i) ? "[tapado]" : cleanParam(v),
+              })),
+            },
+          ],
         },
-      ],
+      },
+      templateName: args.templateName,
       response,
       contactId: args.contactId,
       sentById: args.sentById,
     });
   }
   return true;
-}
-
-/**
- * Deja la fila del saliente para que los estados que llegan por webhook (sent,
- * delivered, read, failed) tengan a quién actualizar.
- *
- * Puede pasar que el estado llegue antes que esta fila (el webhook y la
- * respuesta de la API corren en paralelo): en ese caso el procesador del webhook
- * ya dejó una fila mínima de tipo "unknown" y acá se completa en vez de chocar.
- */
-async function recordOutbound(args: {
-  wamid: string;
-  to: string;
-  templateName: string;
-  components: WhatsAppTemplateComponent[];
-  response: WhatsAppSendResponse;
-  contactId?: string | null;
-  sentById?: string | null;
-}): Promise<void> {
-  const content = {
-    type: "template",
-    template: { name: args.templateName, language: { code: LANGUAGE }, components: args.components },
-  } as unknown as Prisma.InputJsonValue;
-  const rawPayload = args.response as unknown as Prisma.InputJsonValue;
-
-  try {
-    await prisma.whatsAppCloudMessage.create({
-      data: {
-        wamid: args.wamid,
-        direction: "outbound",
-        from: (process.env.WHATSAPP_BUSINESS_NUMBER || process.env.WHATSAPP_PHONE_NUMBER_ID || "").replace(/\D/g, ""),
-        to: args.to,
-        type: "template",
-        content,
-        timestamp: new Date(),
-        status: "sent",
-        statusUpdatedAt: new Date(),
-        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "",
-        wabaId: process.env.WHATSAPP_WABA_ID ?? "",
-        contactId: args.contactId ?? null,
-        sentById: args.sentById ?? null,
-        templateName: args.templateName,
-        rawPayload,
-      },
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      // Ya estaba la fila mínima del webhook: se le pone el contenido.
-      await prisma.whatsAppCloudMessage
-        .updateMany({
-          where: { wamid: args.wamid, type: "unknown" },
-          data: {
-            type: "template",
-            content,
-            contactId: args.contactId ?? null,
-            sentById: args.sentById ?? null,
-            templateName: args.templateName,
-            rawPayload,
-          },
-        })
-        .catch((e) => log.error({ err: e }, "No se pudo completar el registro del WhatsApp"));
-      return;
-    }
-    // El mensaje ya salió; que no quede registrado no es motivo para fallar.
-    log.error({ err }, "No se pudo registrar el WhatsApp enviado");
-  }
-}
-
-/**
- * Meta rechaza las variables con saltos de línea, tabulaciones o más de 4
- * espacios seguidos, y las vacías. Se limpian acá para que un dato sucio (una
- * dirección con un enter) no tumbe el aviso entero.
- */
-function cleanParam(value: string): string {
-  const clean = (value ?? "")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/ {5,}/g, "    ")
-    .trim()
-    .slice(0, 1000);
-  return clean || "-";
 }

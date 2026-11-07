@@ -13,6 +13,7 @@ import { Prisma } from "@prisma/client";
 
 type Row = Record<string, unknown>;
 type Where = Record<string, unknown>;
+type OrderBy = Record<string, "asc" | "desc">;
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -22,9 +23,10 @@ function matches(row: Row, where: Where): boolean {
     if (key === "AND") return (cond as Where[]).every((w) => matches(row, w));
     const value = row[key];
     if (cond !== null && typeof cond === "object" && !(cond instanceof Date)) {
-      const c = cond as { in?: unknown[]; not?: unknown; equals?: unknown; gte?: Date };
+      const c = cond as { in?: unknown[]; not?: unknown; equals?: unknown; gte?: Date; lt?: Date };
       if (c.in) return c.in.includes(value);
       if (c.gte) return value instanceof Date && value >= c.gte;
+      if (c.lt) return value instanceof Date && value < c.lt;
       if ("not" in c) return value !== c.not;
       if ("equals" in c) return value === c.equals;
     }
@@ -58,14 +60,19 @@ export class FakeTable {
     return this.rows.find((r) => matches(r, args.where)) ?? null;
   }
 
-  async findFirst(args: { where?: Where } = {}): Promise<Row | null> {
-    await tick();
-    return this.rows.find((r) => matches(r, args.where ?? {})) ?? null;
+  async findFirst(args: { where?: Where; orderBy?: OrderBy } = {}): Promise<Row | null> {
+    return (await this.findMany({ ...args, take: 1 }))[0] ?? null;
   }
 
-  async findMany(args: { where?: Where } = {}): Promise<Row[]> {
+  async findMany(args: { where?: Where; orderBy?: OrderBy; take?: number } = {}): Promise<Row[]> {
     await tick();
-    return this.rows.filter((r) => matches(r, args.where ?? {}));
+    let out = this.rows.filter((r) => matches(r, args.where ?? {}));
+    if (args.orderBy) {
+      const [[field, dir]] = Object.entries(args.orderBy);
+      const sign = dir === "desc" ? -1 : 1;
+      out = [...out].sort((a, b) => (a[field]! < b[field]! ? -sign : a[field]! > b[field]! ? sign : 0));
+    }
+    return args.take ? out.slice(0, args.take) : out;
   }
 
   async count(args: { where?: Where } = {}): Promise<number> {

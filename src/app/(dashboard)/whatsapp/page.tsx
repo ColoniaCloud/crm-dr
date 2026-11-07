@@ -2,16 +2,19 @@
 
 import { useSession } from "next-auth/react";
 import { DataUpdateTab } from "@/components/whatsapp/data-update-tab";
+import { WhatsAppInbox } from "@/components/whatsapp/inbox/whatsapp-inbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MessageCircle } from "@/components/icons";
 
 /**
  * /whatsapp
  *
- * Antes era un módulo entero (conexión por QR, envíos, campañas, historial) que
- * hablaba con un servicio de Baileys. Hoy el CRM usa la WhatsApp Cloud API: los
- * mensajes entrantes llegan por el webhook (`/api/webhooks/whatsapp`) y lo único
- * que se manda desde acá es el pedido de datos a Clientes sin email, con una
- * plantilla aprobada por Meta.
+ * La bandeja de WhatsApp: los mensajes llegan por el webhook de la Cloud API
+ * (`/api/webhooks/whatsapp`), se leen y se contestan desde acá, y las plantillas
+ * aprobadas por Meta están a mano para iniciar o retomar una conversación. La
+ * segunda solapa es el pedido de datos (email) a Clientes que no lo tienen.
+ *
+ * Antes era un módulo entero que hablaba con un servicio de Baileys (QR).
  */
 export default function WhatsAppPage() {
   const { data: session, status } = useSession();
@@ -27,17 +30,27 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
           <MessageCircle className="size-7" />
           WhatsApp
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pedir el email a los Clientes que no lo tienen.
-        </p>
       </div>
-      <DataUpdateTab />
+
+      <Tabs defaultValue="bandeja" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="bandeja">Bandeja</TabsTrigger>
+          <TabsTrigger value="datos">Pedir datos</TabsTrigger>
+        </TabsList>
+        <TabsContent value="bandeja">
+          <WhatsAppInbox />
+        </TabsContent>
+        <TabsContent value="datos" className="space-y-2">
+          <p className="text-sm text-muted-foreground">Pedir el email a los Clientes que no lo tienen.</p>
+          <DataUpdateTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
