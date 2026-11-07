@@ -261,6 +261,29 @@ model User {
   @@map("users")
 }
 
+/// Pedido de eliminación de datos hecho desde la página pública
+/// /eliminar-cuenta por alguien que NO está conectado (un cliente, un
+/// instalador, alguien que nos escribió por WhatsApp). No es un usuario del
+/// CRM: no hay credencial con que probar quién es, así que el pedido queda
+/// registrado y lo resuelve una persona del equipo tras verificar la identidad.
+/// El registro existe para poder demostrar que se atendió dentro del plazo
+/// legal (10 días corridos, Ley 25.326).
+model DataDeletionRequest {
+  id         String    @id @default(cuid())
+  email      String
+  name       String?
+  /// Número de WhatsApp o teléfono con el que nos contactó, para ubicar sus datos.
+  phone      String?
+  details    String?   @db.Text
+  /// PENDING | DONE | REJECTED
+  status     String    @default("PENDING")
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([status, createdAt])
+  @@map("data_deletion_requests")
+}
+
 model CrmTask {
   id        String    @id @default(cuid())
   title     String

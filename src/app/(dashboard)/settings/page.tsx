@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, User, ShieldOff, AlertTriangle, Pencil, Save, X, Trash2, Eye, EyeOff, Mail } from "@/components/icons";
 import { formatDate } from "@/lib/utils";
+import { DeleteOwnAccount } from "@/components/account/delete-own-account";
 import { ApiKeyManager } from "@/components/settings/api-key-manager";
 import { CreditTiersManager } from "@/components/settings/credit-tiers-manager";
 import { DiscountTagsManager } from "@/components/settings/discount-tags-manager";
@@ -496,6 +497,8 @@ export default function SettingsPage() {
           />
         </>
       )}
+
+      <DeleteOwnAccount />
 
       <Card>
         <CardHeader><CardTitle>Información del Sistema</CardTitle></CardHeader>

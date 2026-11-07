@@ -145,7 +145,11 @@ export default function PrivacidadPage() {
       </LegalSection>
 
       <LegalSection n={9} title="Cómo pedir que eliminemos tus datos">
-        <p>Para que eliminemos tus datos, incluidos los mensajes de WhatsApp que tengamos guardados:</p>
+        <p>
+          Para que eliminemos tus datos, incluidos los mensajes de WhatsApp que tengamos guardados, completá el
+          formulario de <a href="/eliminar-cuenta" className="underline underline-offset-2">eliminación de cuenta y datos</a>.
+          Si preferís escribirnos:
+        </p>
         <LegalList
           items={[
             <>escribinos a {mail} desde el email, o indicando el número de WhatsApp, con el que nos contactaste;</>,
@@ -153,6 +157,10 @@ export default function PrivacidadPage() {
             "te pedimos algún dato para confirmar que sos vos y, una vez verificado, los eliminamos y te lo confirmamos.",
           ]}
         />
+        <p>
+          Si tenés usuario en el sistema, podés eliminar tu cuenta vos mismo desde Configuración o desde esa misma
+          página, iniciando sesión.
+        </p>
         <p>
           Podemos conservar la información que una ley nos obligue a guardar (por ejemplo, comprobantes de ventas ya
           realizadas) durante el plazo legal, y la usaremos solo para ese fin.

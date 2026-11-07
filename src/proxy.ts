@@ -91,7 +91,10 @@ export default auth((req) => {
   // Política de privacidad y términos: públicos a propósito (los lee cualquiera,
   // y Meta exige una URL abierta para la app de WhatsApp). Son páginas estáticas
   // sin datos del negocio.
-  if (pathname === "/privacidad" || pathname === "/terminos") {
+  // /eliminar-cuenta también: la URL de "eliminación de datos" que pide Meta, y
+  // la usa quien no tiene sesión. La propia página decide qué mostrar según
+  // haya sesión o no.
+  if (pathname === "/privacidad" || pathname === "/terminos" || pathname === "/eliminar-cuenta") {
     return noSharedCache(NextResponse.next());
   }
 
