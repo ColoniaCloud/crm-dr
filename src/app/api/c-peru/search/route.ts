@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/api-auth";
 import { isInsidePeru } from "@/lib/peru-geo";
 import { normalizePeruPhone, normalizePeruWhatsApp } from "@/lib/peru/phone";
 import { findSiteContacts } from "@/lib/peru/site-contacts";
+import { getWrittenPeers, hasWhatsappConversation } from "@/lib/whatsapp/written-peers";
 import {
   geocodePeru,
   getPlaceDetails,
@@ -198,9 +199,18 @@ export async function POST(request: Request) {
   const savedPlaceIds = new Set(saved.map((s) => s.placeId).filter(Boolean));
   const savedPhones = new Set(saved.map((s) => s.phone).filter(Boolean));
 
+  // Paso 6: marcar a los que ya tienen mensajes de WhatsApp, estén o no guardados (se les
+  // puede escribir desde esta misma lista sin guardarlos antes). Si falla la consulta no
+  // se pierde la búsqueda, que tardó minutos: solo no se marca a nadie.
+  const written = await getWrittenPeers().catch((err) => {
+    log.warn({ err }, "No se pudo consultar con quién ya hubo mensajes de WhatsApp");
+    return new Set<string>();
+  });
+
   const enriched = businesses.map((b) => ({
     ...b,
     isSaved: savedPlaceIds.has(b.placeId) || (!!b.phone && savedPhones.has(b.phone)),
+    whatsappWritten: hasWhatsappConversation(b.whatsapp, written),
   }));
 
   return NextResponse.json({ businesses: enriched, center: { lat, lng } });

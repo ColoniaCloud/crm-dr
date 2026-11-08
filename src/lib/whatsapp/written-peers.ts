@@ -21,6 +21,23 @@ export async function getWrittenPeers(): Promise<Set<string>> {
   return peers;
 }
 
+/** Si ya hubo mensajes con ese WhatsApp (en cualquier sentido). Sin número, nunca. */
+export function hasWhatsappConversation(whatsapp: string | null | undefined, written: Set<string>): boolean {
+  return Boolean(whatsapp) && written.has(peerKey(whatsapp as string));
+}
+
+/**
+ * Si a un contacto ya se lo contactó: lo marcó alguien a mano o hay mensajes de
+ * WhatsApp con él. La marca manual sola se queda corta: no se entera de lo que se
+ * escribió desde la app de WhatsApp Business ni desde el botón de la lista.
+ */
+export function isReached(
+  contact: { contacted: boolean; whatsapp: string | null },
+  written: Set<string>
+): boolean {
+  return contact.contacted || hasWhatsappConversation(contact.whatsapp, written);
+}
+
 export type WhatsappActivityFilter = "never" | "written";
 
 /**
@@ -36,7 +53,7 @@ export function filterByWhatsappActivity<T extends { whatsapp: string | null }>(
 ): T[] {
   return contacts.filter((c) => {
     if (!c.whatsapp) return false;
-    const has = written.has(peerKey(c.whatsapp));
+    const has = hasWhatsappConversation(c.whatsapp, written);
     return mode === "written" ? has : !has;
   });
 }

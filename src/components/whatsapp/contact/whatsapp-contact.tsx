@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ExternalLink, FileText, MessageCircle } from "@/components/icons";
+import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import { formatWaNumber, peerKey } from "@/lib/whatsapp/peer";
 import { isPlausibleWhatsappNumber, normalizeWhatsappNumber, type WaCountry } from "@/lib/whatsapp/phone";
 import { TemplateSendFlow } from "./template-send-flow";
@@ -70,6 +72,9 @@ export function WhatsAppContactDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  // Plantillas y bandeja son de ADMIN en adelante; el resto solo abre WhatsApp Web.
+  const crmWhatsApp = canUseWhatsApp(session?.user?.role);
   const [templateFlow, setTemplateFlow] = useState(false);
 
   const normalized = normalizeWhatsappNumber(number, country);
@@ -93,12 +98,14 @@ export function WhatsAppContactDialog({
           </p>
         ) : (
           <div className="space-y-2">
-            <Option
-              icon={<FileText className="size-5" />}
-              title="Enviar plantilla"
-              hint="Elegí una plantilla aprobada y mandásela."
-              onClick={() => setTemplateFlow(true)}
-            />
+            {crmWhatsApp && (
+              <Option
+                icon={<FileText className="size-5" />}
+                title="Enviar plantilla"
+                hint="Elegí una plantilla aprobada y mandásela."
+                onClick={() => setTemplateFlow(true)}
+              />
+            )}
             <Option
               icon={<ExternalLink className="size-5" />}
               title="Abrir en WhatsApp Web"
@@ -108,15 +115,17 @@ export function WhatsAppContactDialog({
                 onClose();
               }}
             />
-            <Option
-              icon={<MessageCircle className="size-5" />}
-              title="Abrir en Inbox del CRM"
-              hint="Ver y seguir la conversación en la bandeja."
-              onClick={() => {
-                onClose();
-                router.push(`/whatsapp?c=${peer}`);
-              }}
-            />
+            {crmWhatsApp && (
+              <Option
+                icon={<MessageCircle className="size-5" />}
+                title="Abrir en Inbox del CRM"
+                hint="Ver y seguir la conversación en la bandeja."
+                onClick={() => {
+                  onClose();
+                  router.push(`/whatsapp?c=${peer}`);
+                }}
+              />
+            )}
           </div>
         )}
       </DialogContent>

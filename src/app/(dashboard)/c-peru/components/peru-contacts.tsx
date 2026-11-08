@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Download, Globe, Mail, MapPin, MessageCircle, Phone, Search, Trash2, Users } from "@/components/icons";
 import { BulkTemplateDialog, type BulkTarget } from "@/components/whatsapp/contact/bulk-template-dialog";
+import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import { PE_DEPARTMENTS } from "@/lib/peru-geo";
 import { formatPeruPhone } from "@/lib/peru/phone";
 import { WhatsAppLink } from "./peru-scrapper";
@@ -51,10 +52,16 @@ type PeruContact = {
   whatsapp: string | null;
   email: string | null;
   website: string | null;
+  /** La marca manual. Ver `reached` para el estado real. */
   contacted: boolean;
+  /** Ya hay mensajes de WhatsApp con ese número (lo calcula el servidor). */
+  whatsappWritten?: boolean;
   notes: string | null;
   createdAt: string;
 };
+
+/** Contactado = marcado a mano o con mensajes de WhatsApp (los de la app del celular también cuentan). */
+const reached = (c: PeruContact) => c.contacted || Boolean(c.whatsappWritten);
 
 type ListResponse = { contacts: PeruContact[]; total: number; truncated: boolean };
 
@@ -69,7 +76,8 @@ const CSV_COLUMNS: [string, (c: PeruContact) => string][] = [
   ["WhatsApp", (c) => (c.whatsapp ? `+${c.whatsapp}` : "")],
   ["Email", (c) => c.email ?? ""],
   ["Web", (c) => c.website ?? ""],
-  ["Contactado", (c) => (c.contacted ? "Sí" : "No")],
+  ["Contactado", (c) => (reached(c) ? "Sí" : "No")],
+  ["Mensajes de WhatsApp", (c) => (c.whatsappWritten ? "Sí" : "No")],
   ["Notas", (c) => c.notes ?? ""],
 ];
 
@@ -84,6 +92,8 @@ function toCsv(rows: PeruContact[]): string {
 export function PeruContacts({ refreshKey }: { refreshKey: number }) {
   const { data: session } = useSession();
   const canDelete = session?.user?.role === "ADMIN" || session?.user?.role === "SUPERADMIN";
+  // El envío masivo usa la API de WhatsApp del CRM: solo para quien tiene acceso (ver `access.ts`).
+  const canBulk = canUseWhatsApp(session?.user?.role);
 
   const [contacts, setContacts] = useState<PeruContact[]>([]);
   const [total, setTotal] = useState(0);
@@ -166,7 +176,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
   // ─── Selección para el envío masivo ────────────────────────────────────────
 
   /** Solo se puede mandar a quien tiene WhatsApp. */
-  const selectable = contacts.filter((c) => c.whatsapp);
+  const selectable = canBulk ? contacts.filter((c) => c.whatsapp) : [];
 
   /** Tilda o destilda una ficha; con Shift, todo el tramo desde la última que se tocó. */
   function toggleSelect(c: PeruContact, shiftKey: boolean) {
@@ -210,9 +220,9 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
   /** Tras el envío, lo que salió (o ya tenía conversación) pasa a "contactado" y sale de la selección. */
   async function handleBulkFinished(reachedIds: string[]) {
     if (reachedIds.length === 0) return;
-    const reached = new Set(reachedIds);
-    setSelected((prev) => new Map([...prev].filter(([id]) => !reached.has(id))));
-    setContacts((prev) => prev.map((c) => (reached.has(c.id) ? { ...c, contacted: true } : c)));
+    const done = new Set(reachedIds);
+    setSelected((prev) => new Map([...prev].filter(([id]) => !done.has(id))));
+    setContacts((prev) => prev.map((c) => (done.has(c.id) ? { ...c, contacted: true, whatsappWritten: true } : c)));
     try {
       const res = await fetch("/api/c-peru/contacts", {
         method: "PATCH",
@@ -364,6 +374,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
           </div>
 
           {/* Envío masivo: elegir a quiénes, de varias maneras, y mandarles una plantilla de una vez. */}
+          {canBulk && (
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 mt-2">
             <span className="text-sm font-medium">Envío masivo</span>
             <Button
@@ -380,11 +391,11 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => selectMatching((c) => !c.contacted)}
-              disabled={!selectable.some((c) => !c.contacted)}
+              onClick={() => selectMatching((c) => !reached(c))}
+              disabled={!selectable.some((c) => !reached(c))}
               title="Suma a la selección los de la lista actual que todavía no fueron contactados"
             >
-              Solo pendientes ({selectable.filter((c) => !c.contacted).length})
+              Solo pendientes ({selectable.filter((c) => !reached(c)).length})
             </Button>
             {selected.size > 0 && (
               <Button type="button" size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
@@ -404,7 +415,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                     id: c.id,
                     name: c.name,
                     number: c.whatsapp ?? "",
-                    contacted: c.contacted,
+                    contacted: reached(c),
                   }))
                 )
               }
@@ -414,6 +425,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
               Enviar plantilla{selected.size > 0 ? ` a ${selected.size}` : ""}
             </Button>
           </div>
+          )}
         </CardHeader>
 
         <CardContent className="p-0">
@@ -436,7 +448,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
           ) : contacts.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground text-sm">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p>Todavía no hay contactos{debouncedQ || department || onlyWhatsApp || onlyEmail || contacted || waActivity ?" con esos filtros" : ""}.</p>
+              <p>Todavía no hay contactos{debouncedQ || department || onlyWhatsApp || onlyEmail || contacted || waActivity ? " con esos filtros" : ""}.</p>
               <p className="mt-1">Buscalos en la pestaña Scrapper y agregalos con el botón &quot;Agregar a Contactos&quot;.</p>
             </div>
           ) : (
@@ -447,7 +459,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                   <div key={c.id} className="p-4 space-y-1.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        {c.whatsapp && (
+                        {canBulk && c.whatsapp && (
                           <Checkbox
                             checked={selected.has(c.id)}
                             onClick={(e) => toggleSelect(c, e.shiftKey)}
@@ -456,7 +468,11 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                         )}
                         <p className="font-medium text-sm">{c.name}</p>
                       </div>
-                      {c.contacted && <Badge variant="secondary" className="shrink-0">Contactado</Badge>}
+                      {reached(c) && (
+                        <Badge variant="secondary" className="shrink-0" title={c.whatsappWritten ? "Ya hay mensajes de WhatsApp con este número" : undefined}>
+                          Contactado{c.whatsappWritten ? " · WhatsApp" : ""}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {[c.district, c.city, c.department].filter(Boolean).join(", ")}
@@ -476,8 +492,8 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                     )}
                     {c.notes && <p className="text-xs italic text-muted-foreground">{c.notes}</p>}
                     <div className="flex gap-2 pt-1">
-                      <Button size="sm" variant="outline" onClick={() => toggleContacted(c)}>
-                        {c.contacted ? "Marcar pendiente" : "Marcar contactado"}
+                      <Button size="sm" variant="outline" onClick={() => toggleContacted(c)} disabled={c.whatsappWritten}>
+                        {reached(c) ? "Marcar pendiente" : "Marcar contactado"}
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => { setEditing(c); setNotesDraft(c.notes ?? ""); }}>
                         Notas
@@ -527,7 +543,7 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                     {contacts.map((c) => (
                       <TableRow key={c.id} data-state={selected.has(c.id) ? "selected" : undefined}>
                         <TableCell>
-                          {c.whatsapp && (
+                          {canBulk && c.whatsapp && (
                             <Checkbox
                               checked={selected.has(c.id)}
                               onClick={(e) => toggleSelect(c, e.shiftKey)}
@@ -537,8 +553,11 @@ export function PeruContacts({ refreshKey }: { refreshKey: number }) {
                         </TableCell>
                         <TableCell>
                           <Checkbox
-                            checked={c.contacted}
+                            checked={reached(c)}
                             onCheckedChange={() => toggleContacted(c)}
+                            // Con mensajes de WhatsApp de por medio no se puede volver a «pendiente».
+                            disabled={c.whatsappWritten}
+                            title={c.whatsappWritten ? "Ya hay mensajes de WhatsApp con este número" : undefined}
                             aria-label={`Marcar ${c.name} como contactado`}
                           />
                         </TableCell>

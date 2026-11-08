@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -10,6 +11,7 @@ import { ExternalLink, Loader2, MessageCircle } from "@/components/icons";
 import { sendTemplateTo } from "@/components/whatsapp/contact/send-template";
 import { TemplateSendFlow } from "@/components/whatsapp/contact/template-send-flow";
 import { formatPeruPhone } from "@/lib/peru/phone";
+import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import { peerKey } from "@/lib/whatsapp/peer";
 import {
   PERU_OUTREACH_TEMPLATE,
@@ -59,12 +61,18 @@ export function PeruWhatsAppButton({
   onSent?: () => void;
 }) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [step, setStep] = useState<Step | null>(null);
   const peer = peerKey(number);
 
   const close = () => setStep(null);
 
   async function start() {
+    // Sin acceso a WhatsApp del CRM (ver `access.ts`): solo se abre el chat en WhatsApp Web.
+    if (!canUseWhatsApp(session?.user?.role)) {
+      window.open(`https://web.whatsapp.com/send?phone=${peer}`, "_blank", "noopener,noreferrer");
+      return;
+    }
     setStep({ kind: "checking" });
     try {
       const [statusRes, templatesRes] = await Promise.all([

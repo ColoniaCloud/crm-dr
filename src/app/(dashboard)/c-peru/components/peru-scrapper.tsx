@@ -64,6 +64,8 @@ type PeruBusiness = {
   rating: number;
   userRatingsTotal: number;
   isSaved: boolean;
+  /** Ya hay mensajes de WhatsApp con este número (desde el CRM o desde la app del celular). */
+  whatsappWritten?: boolean;
 };
 
 type Notice = { kind: "ok" | "error"; text: string };
@@ -551,7 +553,7 @@ export function PeruScrapper({ onSaved }: { onSaved?: () => void }) {
                           )}
                           <p className="font-medium text-sm">{biz.name}</p>
                         </div>
-                        <SavedBadge saved={biz.isSaved} />
+                        <StatusBadges biz={biz} />
                       </div>
                       {biz.address && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -644,7 +646,7 @@ export function PeruScrapper({ onSaved }: { onSaved?: () => void }) {
                           <TableCell>
                             <span className="text-xs text-muted-foreground">{biz.type}</span>
                           </TableCell>
-                          <TableCell><SavedBadge saved={biz.isSaved} /></TableCell>
+                          <TableCell><StatusBadges biz={biz} /></TableCell>
                           <TableCell className="text-right">
                             {!biz.isSaved ? (
                               <Button size="sm" variant="outline" disabled={savingId === biz.placeId} onClick={() => handleAdd(biz)} className="gap-1.5">
@@ -664,6 +666,21 @@ export function PeruScrapper({ onSaved }: { onSaved?: () => void }) {
             )}
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+/** Si está guardado en Contactos y, aparte, si ya se le escribió por WhatsApp. */
+function StatusBadges({ biz }: { biz: PeruBusiness }) {
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <SavedBadge saved={biz.isSaved} />
+      {biz.whatsappWritten && (
+        <Badge className="bg-green-500/10 text-green-600 border-green-500/30 shrink-0 hover:bg-green-500/10" title="Ya hay mensajes de WhatsApp con este número">
+          <MessageCircle className="h-3 w-3 mr-1" />
+          Ya se le escribió
+        </Badge>
       )}
     </div>
   );

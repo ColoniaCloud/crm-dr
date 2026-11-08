@@ -9,6 +9,8 @@ import { createLogger } from "@/lib/logger";
 import {
   filterByWhatsappActivity,
   getWrittenPeers,
+  hasWhatsappConversation,
+  isReached,
   type WhatsappActivityFilter,
 } from "@/lib/whatsapp/written-peers";
 
@@ -53,7 +55,10 @@ export async function GET(request: Request) {
   const department = searchParams.get("department")?.trim();
   const onlyWhatsApp = searchParams.get("whatsapp") === "1";
   const onlyEmail = searchParams.get("email") === "1";
-  const contacted = searchParams.get("contacted");
+  // "1": ya contactados. "0": pendientes. Cuenta como contactado el marcado a mano Y el que
+  // tiene mensajes de WhatsApp (ver `isReached`), por eso se decide abajo y no en la consulta.
+  const rawContacted = searchParams.get("contacted");
+  const contacted = rawContacted === "0" || rawContacted === "1" ? rawContacted : null;
   // "never": nunca se les escribió por WhatsApp. "written": ya hay mensajes con ese número.
   const rawActivity = searchParams.get("wa");
   const activity: WhatsappActivityFilter | null = rawActivity === "never" || rawActivity === "written" ? rawActivity : null;
@@ -62,8 +67,6 @@ export async function GET(request: Request) {
   if (department) where.department = department;
   if (onlyWhatsApp || activity) where.whatsapp = { not: null };
   if (onlyEmail) where.email = { not: null };
-  if (contacted === "1") where.contacted = true;
-  if (contacted === "0") where.contacted = false;
   if (q) {
     where.OR = [
       { name: { contains: q } },
@@ -74,33 +77,33 @@ export async function GET(request: Request) {
     ];
   }
 
-  // Si "se les escribió o no" es lo que se filtra, no se puede decidir en la consulta
-  // (los mensajes viven en otra tabla y los números se normalizan): se trae todo lo que
-  // cumple lo demás, se descarta en memoria y recién entonces se aplica el tope.
-  if (activity) {
-    try {
-      const [candidates, written] = await Promise.all([
-        prisma.peruContact.findMany({ where, orderBy: { createdAt: "desc" }, take: ACTIVITY_SCAN_LIMIT }),
-        getWrittenPeers(),
-      ]);
-      const matching = filterByWhatsappActivity(candidates, written, activity);
-      return NextResponse.json({
-        contacts: matching.slice(0, LIST_LIMIT),
-        total: matching.length,
-        truncated: matching.length > LIST_LIMIT,
-      });
-    } catch (err) {
-      log.error({ err }, "Error al filtrar contactos de Perú por actividad de WhatsApp");
-      return NextResponse.json({ error: "No se pudo filtrar por WhatsApp" }, { status: 500 });
+  // Los mensajes viven en otra tabla y los números se normalizan: lo que depende de ellos
+  // (el estado de contacto y el filtro de WhatsApp) no se puede decidir en la consulta. Se
+  // trae todo lo que cumple lo demás, se marca y se descarta en memoria, y recién entonces
+  // se aplica el tope de la lista.
+  try {
+    const [candidates, written] = await Promise.all([
+      prisma.peruContact.findMany({ where, orderBy: { createdAt: "desc" }, take: ACTIVITY_SCAN_LIMIT }),
+      getWrittenPeers(),
+    ]);
+
+    let matching = activity ? filterByWhatsappActivity(candidates, written, activity) : candidates;
+    if (contacted) {
+      matching = matching.filter((c) => isReached(c, written) === (contacted === "1"));
     }
+
+    return NextResponse.json({
+      // `whatsappWritten` le permite a la pantalla mostrar «contactado» aunque nadie haya tildado la ficha.
+      contacts: matching
+        .slice(0, LIST_LIMIT)
+        .map((c) => ({ ...c, whatsappWritten: hasWhatsappConversation(c.whatsapp, written) })),
+      total: matching.length,
+      truncated: matching.length > LIST_LIMIT,
+    });
+  } catch (err) {
+    log.error({ err }, "Error al listar contactos de Perú");
+    return NextResponse.json({ error: "No se pudieron cargar los contactos" }, { status: 500 });
   }
-
-  const [contacts, total] = await Promise.all([
-    prisma.peruContact.findMany({ where, orderBy: { createdAt: "desc" }, take: LIST_LIMIT }),
-    prisma.peruContact.count({ where }),
-  ]);
-
-  return NextResponse.json({ contacts, total, truncated: total > contacts.length });
 }
 
 const bulkContactedSchema = z.object({

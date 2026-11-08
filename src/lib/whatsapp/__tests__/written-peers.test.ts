@@ -3,7 +3,50 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({ groupBy: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: { whatsAppCloudMessage: { groupBy: db.groupBy } } }));
 
-import { filterByWhatsappActivity, getWrittenPeers } from "@/lib/whatsapp/written-peers";
+import { canUseWhatsApp } from "@/lib/whatsapp/access";
+import {
+  filterByWhatsappActivity,
+  getWrittenPeers,
+  hasWhatsappConversation,
+  isReached,
+} from "@/lib/whatsapp/written-peers";
+
+describe("acceso a WhatsApp", () => {
+  it("es solo de ADMIN y SUPERADMIN", () => {
+    expect(canUseWhatsApp("SUPERADMIN")).toBe(true);
+    expect(canUseWhatsApp("ADMIN")).toBe(true);
+    expect(canUseWhatsApp("OPERATOR")).toBe(false);
+    expect(canUseWhatsApp(undefined)).toBe(false);
+    expect(canUseWhatsApp(null)).toBe(false);
+  });
+});
+
+describe("contactado: marca manual o mensajes de WhatsApp", () => {
+  const written = new Set(["51950530175"]);
+
+  it("hasWhatsappConversation compara por número normalizado y no cuenta sin número", () => {
+    expect(hasWhatsappConversation("51950530175", written)).toBe(true);
+    expect(hasWhatsappConversation("+51 950 530 175", written)).toBe(true);
+    expect(hasWhatsappConversation("51928647298", written)).toBe(false);
+    expect(hasWhatsappConversation(null, written)).toBe(false);
+    expect(hasWhatsappConversation("", written)).toBe(false);
+  });
+
+  it("un contacto sin marca pero con mensajes (los de la app del celular) cuenta como contactado", () => {
+    // El caso real: PERUFILMS tenía 7 mensajes y la ficha figuraba como pendiente.
+    expect(isReached({ contacted: false, whatsapp: "51950530175" }, written)).toBe(true);
+  });
+
+  it("la marca manual sigue valiendo aunque no haya mensajes", () => {
+    expect(isReached({ contacted: true, whatsapp: "51906251499" }, written)).toBe(true);
+    expect(isReached({ contacted: true, whatsapp: null }, written)).toBe(true);
+  });
+
+  it("sin marca y sin mensajes es pendiente", () => {
+    expect(isReached({ contacted: false, whatsapp: "51928647298" }, written)).toBe(false);
+    expect(isReached({ contacted: false, whatsapp: null }, written)).toBe(false);
+  });
+});
 
 beforeEach(() => {
   db.groupBy.mockReset();
