@@ -5,9 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MapPin } from "@/components/icons";
 import { PeruScrapper } from "./components/peru-scrapper";
 import { PeruContacts } from "./components/peru-contacts";
+import { PeruInvitations } from "./components/peru-invitations";
 
 const TAB_KEY = "c-peru:tab";
-const TABS = ["scrapper", "contactos"];
+const TABS = ["scrapper", "contactos", "invitaciones"];
 
 export default function CPeruPage() {
   const [tab, setTab] = useState("scrapper");
@@ -42,6 +43,8 @@ export default function CPeruPage() {
         <TabsList className="w-full sm:w-auto overflow-x-auto justify-start">
           <TabsTrigger value="scrapper">Scrapper</TabsTrigger>
           <TabsTrigger value="contactos">Contactos</TabsTrigger>
+          {/* Solo SUPERADMIN: es un envío real a un tercero. La pestaña se ve para todos y avisa adentro. */}
+          <TabsTrigger value="invitaciones">Invitaciones</TabsTrigger>
         </TabsList>
 
         {/* forceMount en el scrapper: cambiar de pestaña no debe tirar la búsqueda ya hecha (cuesta minutos y plata en Google). */}
@@ -50,6 +53,9 @@ export default function CPeruPage() {
         </TabsContent>
         <TabsContent value="contactos" className="mt-4">
           <PeruContacts refreshKey={refreshKey} />
+        </TabsContent>
+        <TabsContent value="invitaciones" className="mt-4">
+          <PeruInvitations />
         </TabsContent>
       </Tabs>
     </div>

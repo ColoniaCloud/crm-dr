@@ -261,6 +261,7 @@ model User {
   expenses                    Expense[]                   @relation("ExpenseCreatedBy")
   recurringExpenses           RecurringExpense[]          @relation("RecurringExpenseCreatedBy")
   peruContacts                PeruContact[]               @relation("PeruContactCreatedBy")
+  distributorInvites          DistributorInvite[]         @relation("DistributorInviteCreatedBy")
 
   @@map("users")
 }
@@ -433,31 +434,32 @@ model Contact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tags                ContactTag[]
-  visits              Visit[]
-  calls               Call[]
-  quotes              Quote[]
-  sales               Sale[]
-  payments            Payment[]
-  activities          ActivityLog[]        @relation("ContactActivities")
-  leadActivities      LeadActivity[]       @relation("LeadActivities")
-  emails              Email[]              @relation("ContactEmails")
-  portalAccount       ClientPortalAccount?
-  portalNotifications PortalNotification[]
-  accountAdjustments  AccountAdjustment[]
-  portalTokens        PortalAccessToken[]
+  tags                  ContactTag[]
+  visits                Visit[]
+  calls                 Call[]
+  quotes                Quote[]
+  sales                 Sale[]
+  payments              Payment[]
+  activities            ActivityLog[]          @relation("ContactActivities")
+  leadActivities        LeadActivity[]         @relation("LeadActivities")
+  emails                Email[]                @relation("ContactEmails")
+  portalAccount         ClientPortalAccount?
+  portalNotifications   PortalNotification[]
+  accountAdjustments    AccountAdjustment[]
+  portalTokens          PortalAccessToken[]
   portalSupportSessions PortalSupportSession[]
+  portalInviteLogs      PortalInviteLog[]
   // Puntos de Reventa (stock consignado) que viven en el taller de este
   // Contact cuando es un instalador. Solo aplica a Location.type = PUNTO_REVENTA.
-  locations           Location[]
+  locations             Location[]
   // Mi Taller (ver el bloque al final del archivo). Solo se llenan para un
   // Contact con cuenta de portal en nivel INSTALLER.
-  workshopClients     WorkshopClient[]
-  workOrders          WorkOrder[]
-  workshopSettings    WorkshopSettings?
-  workshopServices    WorkshopService[]
-  workshopBookings    WorkshopBooking[]
-  workshopPhotos      WorkshopPhoto[]
+  workshopClients       WorkshopClient[]
+  workOrders            WorkOrder[]
+  workshopSettings      WorkshopSettings?
+  workshopServices      WorkshopService[]
+  workshopBookings      WorkshopBooking[]
+  workshopPhotos        WorkshopPhoto[]
 
   source              LeadSource               @default(MANUAL)
   placeId             String?                  @unique
@@ -1723,6 +1725,37 @@ model PortalAccessToken {
   @@map("portal_access_tokens")
 }
 
+enum PortalInviteStatus {
+  SENT
+  FAILED
+}
+
+/// Cada vez que un operador intentó mandar la invitación al portal desde la
+/// ficha, con el resultado. Lo muestra el diálogo "Acceso al Portal" debajo del
+/// botón de invitar. Es un registro, no un estado: no se lee para decidir nada.
+///
+/// Distinto de PortalAccessToken (solo existe si el token se generó, y se
+/// invalida al pedir otro) y de OperatorAuditLog (solo registra lo que salió bien).
+model PortalInviteLog {
+  id          String             @id @default(cuid())
+  contactId   String
+  contact     Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  // Quién la mandó. Sin relación a User, igual que PortalSupportSession: el
+  // nombre queda congelado.
+  userId      String
+  userName    String
+  // Email al que se intentó mandar y nivel con el que se invitó, congelados.
+  sentToEmail String
+  accessLevel PortalAccessLevel
+  status      PortalInviteStatus
+  // Solo en FAILED: qué falló, en palabras del operador.
+  error       String?            @db.VarChar(500)
+  createdAt   DateTime           @default(now())
+
+  @@index([contactId, createdAt])
+  @@map("portal_invite_logs")
+}
+
 // Un operador del CRM entra al panel de un Cliente para configurárselo
 // mientras habla con él por WhatsApp ("Entrar como el cliente", en la ficha).
 //
@@ -2976,8 +3009,8 @@ model SaleItemCost {
 /// automatizaciones (agentes, garantías, portal). `placeId` es el id de Google
 /// Places y evita cargar dos veces el mismo local.
 model PeruContact {
-  id           String   @id @default(cuid())
-  placeId      String?  @unique
+  id           String  @id @default(cuid())
+  placeId      String? @unique
   name         String
   category     String?
   address      String?
@@ -2994,8 +3027,8 @@ model PeruContact {
   lng          Float?
   rating       Float?
   ratingsTotal Int?
-  contacted    Boolean  @default(false)
-  notes        String?  @db.Text
+  contacted    Boolean @default(false)
+  notes        String? @db.Text
 
   createdById String?
   createdBy   User?    @relation("PeruContactCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -3070,4 +3103,52 @@ model WhatsAppCloudContact {
 
   @@index([contactId])
   @@map("whatsapp_cloud_contacts")
+}
+
+/// Cómo salió el envío de una invitación por un canal (WhatsApp o mail).
+enum InviteChannelStatus {
+  /// Todavía no se intentó.
+  PENDING
+  SENT
+  FAILED
+  /// No había dato para ese canal (o el servicio no está configurado).
+  SKIPPED
+}
+
+/// Invitación personalizada a la página de distribuidores de Perú
+/// (kristallfilm.com/distribuidores-peru/<token>). La crea un SUPERADMIN con los
+/// cuatro datos del invitado; el CRM le manda el link por WhatsApp y por mail, y
+/// kristall-web lee nombre y negocio con el token para saludarlo.
+/// Ver src/lib/distributor-invite.ts.
+model DistributorInvite {
+  id       String @id @default(cuid())
+  /// Valor aleatorio que va en la URL pública. No es el id: lo que queda a la
+  /// vista en un link compartible no debe ser un id interno.
+  token    String @unique
+  name     String
+  business String
+  /// Solo dígitos con código de país (51987654321), como lo pide la Cloud API.
+  phone    String
+  email    String
+
+  whatsappStatus InviteChannelStatus @default(PENDING)
+  whatsappSentAt DateTime?
+  whatsappError  String?             @db.Text
+  emailStatus    InviteChannelStatus @default(PENDING)
+  emailSentAt    DateTime?
+  emailError     String?             @db.Text
+
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
+  openCount     Int       @default(0)
+  /// Con fecha, el link deja de andar (la página muestra que ya no está disponible).
+  revokedAt     DateTime?
+
+  createdById String?
+  createdBy   User?    @relation("DistributorInviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+  @@map("distributor_invites")
 }
