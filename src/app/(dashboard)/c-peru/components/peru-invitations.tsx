@@ -20,6 +20,8 @@ type Invite = {
   business: string;
   phone: string;
   email: string;
+  /** Sale del código del teléfono; define qué versión de la página ve el invitado. */
+  country: "PE" | "AR" | "UY" | "OTHER";
   url: string;
   whatsappStatus: ChannelStatus;
   whatsappSentAt: string | null;
@@ -40,6 +42,14 @@ const COUNTRIES = [
   { value: "AR", label: "Argentina (+54)" },
   { value: "UY", label: "Uruguay (+598)" },
 ];
+
+/** La versión de la página que le toca a cada invitación. */
+const PAGE_VERSION: Record<Invite["country"], string> = {
+  PE: "Página de Perú",
+  AR: "Página de Argentina",
+  UY: "Página de Uruguay",
+  OTHER: "Página sin país",
+};
 
 const EMPTY = { name: "", business: "", phone: "", country: "PE", email: "" };
 
@@ -79,9 +89,10 @@ function ChannelBadge({
 }
 
 /**
- * Invitaciones personalizadas a kristallfilm.com/distribuidores-peru. Un
- * SUPERADMIN carga los cuatro datos y el CRM manda el link por WhatsApp y por
- * mail. La lógica vive en src/lib/distributor-invite.ts.
+ * Invitaciones personalizadas a la página de distribuidores de kristallfilm.com.
+ * Un SUPERADMIN carga los cuatro datos y el CRM manda el link por WhatsApp y por
+ * mail. La página se adapta al país del teléfono (Perú, Argentina, Uruguay o sin
+ * país). La lógica vive en src/lib/distributor-invite.ts.
  */
 export function PeruInvitations() {
   const { data: session } = useSession();
@@ -215,7 +226,8 @@ export function PeruInvitations() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                De otro país: escríbalo completo con + y código (ej. +56 9 1234 5678).
+                El país define la versión de la página: Perú, Argentina o Uruguay, con su bandera. De otro país:
+                escríbalo completo con + y código (ej. +56 9 1234 5678) y recibe la versión sin país.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -274,6 +286,7 @@ export function PeruInvitations() {
                           <div className="text-xs text-muted-foreground">
                             +{inv.phone} · {inv.email}
                           </div>
+                          <div className="text-xs text-muted-foreground">{PAGE_VERSION[inv.country]}</div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col items-start gap-1">

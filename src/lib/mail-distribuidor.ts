@@ -3,7 +3,8 @@ import { banda, cabecera, cuerpo, documento, espacio, llamado, pie, saludo } fro
 import { BRAND } from "@/lib/brand";
 
 /**
- * El mail de la invitación personalizada a la página de distribuidores de Perú.
+ * El mail de la invitación personalizada a la página de distribuidores. La
+ * cabecera nombra el país del invitado (ver `inviteCountry`).
  * Mismo diseño que los de garantía y remito (cabecera negra, banda, pie): son
  * funciones puras, así que se puede ver con datos de ejemplo sin mandar nada.
  *
@@ -12,12 +13,21 @@ import { BRAND } from "@/lib/brand";
  * `kristall_propuesta_distribuidor` (ver distributor-invite.ts).
  */
 
+/** El rótulo de la cabecera. Sin país conocido, va sin país. */
+const CABECERA: Record<"PE" | "AR" | "UY" | "OTHER", string> = {
+  PE: "Distribuidor autorizado &middot; Perú",
+  AR: "Distribuidor autorizado &middot; Argentina",
+  UY: "Distribuidor autorizado &middot; Uruguay",
+  OTHER: "Distribuidor autorizado",
+};
+
 const LEGAL = `Recibe este correo porque Kristall Film le preparó una propuesta. Si no corresponde, responda a ${escapeHtml(BRAND.salesEmail)}.`;
 
 export function renderInvitacionDistribuidor(d: {
   nombre: string;
   negocio: string;
   url: string;
+  pais?: "PE" | "AR" | "UY" | "OTHER";
 }): { subject: string; html: string } {
   const asunto = `Propuesta del Programa Distribuidor Autorizado — ${d.negocio}`;
   return {
@@ -26,7 +36,7 @@ export function renderInvitacionDistribuidor(d: {
       asunto,
       preheader: `Preparamos una propuesta pensada para ${d.negocio}.`,
       contenido:
-        cabecera("Distribuidor autorizado &middot; Perú") +
+        cabecera(CABECERA[d.pais ?? "PE"]) +
         banda({
           eyebrow: "Programa Distribuidor Autorizado",
           titulo: `Una propuesta pensada para ${escapeHtml(d.negocio)}`,

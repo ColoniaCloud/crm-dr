@@ -13,7 +13,8 @@ import type { WhatsAppSendResponse, WhatsAppTemplateComponent } from "@/types/wh
 const log = createLogger("lib/distributor-invite");
 
 /**
- * Invitaciones personalizadas a la página de distribuidores de Perú.
+ * Invitaciones personalizadas a la página de distribuidores (Perú, Argentina,
+ * Uruguay y una versión sin país para el resto).
  *
  * ─── El flujo ──────────────────────────────────────────────────────────────
  *
@@ -35,6 +36,20 @@ const log = createLogger("lib/distributor-invite");
  * de `portal-tokens.ts`: no abre nada sensible (es una página de presentación)
  * y hay que poder reenviarlo.
  *
+ * ─── El país ───────────────────────────────────────────────────────────────
+ *
+ * La página se adapta al país del invitado (bandera, nombre del país, dirección
+ * del link). El país **no se guarda**: sale del código internacional del
+ * teléfono (`inviteCountry`), que es lo que el operador eligió en el formulario.
+ * Así las invitaciones viejas también quedan adaptadas y no hay dos datos que
+ * puedan contradecirse.
+ *
+ * El botón de la plantilla de WhatsApp tiene la base de la URL fija en Meta
+ * (`/distribuidores-peru/`), así que por WhatsApp todos entran por esa ruta y
+ * kristall-web redirige a la del país. Para no contar dos visitas, kristall-web
+ * dice desde qué ruta lee (`for`) y, si no es la del invitado, se le contesta
+ * solo adónde ir, sin contar.
+ *
  * **Nada de acá tira por un canal que falla**: devuelve el estado de cada uno.
  */
 
@@ -47,8 +62,36 @@ export function generateInviteToken(): string {
   return randomBytes(16).toString("base64url"); // 22 caracteres
 }
 
-export function inviteUrl(token: string): string {
-  return `${portalBaseUrl()}/distribuidores-peru/${token}`;
+/** El país de la página. `OTHER`: cualquier otro código → versión sin país. */
+export type InviteCountry = "PE" | "AR" | "UY" | "OTHER";
+
+const INVITE_COUNTRIES: readonly InviteCountry[] = ["PE", "AR", "UY", "OTHER"];
+
+export function isInviteCountry(v: unknown): v is InviteCountry {
+  return typeof v === "string" && (INVITE_COUNTRIES as readonly string[]).includes(v);
+}
+
+/**
+ * El país según el código internacional del teléfono (solo dígitos, como se
+ * guarda). 51, 54 y 598 no son prefijo de ningún otro código de país.
+ */
+export function inviteCountry(phone: string): InviteCountry {
+  if (phone.startsWith("598")) return "UY";
+  if (phone.startsWith("54")) return "AR";
+  if (phone.startsWith("51")) return "PE";
+  return "OTHER";
+}
+
+/** La ruta pública de cada país en kristall-web (ver `paises.ts` de ese repo). */
+const INVITE_PATH: Record<InviteCountry, string> = {
+  PE: "/distribuidores-peru",
+  AR: "/distribuidores-argentina",
+  UY: "/distribuidores-uruguay",
+  OTHER: "/propuesta-distribuidor",
+};
+
+export function inviteUrl(token: string, country: InviteCountry = "PE"): string {
+  return `${portalBaseUrl()}${INVITE_PATH[country]}/${token}`;
 }
 
 /** Lo que el CRM muestra de cada invitación (con el link armado). */
@@ -59,7 +102,8 @@ export function serializeInvite(i: DistributorInvite & { createdBy?: { name: str
     business: i.business,
     phone: i.phone,
     email: i.email,
-    url: inviteUrl(i.token),
+    country: inviteCountry(i.phone),
+    url: inviteUrl(i.token, inviteCountry(i.phone)),
     whatsappStatus: i.whatsappStatus,
     whatsappSentAt: i.whatsappSentAt,
     whatsappError: i.whatsappError,
@@ -92,7 +136,9 @@ async function enviarWhatsApp(i: DistributorInvite, sentById?: string | null): P
         { type: "text", text: cleanParam(i.business) },
       ],
     },
-    // Botón «Ver propuesta»: Meta guarda la base de la URL y acá va solo el token.
+    // Botón «Ver propuesta»: Meta guarda la base de la URL (/distribuidores-peru/)
+    // y acá va solo el token. Si el invitado es de otro país, kristall-web lo
+    // redirige a su ruta.
     { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: i.token }] },
   ];
 
@@ -130,10 +176,12 @@ async function enviarMail(i: DistributorInvite): Promise<Canal> {
   if (esDemo()) return { status: "SKIPPED", error: "Sesión de demostración" };
   if (!isSmtpConfigured()) return { status: "SKIPPED", error: "El envío de mails no está configurado (falta SMTP)" };
 
+  const country = inviteCountry(i.phone);
   const { subject, html } = renderInvitacionDistribuidor({
     nombre: i.name,
     negocio: i.business,
-    url: inviteUrl(i.token),
+    url: inviteUrl(i.token, country),
+    pais: country,
   });
   try {
     await transporter.sendMail({ from: FROM("Carlos Arrúa · Kristall"), to: i.email, subject, html });
@@ -193,20 +241,31 @@ export async function createInvite(data: {
   return sendInvite(invite, ["whatsapp", "email"], data.createdById);
 }
 
+export type InviteRead =
+  | { revoked: false; moved: false; name: string; business: string; country: InviteCountry }
+  /** kristall-web leyó desde la ruta de otro país: se le dice adónde ir y no se cuenta la visita. */
+  | { revoked: false; moved: true; country: InviteCountry }
+  | { revoked: true };
+
 /**
  * Lo que lee kristall-web con el token. Cuenta la visita. `null` si el token no
  * existe; `revoked: true` si el link se desactivó.
  *
- * Solo devuelve nombre y negocio: el teléfono y el mail son del CRM, y el link
- * puede haberse reenviado a otra persona.
+ * `expected` es el país de la ruta desde la que se lee. Si no coincide con el
+ * del invitado, devuelve `moved` con el país correcto y **no** cuenta: la visita
+ * se cuenta cuando kristall-web vuelve a leer desde la ruta que corresponde.
+ *
+ * Solo devuelve nombre, negocio y país: el teléfono y el mail son del CRM, y el
+ * link puede haberse reenviado a otra persona.
  */
-export async function readInviteByToken(
-  token: string
-): Promise<{ name: string; business: string; revoked: false } | { revoked: true } | null> {
+export async function readInviteByToken(token: string, expected?: InviteCountry): Promise<InviteRead | null> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
   const invite = await prisma.distributorInvite.findUnique({ where: { token } });
   if (!invite) return null;
   if (invite.revokedAt) return { revoked: true };
+
+  const country = inviteCountry(invite.phone);
+  if (expected && expected !== country) return { revoked: false, moved: true, country };
 
   const now = new Date();
   await prisma.distributorInvite.update({
@@ -217,5 +276,5 @@ export async function readInviteByToken(
       ...(invite.firstOpenedAt ? {} : { firstOpenedAt: now }),
     },
   });
-  return { name: invite.name, business: invite.business, revoked: false };
+  return { revoked: false, moved: false, name: invite.name, business: invite.business, country };
 }
