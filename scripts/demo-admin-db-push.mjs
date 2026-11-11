@@ -30,7 +30,9 @@
  * deja entrar (lo que ya pasaba) a un deploy trabado.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { chmodSync, copyFileSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 /** Lee una variable del entorno o, si no está, del .env (Hostinger lo escribe en el build). */
 function delEnv(nombre) {
@@ -64,22 +66,95 @@ function principal() {
   }
 
   console.log(`[demo-admin] Poniendo al día las tablas de ${base} ...`);
-  // `shell: true` porque en Windows `npx` es un .cmd y sin shell el spawn falla callado.
-  const r = spawnSync("npx", ["prisma", "db", "push", "--skip-generate"], {
-    stdio: "inherit",
-    shell: true,
-    env: { ...process.env, DATABASE_URL: url },
-    timeout: 180_000,
-  });
 
-  if (r.error || r.status !== 0) {
+  // En el build de Hostinger el motor de schema de Prisma (un ejecutable, no una
+  // librería como el motor de consultas) no se deja ejecutar desde node_modules:
+  // el primer intento dio `spawn … schema-engine-… EACCES`. Se prueba en orden:
+  // tal cual, con el permiso de ejecución puesto, y con una copia en otra carpeta.
+  const motor = motorDeSchema();
+  const copias = [];
+  const intentos = [{ nombre: "tal cual", preparar: () => ({}) }];
+  if (motor) {
+    intentos.push({
+      nombre: "con permiso de ejecución",
+      preparar: () => {
+        chmodSync(motor, 0o755);
+        return {};
+      },
+    });
+    for (const carpeta of [tmpdir(), homedir()]) {
+      intentos.push({
+        nombre: `con una copia del motor en ${carpeta}`,
+        preparar: () => {
+          const copia = join(carpeta, `.prisma-schema-engine-demo-${process.pid}`);
+          copyFileSync(motor, copia);
+          chmodSync(copia, 0o755);
+          copias.push(copia);
+          return { PRISMA_SCHEMA_ENGINE_BINARY: copia };
+        },
+      });
+    }
+    console.log(`[demo-admin] Motor de schema: ${motor} (permisos ${permisos(motor)})`);
+  }
+
+  let listo = false;
+  for (const intento of intentos) {
+    let extra;
+    try {
+      extra = intento.preparar();
+    } catch (err) {
+      aviso(`Intento «${intento.nombre}»: no se pudo preparar (${err instanceof Error ? err.message : err}).`);
+      continue;
+    }
+    // `shell: true` porque en Windows `npx` es un .cmd y sin shell el spawn falla callado.
+    const r = spawnSync("npx", ["prisma", "db", "push", "--skip-generate"], {
+      encoding: "utf8",
+      shell: true,
+      env: { ...process.env, DATABASE_URL: url, ...extra },
+      timeout: 180_000,
+    });
+    const salida = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    if (!r.error && r.status === 0) {
+      console.log(salida.trim());
+      console.log(`[demo-admin] Tablas al día (intento «${intento.nombre}»). El seed corre solo con el primer request.`);
+      listo = true;
+      break;
+    }
+    aviso(`Intento «${intento.nombre}» falló${r.error ? `: ${r.error}` : ` (código ${r.status})`}.`);
+    // Solo las líneas que explican el fallo; la URL de la base no sale en el log.
+    for (const linea of salida.split(/\r?\n/).filter((l) => /error|EACCES|denied|P\d{4}/i.test(l)).slice(0, 6)) {
+      aviso(`   ${linea.replace(/mysql:\/\/\S+/g, "mysql://<oculto>").slice(0, 300)}`);
+    }
+    // Si el problema no es de permisos (ej. un cambio destructivo), reintentar no arregla nada.
+    if (!/EACCES|permission denied/i.test(salida)) break;
+  }
+
+  for (const copia of copias) rmSync(copia, { force: true });
+
+  if (!listo) {
     aviso("ATENCION: no se pudo empujar el schema a la base de demo.");
-    aviso(r.error ? String(r.error) : `prisma db push terminó con código ${r.status}.`);
     aviso("El demo se despliega igual, pero el login va a fallar hasta que la base tenga las tablas.");
     aviso("Si fue un cambio destructivo de schema: vaciar la base de demo y volver a desplegar.");
-    return;
   }
-  console.log("[demo-admin] Tablas al día. El seed corre solo con el primer request.");
+}
+
+/** El ejecutable del motor de schema que instaló Prisma, si está. */
+function motorDeSchema() {
+  const carpeta = join("node_modules", "@prisma", "engines");
+  try {
+    const archivo = readdirSync(carpeta).find((f) => f.startsWith("schema-engine-") && !f.endsWith(".exe"));
+    return archivo ? join(process.cwd(), carpeta, archivo) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function permisos(ruta) {
+  try {
+    return (statSync(ruta).mode & 0o777).toString(8);
+  } catch {
+    return "?";
+  }
 }
 
 try {
