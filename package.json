@@ -6,6 +6,7 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev",
+    "prebuild": "node -e \"import('./scripts/demo-admin-db-push.mjs').catch(()=>{})\"",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
