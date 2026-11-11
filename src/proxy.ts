@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { asegurarSeedDemoAdmin } from "@/lib/demo-admin-seed";
 
 function getClientIp(req: Request): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0].trim()
@@ -49,6 +50,13 @@ function noSharedCache<T extends NextResponse>(res: T): T {
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const method = req.method;
+
+  // Solo existe en el deploy de demo del panel interno. Sin esperar, igual
+  // que asegurarLimpiezaArrancada() del portal: el primer request real
+  // dispara el seed, no el arranque del proceso. Ver demo-admin-seed.ts.
+  if (process.env.SEED_DEMO_ADMIN_ON_BOOT === "true") {
+    void asegurarSeedDemoAdmin();
+  }
 
   // --- Rate limiting for specific API routes ---
   if (pathname.startsWith("/api/")) {
