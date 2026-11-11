@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalApiKey } from "@/lib/portal-api-auth";
 import { rateLimit } from "@/lib/rate-limit";
-import { clientIp } from "@/lib/request-ip";
+import { portalVisitorIp } from "@/lib/request-ip";
 import { enModoDemo } from "@/lib/demo-context";
 import {
   provisionarClonDemo,
@@ -33,7 +33,11 @@ export async function POST(request: Request) {
 
   // Dos límites. El de IP frena a una persona que insiste; el tope de clones
   // vivos frena a un script, que no se cansa.
-  if (!rateLimit(`demo-session:${clientIp(request)}`, 5, 60 * 60_000).allowed) {
+  //
+  // La IP es la del visitante, que manda kristall-web: la del pedido es siempre
+  // la de su servidor, y con esa el tope era uno solo para todo el mundo (la
+  // sexta persona de la hora recibía este 429 en su primer intento).
+  if (!rateLimit(`demo-session:${portalVisitorIp(request)}`, 5, 60 * 60_000).allowed) {
     return NextResponse.json(
       { error: "Ya abriste varias demostraciones. Probá de nuevo en un rato." },
       { status: 429 }
