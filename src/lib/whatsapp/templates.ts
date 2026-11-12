@@ -1,8 +1,17 @@
-import { createTemplate, listTemplates, type GraphTemplate, type NewGraphTemplate } from "@/lib/whatsapp/client";
 import {
+  createTemplate,
+  listTemplates,
+  type GraphTemplate,
+  type NewGraphButton,
+  type NewGraphTemplate,
+} from "@/lib/whatsapp/client";
+import {
+  normalizeButtonPhone,
   stateOf,
   validateNewTemplate,
   type NewTemplateInput,
+  type TemplateButton,
+  type TemplateButtonView,
   type TemplateRow,
 } from "@/lib/whatsapp/template-rules";
 
@@ -12,6 +21,8 @@ export {
   stateOf,
   validateNewTemplate,
   type NewTemplateInput,
+  type TemplateButton,
+  type TemplateButtonView,
   type TemplateRow,
   type TemplateState,
 } from "@/lib/whatsapp/template-rules";
@@ -25,9 +36,10 @@ export {
  *
  * Desde la bandeja solo se pueden mandar las plantillas que se completan con
  * variables **numéricas del cuerpo** ({{1}}, {{2}}...). Las que llevan un
- * encabezado con imagen o documento, o botones con variables, se listan pero
- * marcadas como no soportadas, para que el equipo sepa que existen y por qué no
- * se pueden elegir.
+ * encabezado con imagen o documento, o botones que piden un dato al enviar, se
+ * listan pero marcadas como no soportadas, para que el equipo sepa que existen y
+ * por qué no se pueden elegir. Los botones fijos (respuesta rápida, link sin
+ * variable, llamada) no piden nada: van solos con la plantilla.
  */
 
 export type InboxTemplate = {
@@ -40,6 +52,7 @@ export type InboxTemplate = {
   footer?: string;
   /** Cuántas variables pide el cuerpo ({{1}}..{{n}}). */
   variableCount: number;
+  buttons?: TemplateButtonView[];
   /** Por qué no se puede mandar desde la bandeja; ausente si se puede. */
   unsupported?: string;
 };
@@ -92,14 +105,29 @@ function toInboxTemplate(t: GraphTemplate): InboxTemplate {
     header: headerPart?.format === "TEXT" ? headerPart.text : undefined,
     footer,
     variableCount,
+    ...(buttons.length ? { buttons: toButtonViews(buttons) } : {}),
     unsupported: unsupportedReason(body, headerPart, buttons),
   };
+}
+
+type GraphButton = { type: string; text?: string; url?: string; phone_number?: string };
+
+/** Los botones que no piden nada al enviar la plantilla. */
+const STATIC_BUTTON_TYPES = new Set(["QUICK_REPLY", "URL", "PHONE_NUMBER", "VOICE_CALL"]);
+
+function toButtonViews(buttons: GraphButton[]): TemplateButtonView[] {
+  return buttons.map((b) => ({
+    type: b.type,
+    text: b.text ?? "",
+    ...(b.url ? { url: b.url } : {}),
+    ...(b.phone_number ? { phone: b.phone_number } : {}),
+  }));
 }
 
 function unsupportedReason(
   body: string,
   header: { format?: string; text?: string } | undefined,
-  buttons: { type: string; text?: string; url?: string }[]
+  buttons: GraphButton[]
 ): string | undefined {
   if (header && header.format && header.format !== "TEXT") {
     return "Lleva un encabezado con imagen, video o documento";
@@ -108,6 +136,9 @@ function unsupportedReason(
   if (/\{\{\s*[^\d\s}][^}]*\}\}/.test(body)) return "Usa variables con nombre en lugar de {{1}}, {{2}}";
   if (buttons.some((b) => b.type === "URL" && /\{\{/.test(b.url ?? ""))) {
     return "Tiene un botón con link variable";
+  }
+  if (buttons.some((b) => !STATIC_BUTTON_TYPES.has(b.type))) {
+    return "Tiene un botón que pide un dato al enviar (código, catálogo o flujo)";
   }
   return undefined;
 }
@@ -131,10 +162,14 @@ export function toTemplateRows(raw: GraphTemplate[]): TemplateRow[] {
         header: header?.format === "TEXT" ? header.text : undefined,
         footer: parts.find((c) => c.type === "FOOTER")?.text,
         rejectedReason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : undefined,
+        ...(buttonsOf(parts).length ? { buttons: toButtonViews(buttonsOf(parts)) } : {}),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name) || a.language.localeCompare(b.language));
 }
+
+const buttonsOf = (parts: NonNullable<GraphTemplate["components"]>): GraphButton[] =>
+  parts.find((c) => c.type === "BUTTONS")?.buttons ?? [];
 
 const ALL_TTL_MS = 60 * 1000;
 const allCache = new Map<string, { at: number; rows: TemplateRow[] }>();
@@ -149,6 +184,13 @@ export async function getAllTemplates(force = false, wabaId = ""): Promise<Templ
 }
 
 // ─── Crear una plantilla ─────────────────────────────────────────────────────
+
+function toGraphButton(b: TemplateButton): NewGraphButton {
+  const text = b.text.trim();
+  if (b.type === "URL") return { type: "URL", text, url: b.url.trim() };
+  if (b.type === "PHONE_NUMBER") return { type: "PHONE_NUMBER", text, phone_number: normalizeButtonPhone(b.phone) };
+  return { type: "QUICK_REPLY", text };
+}
 
 /**
  * Valida y manda la plantilla a revisión, en la cuenta que se pasa (o la
@@ -167,6 +209,7 @@ export async function submitNewTemplate(t: NewTemplateInput, wabaId = "") {
     ...(variables ? { example: { body_text: [t.examples.map((e) => e.trim())] } } : {}),
   });
   if (t.footer?.trim()) components.push({ type: "FOOTER", text: t.footer.trim() });
+  if (t.buttons?.length) components.push({ type: "BUTTONS", buttons: t.buttons.map(toGraphButton) });
 
   const template = { name: t.name, language: t.language, category: t.category, components };
   const created = wabaId ? await createTemplate(template, wabaId) : await createTemplate(template);

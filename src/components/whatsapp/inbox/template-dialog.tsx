@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Send } from "@/components/icons";
 import { fillTemplate } from "@/lib/whatsapp/message-view";
 import type { InboxTemplate } from "@/lib/whatsapp/templates";
+import { TemplateButtonsPreview } from "../templates/template-buttons";
 
 /**
  * Completa y manda una plantilla aprobada. Muestra el texto como va a llegarle
@@ -57,6 +58,7 @@ export function TemplateDialog({
               {preview}
               {template.footer && <p className="mt-2 text-xs text-muted-foreground">{template.footer}</p>}
             </div>
+            <TemplateButtonsPreview buttons={template.buttons} />
 
             {template.variableCount > 0 && (
               <div className="space-y-3">

@@ -205,7 +205,7 @@ export type GraphTemplate = {
   /** Solo en las rechazadas: NONE, o el motivo (ej. INVALID_FORMAT, ABUSIVE_CONTENT). */
   rejected_reason?: string;
   quality_score?: { score?: string };
-  components?: { type: string; format?: string; text?: string; buttons?: { type: string; text?: string; url?: string }[] }[];
+  components?: { type: string; format?: string; text?: string; buttons?: { type: string; text?: string; url?: string; phone_number?: string }[] }[];
 };
 
 /**
@@ -238,13 +238,22 @@ export type NewGraphTemplate = {
   name: string;
   language: string;
   category: "UTILITY" | "MARKETING";
-  components: {
-    type: "HEADER" | "BODY" | "FOOTER";
-    format?: "TEXT";
-    text: string;
-    example?: { body_text?: string[][] };
-  }[];
+  components: (
+    | {
+        type: "HEADER" | "BODY" | "FOOTER";
+        format?: "TEXT";
+        text: string;
+        example?: { body_text?: string[][] };
+      }
+    | { type: "BUTTONS"; buttons: NewGraphButton[] }
+  )[];
 };
+
+/** Un botón como lo pide Meta al crear la plantilla (todos van en un solo componente BUTTONS). */
+export type NewGraphButton =
+  | { type: "QUICK_REPLY"; text: string }
+  | { type: "URL"; text: string; url: string }
+  | { type: "PHONE_NUMBER"; text: string; phone_number: string };
 
 /**
  * Manda una plantilla nueva a revisión de Meta. Queda en PENDING; la aprobación

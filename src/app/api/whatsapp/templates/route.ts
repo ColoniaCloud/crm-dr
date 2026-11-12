@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
@@ -7,6 +6,7 @@ import { logOperatorAction } from "@/lib/notifications";
 import { WhatsAppApiError, isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { requireWhatsAppLine } from "@/lib/whatsapp/line-access";
 import { templatesAccountOf } from "@/lib/whatsapp/lines";
+import { newTemplateSchema } from "@/lib/whatsapp/template-schema";
 import { getAllTemplates, getApprovedTemplates, submitNewTemplate } from "@/lib/whatsapp/templates";
 
 const log = createLogger("api/whatsapp/templates");
@@ -41,15 +41,7 @@ export async function GET(request: Request) {
   }
 }
 
-const schema = z.object({
-  name: z.string().min(1).max(512),
-  language: z.string().min(2).max(16),
-  category: z.enum(["UTILITY", "MARKETING"]),
-  header: z.string().max(200).optional(),
-  body: z.string().min(1).max(2000),
-  footer: z.string().max(200).optional(),
-  examples: z.array(z.string().max(300)).max(20).default([]),
-});
+const schema = newTemplateSchema;
 
 /** Manda una plantilla nueva a revisión de Meta. Queda "en revisión" hasta que la apruebe o rechace. */
 export async function POST(request: Request) {

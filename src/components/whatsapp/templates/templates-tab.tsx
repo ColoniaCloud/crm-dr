@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { withLine } from "@/lib/whatsapp/line-url";
 import type { TemplateRow, TemplateState } from "@/lib/whatsapp/template-rules";
 import { NewTemplateDialog } from "./new-template-dialog";
+import { TemplateButtonsPreview } from "./template-buttons";
 
 const STATE: Record<TemplateState, { label: string; className: string }> = {
   approved: { label: "Aprobada", className: "border-green-500/30 bg-green-500/10 text-green-600" },
@@ -156,6 +157,7 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
               {t.body}
               {t.footer && <p className="mt-2 text-xs text-muted-foreground">{t.footer}</p>}
             </div>
+            <TemplateButtonsPreview buttons={t.buttons} className="mt-1" />
             {t.state === "rejected" && (
               <p className="mt-2 text-xs text-red-600">
                 {t.rejectedReason ? (REJECTION[t.rejectedReason] ?? t.rejectedReason) : "Meta la rechazó sin indicar el motivo."}{" "}

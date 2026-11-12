@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { fillTemplate } from "@/lib/whatsapp/message-view";
 import type { ThreadMessage } from "@/lib/whatsapp/inbox";
 import type { InboxTemplate } from "@/lib/whatsapp/templates";
+import { TemplateButtonsPreview } from "../templates/template-buttons";
 
 /** El archivo se pide con el mensaje en el que vino: el servidor comprueba con eso de qué bandeja es. */
 const mediaUrl = (id: string, messageId: string) =>
@@ -116,6 +117,7 @@ function Body({
             Plantilla · {v.name}
           </p>
           {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
+          <TemplateButtonsPreview buttons={t?.buttons} />
         </div>
       );
     }
