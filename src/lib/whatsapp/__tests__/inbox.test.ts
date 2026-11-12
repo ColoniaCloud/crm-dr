@@ -25,7 +25,12 @@ vi.mock("@/lib/whatsapp/client", () => ({
 }));
 
 import { WINDOW_MS, InboxSendError, getThread, listConversations, sendToPeer } from "@/lib/whatsapp/inbox";
+import { linesFor, primaryLine } from "@/lib/whatsapp/lines";
 import { clearTemplateCache } from "@/lib/whatsapp/templates";
+
+/** La línea de siempre, y la de una persona asignada a la suya. */
+const LINE = primaryLine();
+const NATI = linesFor({ role: "ADMIN", email: "natalia@kristallfilm.com" })[0];
 
 const messages = () => fakePrisma.whatsAppCloudMessage.rows;
 const ago = (ms: number) => new Date(Date.now() - ms);
@@ -63,7 +68,7 @@ describe("lista de conversaciones", () => {
     await inbound("a", 3 * HOUR);
     await outbound("b", 2 * HOUR, CUSTOMER_RECIPIENT);
 
-    const list = await listConversations();
+    const list = await listConversations(LINE);
 
     expect(list).toHaveLength(1);
     expect(list[0].peer).toBe("541166660000");
@@ -75,7 +80,7 @@ describe("lista de conversaciones", () => {
     await inbound("a", 5 * HOUR, "viejo", "5491100000001");
     await inbound("b", 1 * HOUR, "reciente", "5491100000002");
 
-    const list = await listConversations();
+    const list = await listConversations(LINE);
 
     expect(list.map((c) => c.peer)).toEqual(["541100000002", "541100000001"]);
     expect(list.every((c) => c.awaitingReply)).toBe(true);
@@ -88,21 +93,21 @@ describe("lista de conversaciones", () => {
     });
     await msg({ wamid: "a", direction: "inbound", from: CUSTOMER_WA, to: BUSINESS_DISPLAY, timestamp: ago(HOUR), contactId: lead.id });
 
-    const [c] = await listConversations();
+    const [c] = await listConversations(LINE);
 
     expect(c).toMatchObject({ name: "Marcos Pérez", autoCreated: true, contactHref: `/leads/${lead.id}` });
   });
 
   it("sin ficha ni perfil muestra el número", async () => {
     await inbound("a", HOUR);
-    expect((await listConversations())[0].name).toBe("+5491166660000");
+    expect((await listConversations(LINE))[0].name).toBe("+5491166660000");
   });
 
   it("indica si la ventana de 24 h está abierta", async () => {
     await inbound("a", 2 * HOUR, "abierta", "5491100000001");
     await inbound("b", 30 * HOUR, "cerrada", "5491100000002");
 
-    const byPeer = Object.fromEntries((await listConversations()).map((c) => [c.peer, c.windowOpen]));
+    const byPeer = Object.fromEntries((await listConversations(LINE)).map((c) => [c.peer, c.windowOpen]));
 
     expect(byPeer).toEqual({ "541100000001": true, "541100000002": false });
   });
@@ -111,8 +116,8 @@ describe("lista de conversaciones", () => {
     await inbound("a", HOUR, "x", "5491100000001");
     await inbound("b", HOUR, "y", "5491100000002");
 
-    expect((await listConversations("0002")).map((c) => c.peer)).toEqual(["541100000002"]);
-    expect(await listConversations("zzz")).toEqual([]);
+    expect((await listConversations(LINE, "0002")).map((c) => c.peer)).toEqual(["541100000002"]);
+    expect(await listConversations(LINE, "zzz")).toEqual([]);
   });
 });
 
@@ -122,7 +127,7 @@ describe("hilo", () => {
     await outbound("b", 2 * HOUR);
     await inbound("c", 1 * HOUR, "tres");
 
-    const t = await getThread(CUSTOMER_RECIPIENT);
+    const t = await getThread(CUSTOMER_RECIPIENT, LINE);
 
     expect(t.messages.map((m) => m.direction)).toEqual(["inbound", "outbound", "inbound"]);
     expect(t.windowOpen).toBe(true);
@@ -134,14 +139,14 @@ describe("hilo", () => {
     await inbound("a", 25 * HOUR);
     await outbound("b", 1 * HOUR);
 
-    const t = await getThread(CUSTOMER_WA);
+    const t = await getThread(CUSTOMER_WA, LINE);
 
     expect(t.windowOpen).toBe(false);
     expect(t.windowExpiresAt).toBeNull();
   });
 
   it("un chat sin mensajes devuelve el número y la ventana cerrada", async () => {
-    const t = await getThread("541199998888");
+    const t = await getThread("541199998888", LINE);
     expect(t).toMatchObject({ messages: [], windowOpen: false, number: "+541199998888" });
   });
 });
@@ -150,9 +155,9 @@ describe("envío", () => {
   it("manda texto libre dentro de la ventana y deja la fila con quién lo mandó", async () => {
     await inbound("a", HOUR);
 
-    const { wamid } = await sendToPeer(CUSTOMER_WA, { kind: "text", text: "  Hola  " }, "user_1");
+    const { wamid } = await sendToPeer(CUSTOMER_WA, { kind: "text", text: "  Hola  " }, "user_1", LINE);
 
-    expect(graph.sendTextMessage).toHaveBeenCalledWith(CUSTOMER_WA, "Hola");
+    expect(graph.sendTextMessage).toHaveBeenCalledWith(CUSTOMER_WA, "Hola", LINE.phoneNumberId);
     expect(wamid).toBe("wamid.SENT_1");
     const row = messages().find((m) => m.wamid === "wamid.SENT_1");
     expect(row).toMatchObject({ direction: "outbound", type: "text", status: "sent", sentById: "user_1", to: CUSTOMER_WA });
@@ -161,7 +166,7 @@ describe("envío", () => {
   it("no manda texto libre fuera de la ventana de 24 h y no toca a Meta", async () => {
     await inbound("a", 25 * HOUR);
 
-    const attempt = sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1");
+    const attempt = sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1", LINE);
 
     await expect(attempt).rejects.toMatchObject({ status: 409 });
     expect(graph.sendTextMessage).not.toHaveBeenCalled();
@@ -170,7 +175,7 @@ describe("envío", () => {
 
   it("no deja mandar un mensaje vacío", async () => {
     await inbound("a", HOUR);
-    await expect(sendToPeer(CUSTOMER_WA, { kind: "text", text: "   " }, "u")).rejects.toBeInstanceOf(InboxSendError);
+    await expect(sendToPeer(CUSTOMER_WA, { kind: "text", text: "   " }, "u", LINE)).rejects.toBeInstanceOf(InboxSendError);
   });
 
   it("manda una plantilla aprobada aun con la ventana cerrada, con las variables en el cuerpo", async () => {
@@ -179,12 +184,13 @@ describe("envío", () => {
     await sendToPeer(
       CUSTOMER_WA,
       { kind: "template", name: "kristall_pedir_datos", language: "es_AR", params: ["Marcos", "https://x.test/y"] },
-      "user_1"
+      "user_1",
+      LINE
     );
 
     expect(graph.sendTemplateMessage).toHaveBeenCalledWith(CUSTOMER_WA, "kristall_pedir_datos", "es_AR", [
       { type: "body", parameters: [{ type: "text", text: "Marcos" }, { type: "text", text: "https://x.test/y" }] },
-    ]);
+    ], LINE.phoneNumberId);
     const row = messages().find((m) => m.wamid === "wamid.SENT_2");
     expect(row).toMatchObject({ type: "template", templateName: "kristall_pedir_datos", sentById: "user_1" });
   });
@@ -195,7 +201,7 @@ describe("envío", () => {
       { kind: "template" as const, name: "inventada", language: "es_AR", params: [] },
       { kind: "template" as const, name: "kristall_pedir_datos", language: "en_US", params: ["a", "b"] },
     ]) {
-      await expect(sendToPeer(CUSTOMER_WA, input, "u")).rejects.toMatchObject({ status: 400 });
+      await expect(sendToPeer(CUSTOMER_WA, input, "u", LINE)).rejects.toMatchObject({ status: 400 });
     }
     expect(graph.sendTemplateMessage).not.toHaveBeenCalled();
   });
@@ -203,8 +209,8 @@ describe("envío", () => {
   it("rechaza variables de menos o vacías", async () => {
     await inbound("a", HOUR);
     const base = { kind: "template" as const, name: "kristall_pedir_datos", language: "es_AR" };
-    await expect(sendToPeer(CUSTOMER_WA, { ...base, params: ["solo una"] }, "u")).rejects.toMatchObject({ status: 400 });
-    await expect(sendToPeer(CUSTOMER_WA, { ...base, params: ["a", "  "] }, "u")).rejects.toMatchObject({ status: 400 });
+    await expect(sendToPeer(CUSTOMER_WA, { ...base, params: ["solo una"] }, "u", LINE)).rejects.toMatchObject({ status: 400 });
+    await expect(sendToPeer(CUSTOMER_WA, { ...base, params: ["a", "  "] }, "u", LINE)).rejects.toMatchObject({ status: 400 });
     expect(graph.sendTemplateMessage).not.toHaveBeenCalled();
   });
 
@@ -212,11 +218,12 @@ describe("envío", () => {
     await sendToPeer(
       "5491155559999",
       { kind: "template", name: "kristall_pedir_datos", language: "es_AR", params: ["Ana", "link"] },
-      "u"
+      "u",
+      LINE
     );
     // Sin mensajes previos no se sabe cómo escribe Meta el número: se manda como lo
     // normaliza el resto del CRM (54 + área + número), igual que los avisos.
-    expect(graph.sendTemplateMessage).toHaveBeenCalledWith("541155559999", "kristall_pedir_datos", "es_AR", expect.any(Array));
+    expect(graph.sendTemplateMessage).toHaveBeenCalledWith("541155559999", "kristall_pedir_datos", "es_AR", expect.any(Array), LINE.phoneNumberId);
   });
 
   it("el mensaje ya registrado por el webhook (stub) se completa en vez de duplicarse", async () => {
@@ -226,7 +233,7 @@ describe("envío", () => {
       timestamp: new Date(), status: "delivered", content: { stub: true },
     });
 
-    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1");
+    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1", LINE);
 
     const rows = messages().filter((m) => m.wamid === "wamid.SENT_1");
     expect(rows).toHaveLength(1);
@@ -236,7 +243,7 @@ describe("envío", () => {
   it("el saliente guarda como origen el número del negocio, no el id de la API", async () => {
     await inbound("a", HOUR);
 
-    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1");
+    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_1", LINE);
 
     expect(messages().find((m) => m.wamid === "wamid.SENT_1")?.from).toBe(BUSINESS_DISPLAY);
   });
@@ -249,24 +256,96 @@ describe("envío", () => {
 describe("estado de un número", () => {
   it("sin mensajes: no hay conversación ni ventana", async () => {
     const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
-    expect(await getPeerStatus("51987654321")).toEqual({ peer: "51987654321", hasConversation: false, windowOpen: false });
+    expect(await getPeerStatus("51987654321", LINE)).toEqual({ peer: "51987654321", hasConversation: false, windowOpen: false });
   });
 
   it("con un entrante reciente: conversación y ventana abierta (también con la otra forma del número)", async () => {
     const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
     await inbound("a", HOUR);
-    expect(await getPeerStatus(CUSTOMER_RECIPIENT)).toMatchObject({ hasConversation: true, windowOpen: true });
+    expect(await getPeerStatus(CUSTOMER_RECIPIENT, LINE)).toMatchObject({ hasConversation: true, windowOpen: true });
   });
 
   it("si solo le escribimos nosotros hay conversación pero la ventana está cerrada", async () => {
     const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
     await outbound("a", HOUR, "51987654321", "delivered");
-    expect(await getPeerStatus("51987654321")).toMatchObject({ hasConversation: true, windowOpen: false });
+    expect(await getPeerStatus("51987654321", LINE)).toMatchObject({ hasConversation: true, windowOpen: false });
   });
 
   it("con un entrante de hace más de 24 h: hay conversación y la ventana está cerrada", async () => {
     const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
     await inbound("a", 30 * HOUR);
-    expect(await getPeerStatus(CUSTOMER_WA)).toMatchObject({ hasConversation: true, windowOpen: false });
+    expect(await getPeerStatus(CUSTOMER_WA, LINE)).toMatchObject({ hasConversation: true, windowOpen: false });
+  });
+});
+
+describe("dos líneas: cada una con su bandeja", () => {
+  const NATI_NUMBER = "5491168477185";
+  const toNati = (wamid: string, ageMs: number, from = CUSTOMER_WA) =>
+    msg({
+      wamid, direction: "inbound", from, to: NATI_NUMBER, timestamp: ago(ageMs),
+      phoneNumberId: NATI.phoneNumberId, wabaId: NATI.wabaId, content: { type: "text", text: { body: "hola Nati" } },
+    });
+
+  it("la persona asignada a una línea tiene solo esa, y no es la principal", () => {
+    expect(NATI).toMatchObject({ key: "nati", primary: false });
+    expect(NATI.phoneNumberId).not.toBe(LINE.phoneNumberId);
+  });
+
+  it("lo que entra por una línea no aparece en la bandeja de la otra", async () => {
+    await inbound("a", 2 * HOUR, "para Carlos", "5491100000001");
+    await toNati("b", 1 * HOUR, "5491100000002");
+
+    expect((await listConversations(LINE)).map((c) => c.peer)).toEqual(["541100000001"]);
+    expect((await listConversations(NATI)).map((c) => c.peer)).toEqual(["541100000002"]);
+  });
+
+  it("el mismo cliente en las dos líneas son dos conversaciones, cada una con sus mensajes", async () => {
+    await inbound("a", 3 * HOUR, "a Carlos");
+    await toNati("b", 1 * HOUR);
+
+    const carlos = await getThread(CUSTOMER_WA, LINE);
+    const nati = await getThread(CUSTOMER_WA, NATI);
+
+    expect(carlos.messages).toHaveLength(1);
+    expect(nati.messages).toHaveLength(1);
+    expect(carlos.messages[0].id).not.toBe(nati.messages[0].id);
+  });
+
+  it("que le haya escrito a la otra línea no abre la ventana de 24 h en esta", async () => {
+    await toNati("a", HOUR);
+
+    expect((await getThread(CUSTOMER_WA, LINE)).windowOpen).toBe(false);
+    await expect(sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "u", LINE)).rejects.toMatchObject({ status: 409 });
+    expect(graph.sendTextMessage).not.toHaveBeenCalled();
+  });
+
+  it("lo que se manda desde una línea sale por su número y queda guardado en ella", async () => {
+    await toNati("a", HOUR);
+
+    await sendToPeer(CUSTOMER_WA, { kind: "text", text: "Hola" }, "user_nati", NATI);
+
+    expect(graph.sendTextMessage).toHaveBeenCalledWith(CUSTOMER_WA, "Hola", NATI.phoneNumberId);
+    const row = messages().find((m) => m.wamid === "wamid.SENT_1");
+    expect(row).toMatchObject({ phoneNumberId: NATI.phoneNumberId, wabaId: NATI.wabaId, from: NATI_NUMBER });
+    expect(await listConversations(LINE)).toEqual([]);
+  });
+
+  it("cada línea manda solo las plantillas de su cuenta", async () => {
+    graph.listTemplates.mockImplementation(async (wabaId?: string) => (wabaId === NATI.wabaId ? [] : APPROVED));
+    const input = { kind: "template" as const, name: "kristall_pedir_datos", language: "es_AR", params: ["Ana", "link"] };
+
+    await expect(sendToPeer(CUSTOMER_WA, input, "u", NATI)).rejects.toMatchObject({ status: 400 });
+    expect(graph.sendTemplateMessage).not.toHaveBeenCalled();
+
+    await sendToPeer(CUSTOMER_WA, input, "u", LINE);
+    expect(graph.sendTemplateMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("el estado de un número se mira dentro de la línea", async () => {
+    const { getPeerStatus } = await import("@/lib/whatsapp/inbox");
+    await toNati("a", HOUR);
+
+    expect(await getPeerStatus(CUSTOMER_WA, LINE)).toMatchObject({ hasConversation: false, windowOpen: false });
+    expect(await getPeerStatus(CUSTOMER_WA, NATI)).toMatchObject({ hasConversation: true, windowOpen: true });
   });
 });

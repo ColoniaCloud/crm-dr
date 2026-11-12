@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { MessageCircle } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { ConversationSummary } from "@/lib/whatsapp/inbox";
+import { withLine } from "@/lib/whatsapp/line-url";
 import { looksLikeWaNumber, peerKey } from "@/lib/whatsapp/peer";
 import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import type { InboxTemplate } from "@/lib/whatsapp/templates";
@@ -23,8 +24,12 @@ const POLL_MS = 10_000;
  * La bandeja: lista de conversaciones a la izquierda y el chat a la derecha. En
  * el celular se ve una cosa por vez (la lista, y al elegir un chat el chat con
  * un botón para volver).
+ *
+ * `line` es la bandeja que se muestra (ver `lib/whatsapp/lines.ts`); sin ella, la
+ * que el servidor le da por defecto a quien mira. `lineLabel` viene solo cuando
+ * esa persona puede usar más de una, para que el chat diga por cuál sale.
  */
-export function WhatsAppInbox() {
+export function WhatsAppInbox({ line, lineLabel }: { line?: string; lineLabel?: string }) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +53,7 @@ export function WhatsAppInbox() {
 
   const loadList = useCallback(async () => {
     try {
-      const res = await fetch(`/api/whatsapp/conversations?q=${encodeURIComponent(query)}`, { cache: "no-store" });
+      const res = await fetch(withLine(`/api/whatsapp/conversations?q=${encodeURIComponent(query)}`, line), { cache: "no-store" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Error al cargar");
       setConversations(((await res.json()) as { conversations: ConversationSummary[] }).conversations);
       setError(null);
@@ -57,7 +62,7 @@ export function WhatsAppInbox() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, line]);
 
   useEffect(() => {
     const t = setTimeout(() => void loadList(), 250); // espera a que termine de escribir
@@ -71,10 +76,10 @@ export function WhatsAppInbox() {
     return () => clearInterval(id);
   }, [loadList]);
 
-  // Plantillas aprobadas (el servidor las cachea 5 minutos).
+  // Plantillas aprobadas de la cuenta de esta línea (el servidor las cachea 5 minutos).
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/whatsapp/templates", { cache: "no-store" })
+    fetch(withLine("/api/whatsapp/templates", line), { cache: "no-store" })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error ?? "No se pudieron cargar las plantillas");
@@ -85,7 +90,7 @@ export function WhatsAppInbox() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [line]);
 
   const newPeer = peerKey(normalizeWhatsappNumber(newNumber));
   const newValid = looksLikeWaNumber(newPeer);
@@ -111,6 +116,8 @@ export function WhatsAppInbox() {
             <ThreadView
               key={selected}
               peer={selected}
+              line={line}
+              lineLabel={lineLabel}
               templates={templates}
               templatesLoading={templatesLoading}
               templatesError={templatesError}

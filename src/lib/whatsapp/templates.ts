@@ -46,18 +46,25 @@ export type InboxTemplate = {
 
 const TTL_MS = 5 * 60 * 1000;
 
-let cache: { at: number; items: InboxTemplate[] } | null = null;
+/**
+ * Las plantillas son de una cuenta (WABA), y cada línea tiene la suya: la caché
+ * va por cuenta, para que una línea nunca ofrezca ni mande las de otra. `""` es
+ * la cuenta de las variables de entorno (la línea principal).
+ */
+const cache = new Map<string, { at: number; items: InboxTemplate[] }>();
 
-export async function getApprovedTemplates(force = false): Promise<InboxTemplate[]> {
-  if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.items;
-  const items = toInboxTemplates(await listTemplates());
-  cache = { at: Date.now(), items };
+export async function getApprovedTemplates(force = false, wabaId = ""): Promise<InboxTemplate[]> {
+  const hit = cache.get(wabaId);
+  if (!force && hit && Date.now() - hit.at < TTL_MS) return hit.items;
+  const items = toInboxTemplates(await listTemplates(wabaId || undefined));
+  cache.set(wabaId, { at: Date.now(), items });
   return items;
 }
 
 /** Para los tests y para forzar la recarga tras aprobar una plantilla. */
 export function clearTemplateCache(): void {
-  cache = null;
+  cache.clear();
+  allCache.clear();
 }
 
 export function toInboxTemplates(raw: GraphTemplate[]): InboxTemplate[] {
@@ -130,20 +137,24 @@ export function toTemplateRows(raw: GraphTemplate[]): TemplateRow[] {
 }
 
 const ALL_TTL_MS = 60 * 1000;
-let allCache: { at: number; rows: TemplateRow[] } | null = null;
+const allCache = new Map<string, { at: number; rows: TemplateRow[] }>();
 
-/** Todas las plantillas de la cuenta con su estado (caché de 1 min; `force` la salta). */
-export async function getAllTemplates(force = false): Promise<TemplateRow[]> {
-  if (!force && allCache && Date.now() - allCache.at < ALL_TTL_MS) return allCache.rows;
-  const rows = toTemplateRows(await listTemplates());
-  allCache = { at: Date.now(), rows };
+/** Todas las plantillas de una cuenta con su estado (caché de 1 min; `force` la salta). */
+export async function getAllTemplates(force = false, wabaId = ""): Promise<TemplateRow[]> {
+  const hit = allCache.get(wabaId);
+  if (!force && hit && Date.now() - hit.at < ALL_TTL_MS) return hit.rows;
+  const rows = toTemplateRows(await listTemplates(wabaId || undefined));
+  allCache.set(wabaId, { at: Date.now(), rows });
   return rows;
 }
 
 // ─── Crear una plantilla ─────────────────────────────────────────────────────
 
-/** Valida y manda la plantilla a revisión. Tira `Error` con un mensaje legible si no pasa la validación. */
-export async function submitNewTemplate(t: NewTemplateInput) {
+/**
+ * Valida y manda la plantilla a revisión, en la cuenta que se pasa (o la
+ * principal). Tira `Error` con un mensaje legible si no pasa la validación.
+ */
+export async function submitNewTemplate(t: NewTemplateInput, wabaId = "") {
   const problem = validateNewTemplate(t);
   if (problem) throw new Error(problem);
 
@@ -157,8 +168,9 @@ export async function submitNewTemplate(t: NewTemplateInput) {
   });
   if (t.footer?.trim()) components.push({ type: "FOOTER", text: t.footer.trim() });
 
-  const created = await createTemplate({ name: t.name, language: t.language, category: t.category, components });
-  allCache = null;
-  cache = null;
+  const template = { name: t.name, language: t.language, category: t.category, components };
+  const created = wabaId ? await createTemplate(template, wabaId) : await createTemplate(template);
+  allCache.delete(wabaId);
+  cache.delete(wabaId);
   return created;
 }

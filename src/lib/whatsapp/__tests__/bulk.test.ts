@@ -33,7 +33,10 @@ import {
   variablesComplete,
   type BulkRecipient,
 } from "@/lib/whatsapp/bulk-rules";
+import { primaryLine } from "@/lib/whatsapp/lines";
 import { clearTemplateCache } from "@/lib/whatsapp/templates";
+
+const LINE = primaryLine();
 
 const PERU = {
   name: "kristall_visita_peru",
@@ -76,6 +79,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321"), recipient("51912345678")],
       skipExisting: true,
       userId: "u1",
+      line: LINE,
     });
 
     expect(outcomes.map((o) => o.status)).toEqual(["sent", "sent"]);
@@ -99,6 +103,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321"), recipient("51912345678")],
       skipExisting: true,
       userId: "u1",
+      line: LINE,
     });
 
     expect(outcomes.map((o) => o.status)).toEqual(["skipped", "sent"]);
@@ -118,6 +123,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321")],
       skipExisting: false,
       userId: "u1",
+      line: LINE,
     });
 
     expect(outcomes.map((o) => o.status)).toEqual(["sent"]);
@@ -132,6 +138,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321"), recipient("123"), recipient("51912345678")],
       skipExisting: true,
       userId: "u1",
+      line: LINE,
     });
 
     expect(outcomes).toEqual([
@@ -148,6 +155,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321"), recipient("51912345678")],
       skipExisting: true,
       userId: "u1",
+      line: LINE,
     });
 
     expect(outcomes.every((o) => o.status === "failed")).toBe(true);
@@ -160,6 +168,7 @@ describe("sendTemplateBatch", () => {
       recipients: [recipient("51987654321", "Taller Uno", ["Taller Uno"]), recipient("51912345678", "Vidrios Dos", ["Vidrios Dos"])],
       skipExisting: true,
       userId: "u1",
+      line: LINE,
     });
 
     const bodies = graph.sendTemplateMessage.mock.calls.map((call) => (call as unknown[])[3]);

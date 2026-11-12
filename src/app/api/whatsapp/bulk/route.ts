@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/api-auth";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
 import { logOperatorAction } from "@/lib/notifications";
-import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { sendTemplateBatch } from "@/lib/whatsapp/bulk";
 import { BULK_CHUNK, tally } from "@/lib/whatsapp/bulk-rules";
 import { isCloudApiConfigured } from "@/lib/whatsapp/client";
+import { requireWhatsAppLine } from "@/lib/whatsapp/line-access";
 
 const log = createLogger("api/whatsapp/bulk");
 
@@ -34,10 +33,21 @@ const schema = z.object({
  * Manda una plantilla a un lote de números (hasta `BULK_CHUNK`). La pantalla
  * parte la tanda en lotes y va llamando, para mostrar el avance y poder cortar
  * entre uno y otro.
+ *
+ * Solo por la línea principal. Las otras son números en coexistencia: si Meta
+ * restringe el número por un envío masivo, esa persona se queda también sin el
+ * WhatsApp de su celular.
  */
 export async function POST(request: Request) {
-  const gate = await requireRole(WHATSAPP_ROLES);
+  const gate = await requireWhatsAppLine(request);
   if (!gate.success) return gate.response;
+
+  if (!gate.line.primary) {
+    return NextResponse.json(
+      { error: `El envío masivo no está habilitado en ${gate.line.label}` },
+      { status: 403 }
+    );
+  }
 
   if (esDemo()) return NextResponse.json({ error: "No disponible en la demostración" }, { status: 403 });
 
@@ -56,6 +66,7 @@ export async function POST(request: Request) {
       recipients,
       skipExisting,
       userId: gate.session.user.id,
+      line: gate.line,
     });
 
     const { sent, skipped, failed } = tally(outcomes);

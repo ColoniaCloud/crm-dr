@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { resolveContactForPeer } from "@/lib/whatsapp/contact-link";
+import { isPrimaryPhoneNumberId } from "@/lib/whatsapp/lines";
 import { STUB_CONTENT, STUB_TYPE } from "@/lib/whatsapp/stub";
 import type {
   WhatsAppEchoesValue,
@@ -93,8 +94,17 @@ async function saveInboundMessage(
 ): Promise<void> {
   // Quien nos escribe puede no estar en el CRM: se lo busca por teléfono y, si
   // no está, se crea una ficha provisoria (ver contact-link.ts).
+  //
+  // Solo en la línea principal. Las otras son números en coexistencia, que
+  // también reciben lo que no es del negocio (el celular de una persona): un
+  // desconocido que escribe ahí se vincula si ya tiene ficha, pero no genera un
+  // lead ni un aviso a todo el equipo.
   const profileName = rawValue.contacts?.find((c) => c.wa_id === message.from)?.profile?.name;
-  const contactId = await resolveContactForPeer({ waId: message.from, profileName, allowCreate: true });
+  const contactId = await resolveContactForPeer({
+    waId: message.from,
+    profileName,
+    allowCreate: isPrimaryPhoneNumberId(metadata.phone_number_id),
+  });
 
   await saveMessage({
     wamid: message.id,

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, Plus, RefreshCw } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import { withLine } from "@/lib/whatsapp/line-url";
 import type { TemplateRow, TemplateState } from "@/lib/whatsapp/template-rules";
 import { NewTemplateDialog } from "./new-template-dialog";
 
@@ -41,8 +42,12 @@ const REJECTION: Record<string, string> = {
  * Las plantillas de la cuenta con su estado, y el alta de nuevas.
  * El estado cambia del lado de Meta (revisión), así que se vuelve a pedir cada
  * minuto mientras la pestaña está a la vista.
+ *
+ * Las plantillas son de la cuenta de cada línea: `line` dice cuál se mira (sin
+ * ella, la de por defecto de quien mira) y `lineLabel` viene solo si esa persona
+ * puede usar más de una, para decir en cuál se está creando.
  */
-export function TemplatesTab() {
+export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: string }) {
   const [rows, setRows] = useState<TemplateRow[] | null>(null);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +59,7 @@ export function TemplatesTab() {
   const load = useCallback(async (force: boolean) => {
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/whatsapp/templates?all=1${force ? "&refresh=1" : ""}`, { cache: "no-store" });
+      const res = await fetch(withLine(`/api/whatsapp/templates?all=1${force ? "&refresh=1" : ""}`, line), { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "No se pudieron cargar las plantillas");
       setRows(data.templates ?? []);
@@ -65,7 +70,7 @@ export function TemplatesTab() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [line]);
 
   useEffect(() => {
     void load(true);
@@ -163,6 +168,8 @@ export function TemplatesTab() {
 
       {creating && (
         <NewTemplateDialog
+          line={line}
+          lineLabel={lineLabel}
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);

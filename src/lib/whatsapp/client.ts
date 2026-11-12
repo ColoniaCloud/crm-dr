@@ -91,8 +91,16 @@ async function failFrom(res: Response): Promise<never> {
   throw new WhatsAppApiError(message.slice(0, 500), res.status, e?.code, e?.fbtrace_id);
 }
 
-async function postMessage(payload: Record<string, unknown>): Promise<WhatsAppSendResponse> {
-  const { phoneNumberId, base } = config();
+/**
+ * `fromPhoneNumberId` es el número por el que sale (ver `lines.ts`); sin él, el
+ * de las variables de entorno, que es la línea principal.
+ */
+async function postMessage(
+  payload: Record<string, unknown>,
+  fromPhoneNumberId?: string
+): Promise<WhatsAppSendResponse> {
+  const { phoneNumberId: defaultId, base } = config();
+  const phoneNumberId = fromPhoneNumberId || defaultId;
   const res = await graphFetch(
     `${base}/${phoneNumberId}/messages`,
     {
@@ -113,8 +121,12 @@ async function postMessage(payload: Record<string, unknown>): Promise<WhatsAppSe
  *
  * `to`: número en E.164 sin "+" (ver `normalizeWhatsappNumber`).
  */
-export async function sendTextMessage(to: string, text: string): Promise<WhatsAppSendResponse> {
-  return postMessage({ to, type: "text", text: { body: text, preview_url: false } });
+export async function sendTextMessage(
+  to: string,
+  text: string,
+  fromPhoneNumberId?: string
+): Promise<WhatsAppSendResponse> {
+  return postMessage({ to, type: "text", text: { body: text, preview_url: false } }, fromPhoneNumberId);
 }
 
 /**
@@ -128,17 +140,21 @@ export async function sendTemplateMessage(
   to: string,
   templateName: string,
   languageCode: string,
-  components?: WhatsAppTemplateComponent[]
+  components?: WhatsAppTemplateComponent[],
+  fromPhoneNumberId?: string
 ): Promise<WhatsAppSendResponse> {
-  return postMessage({
-    to,
-    type: "template",
-    template: {
-      name: templateName,
-      language: { code: languageCode },
-      ...(components?.length ? { components } : {}),
+  return postMessage(
+    {
+      to,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        ...(components?.length ? { components } : {}),
+      },
     },
-  });
+    fromPhoneNumberId
+  );
 }
 
 /** Marca un mensaje entrante como leído (los dos tildes azules del lado del cliente). */
@@ -193,12 +209,13 @@ export type GraphTemplate = {
 };
 
 /**
- * Las plantillas de la cuenta (WABA). Necesita `WHATSAPP_WABA_ID` además del
- * token; devuelve todas, el que llama filtra por estado.
+ * Las plantillas de una cuenta (WABA): la que se pasa, o la de
+ * `WHATSAPP_WABA_ID` (la línea principal). Devuelve todas, el que llama filtra
+ * por estado.
  */
-export async function listTemplates(): Promise<GraphTemplate[]> {
+export async function listTemplates(wabaId?: string): Promise<GraphTemplate[]> {
   const { base } = config();
-  const waba = process.env.WHATSAPP_WABA_ID;
+  const waba = wabaId || process.env.WHATSAPP_WABA_ID;
   if (!waba) throw new WhatsAppApiError("Falta WHATSAPP_WABA_ID para listar las plantillas", 503);
 
   const out: GraphTemplate[] = [];
@@ -234,10 +251,11 @@ export type NewGraphTemplate = {
  * (o el rechazo) llega después, y Meta puede cambiarle la categoría.
  */
 export async function createTemplate(
-  template: NewGraphTemplate
+  template: NewGraphTemplate,
+  wabaId?: string
 ): Promise<{ id: string; status: string; category: string }> {
   const { base } = config();
-  const waba = process.env.WHATSAPP_WABA_ID;
+  const waba = wabaId || process.env.WHATSAPP_WABA_ID;
   if (!waba) throw new WhatsAppApiError("Falta WHATSAPP_WABA_ID para crear plantillas", 503);
 
   const res = await graphFetch(

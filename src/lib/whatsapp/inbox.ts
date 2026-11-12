@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { esDemo } from "@/lib/demo-context";
 import { WhatsAppApiError, sendTemplateMessage, sendTextMessage } from "@/lib/whatsapp/client";
 import { resolveContactForPeer } from "@/lib/whatsapp/contact-link";
+import { lineWhere, templatesAccountOf, type WhatsAppLine } from "@/lib/whatsapp/lines";
 import { viewMessage, previewOf, type MessageView } from "@/lib/whatsapp/message-view";
 import { cleanParam, recordOutbound } from "@/lib/whatsapp/outbound";
 import { formatWaNumber, peerKey, peerVariants } from "@/lib/whatsapp/peer";
@@ -12,7 +13,10 @@ import { getApprovedTemplates } from "@/lib/whatsapp/templates";
  * La bandeja de WhatsApp: conversaciones, hilo de una conversación y envío.
  *
  * Una conversación no tiene tabla propia: es el conjunto de mensajes de
- * `whatsapp_cloud_messages` cuyo "otro lado" es el mismo número (ver `peer.ts`).
+ * `whatsapp_cloud_messages` cuyo "otro lado" es el mismo número (ver `peer.ts`),
+ * **dentro de una línea** (ver `lines.ts`). Todo lo de acá pide la línea: el
+ * mismo cliente puede haberle escrito a dos números nuestros y son dos
+ * conversaciones distintas, cada una con su ventana de 24 h y su número de salida.
  */
 
 /** WhatsApp solo deja escribir texto libre dentro de las 24 h del último mensaje del cliente. */
@@ -68,8 +72,9 @@ const otherSide = (m: { direction: string; from: string; to: string }) => (m.dir
 
 // ─── Lista ───────────────────────────────────────────────────────────────────
 
-export async function listConversations(query?: string): Promise<ConversationSummary[]> {
+export async function listConversations(line: WhatsAppLine, query?: string): Promise<ConversationSummary[]> {
   const rows = await prisma.whatsAppCloudMessage.findMany({
+    where: lineWhere(line),
     orderBy: { timestamp: "desc" },
     take: LIST_SCAN_LIMIT,
     select: {
@@ -169,10 +174,11 @@ async function namesFor(groups: { key: string; contactId: string | null }[]) {
 
 const PAGE = 60;
 
-export async function getThread(peer: string, before?: Date): Promise<Thread> {
+export async function getThread(peer: string, line: WhatsAppLine, before?: Date): Promise<Thread> {
   const key = peerKey(peer);
   const variants = peerVariants(key);
   const side = {
+    ...lineWhere(line),
     OR: [
       { direction: "inbound", from: { in: variants } },
       { direction: "outbound", to: { in: variants } },
@@ -192,7 +198,7 @@ export async function getThread(peer: string, before?: Date): Promise<Thread> {
   const page = rows.slice(0, PAGE).reverse();
 
   const lastInbound = await prisma.whatsAppCloudMessage.findFirst({
-    where: { direction: "inbound", from: { in: variants } },
+    where: { direction: "inbound", from: { in: variants }, ...lineWhere(line) },
     orderBy: { timestamp: "desc" },
     select: { timestamp: true },
   });
@@ -244,8 +250,18 @@ export class InboxSendError extends Error {
   }
 }
 
-/** Manda un texto libre o una plantilla a una conversación y deja el registro. */
-export async function sendToPeer(peer: string, input: SendInput, userId: string): Promise<{ wamid: string }> {
+/**
+ * Manda un texto libre o una plantilla a una conversación y deja el registro.
+ * Sale por el número de `line`, con las plantillas de su cuenta, y la ventana de
+ * 24 h se mira en esa línea: que el cliente le haya escrito a otro número
+ * nuestro no habilita a escribirle desde este.
+ */
+export async function sendToPeer(
+  peer: string,
+  input: SendInput,
+  userId: string,
+  line: WhatsAppLine
+): Promise<{ wamid: string }> {
   // Ni siquiera con permisos: una sesión de demostración no manda mensajes reales.
   if (esDemo()) throw new InboxSendError("No disponible en la demostración", 403);
 
@@ -254,7 +270,10 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
 
   // A qué número escribirle: el que usó él la última vez (Meta lo escribe como 549… o 54…).
   const latest = await prisma.whatsAppCloudMessage.findFirst({
-    where: { OR: [{ direction: "inbound", from: { in: variants } }, { direction: "outbound", to: { in: variants } }] },
+    where: {
+      ...lineWhere(line),
+      OR: [{ direction: "inbound", from: { in: variants } }, { direction: "outbound", to: { in: variants } }],
+    },
     orderBy: { timestamp: "desc" },
     select: { direction: true, from: true, to: true },
   });
@@ -273,7 +292,10 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
       const text = input.text.trim();
       if (!text) throw new InboxSendError("El mensaje está vacío", 400);
       const open = await prisma.whatsAppCloudMessage.findFirst({
-        where: { direction: "inbound", from: { in: variants }, timestamp: { gte: new Date(Date.now() - WINDOW_MS) } },
+        where: {
+          direction: "inbound", from: { in: variants }, timestamp: { gte: new Date(Date.now() - WINDOW_MS) },
+          ...lineWhere(line),
+        },
         select: { id: true },
       });
       if (!open) {
@@ -282,17 +304,17 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
           409
         );
       }
-      const response = await sendTextMessage(to, text);
+      const response = await sendTextMessage(to, text, line.phoneNumberId);
       const wamid = response.messages?.[0]?.id;
       if (!wamid) throw new InboxSendError("Meta no devolvió el id del mensaje", 502);
       await recordOutbound({
         wamid, to, type: "text", content: { type: "text", text: { body: text } },
-        response, contactId, sentById: userId,
+        response, contactId, sentById: userId, line,
       });
       return { wamid };
     }
 
-    const template = (await getApprovedTemplates()).find(
+    const template = (await getApprovedTemplates(false, templatesAccountOf(line))).find(
       (t) => t.name === input.name && t.language === input.language
     );
     if (!template) throw new InboxSendError("La plantilla no existe o no está aprobada", 400);
@@ -305,7 +327,7 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
     const components = template.variableCount
       ? [{ type: "body" as const, parameters: input.params.map((p) => ({ type: "text" as const, text: cleanParam(p) })) }]
       : undefined;
-    const response = await sendTemplateMessage(to, template.name, template.language, components);
+    const response = await sendTemplateMessage(to, template.name, template.language, components, line.phoneNumberId);
     const wamid = response.messages?.[0]?.id;
     if (!wamid) throw new InboxSendError("Meta no devolvió el id del mensaje", 502);
     await recordOutbound({
@@ -314,7 +336,7 @@ export async function sendToPeer(peer: string, input: SendInput, userId: string)
         type: "template",
         template: { name: template.name, language: { code: template.language }, ...(components ? { components } : {}) },
       },
-      templateName: template.name, response, contactId, sentById: userId,
+      templateName: template.name, response, contactId, sentById: userId, line,
     });
     return { wamid };
   } catch (err) {
@@ -342,12 +364,13 @@ export type PeerStatus = {
 /**
  * Qué pasó ya con un número, para decidir qué hacer al tocar su botón de
  * WhatsApp: si nunca se le escribió hay que abrir con una plantilla; si ya hay
- * conversación, se sigue en la bandeja.
+ * conversación, se sigue en la bandeja. Se mira dentro de la línea.
  */
-export async function getPeerStatus(peer: string): Promise<PeerStatus> {
+export async function getPeerStatus(peer: string, line: WhatsAppLine): Promise<PeerStatus> {
   const key = peerKey(peer);
   const variants = peerVariants(key);
   const side = {
+    ...lineWhere(line),
     OR: [
       { direction: "inbound", from: { in: variants } },
       { direction: "outbound", to: { in: variants } },
@@ -356,7 +379,10 @@ export async function getPeerStatus(peer: string): Promise<PeerStatus> {
 
   const any = await prisma.whatsAppCloudMessage.findFirst({ where: side, select: { id: true } });
   const open = await prisma.whatsAppCloudMessage.findFirst({
-    where: { direction: "inbound", from: { in: variants }, timestamp: { gte: new Date(Date.now() - WINDOW_MS) } },
+    where: {
+      direction: "inbound", from: { in: variants }, timestamp: { gte: new Date(Date.now() - WINDOW_MS) },
+      ...lineWhere(line),
+    },
     select: { id: true },
   });
   return { peer: key, hasConversation: Boolean(any), windowOpen: Boolean(open) };

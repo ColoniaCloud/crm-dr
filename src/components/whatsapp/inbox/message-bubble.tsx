@@ -6,7 +6,9 @@ import { fillTemplate } from "@/lib/whatsapp/message-view";
 import type { ThreadMessage } from "@/lib/whatsapp/inbox";
 import type { InboxTemplate } from "@/lib/whatsapp/templates";
 
-const mediaUrl = (id: string) => `/api/whatsapp/media/${encodeURIComponent(id)}`;
+/** El archivo se pide con el mensaje en el que vino: el servidor comprueba con eso de qué bandeja es. */
+const mediaUrl = (id: string, messageId: string) =>
+  `/api/whatsapp/media/${encodeURIComponent(id)}?m=${encodeURIComponent(messageId)}`;
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
@@ -31,7 +33,7 @@ export function MessageBubble({ message, templates }: { message: ThreadMessage; 
           out ? "rounded-br-sm bg-primary/10" : "rounded-bl-sm bg-muted"
         )}
       >
-        <Body view={message.view} templates={templates} />
+        <Body view={message.view} messageId={message.id} templates={templates} />
 
         {message.status === "failed" && (
           <p className="mt-1 text-xs text-destructive">{message.error ?? "No se pudo enviar"}</p>
@@ -46,7 +48,15 @@ export function MessageBubble({ message, templates }: { message: ThreadMessage; 
   );
 }
 
-function Body({ view: v, templates }: { view: ThreadMessage["view"]; templates: InboxTemplate[] }) {
+function Body({
+  view: v,
+  messageId,
+  templates,
+}: {
+  view: ThreadMessage["view"];
+  messageId: string;
+  templates: InboxTemplate[];
+}) {
   switch (v.kind) {
     case "text":
       return <p className="whitespace-pre-wrap break-words">{v.text}</p>;
@@ -55,23 +65,23 @@ function Body({ view: v, templates }: { view: ThreadMessage["view"]; templates: 
       return (
         <div className="space-y-1">
           {(v.media === "image" || v.media === "sticker") && (
-            <a href={mediaUrl(v.id)} target="_blank" rel="noreferrer">
+            <a href={mediaUrl(v.id, messageId)} target="_blank" rel="noreferrer">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={mediaUrl(v.id)}
+                src={mediaUrl(v.id, messageId)}
                 alt={v.caption ?? "Imagen"}
                 loading="lazy"
                 className={cn("rounded-lg", v.media === "sticker" ? "size-28" : "max-h-72 w-auto")}
               />
             </a>
           )}
-          {v.media === "audio" && <audio controls preload="none" src={mediaUrl(v.id)} className="max-w-full" />}
+          {v.media === "audio" && <audio controls preload="none" src={mediaUrl(v.id, messageId)} className="max-w-full" />}
           {v.media === "video" && (
-            <video controls preload="none" src={mediaUrl(v.id)} className="max-h-72 max-w-full rounded-lg" />
+            <video controls preload="none" src={mediaUrl(v.id, messageId)} className="max-h-72 max-w-full rounded-lg" />
           )}
           {v.media === "document" && (
             <a
-              href={mediaUrl(v.id)}
+              href={mediaUrl(v.id, messageId)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-2 rounded-lg border bg-background/60 px-3 py-2 hover:bg-background"

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/api-auth";
-import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
 import { logOperatorAction } from "@/lib/notifications";
 import { WhatsAppApiError, isCloudApiConfigured } from "@/lib/whatsapp/client";
+import { requireWhatsAppLine } from "@/lib/whatsapp/line-access";
+import { templatesAccountOf } from "@/lib/whatsapp/lines";
 import { getAllTemplates, getApprovedTemplates, submitNewTemplate } from "@/lib/whatsapp/templates";
 
 const log = createLogger("api/whatsapp/templates");
@@ -17,9 +17,12 @@ const log = createLogger("api/whatsapp/templates");
  * Por defecto, las aprobadas listas para mandar (caché de 5 min). Con `?all=1`,
  * todas con su estado —aprobada, en revisión, rechazada, pausada— para la solapa
  * de gestión. `?refresh=1` salta la caché.
+ *
+ * Las plantillas son de la cuenta de cada línea (`?line=`): cada una ve, manda y
+ * crea solo las suyas.
  */
 export async function GET(request: Request) {
-  const gate = await requireRole(WHATSAPP_ROLES);
+  const gate = await requireWhatsAppLine(request);
   if (!gate.success) return gate.response;
 
   if (!isCloudApiConfigured()) return NextResponse.json({ templates: [], configured: false });
@@ -27,10 +30,11 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const force = params.get("refresh") === "1";
+    const account = templatesAccountOf(gate.line);
     if (params.get("all") === "1") {
-      return NextResponse.json({ templates: await getAllTemplates(force), configured: true });
+      return NextResponse.json({ templates: await getAllTemplates(force, account), configured: true });
     }
-    return NextResponse.json({ templates: await getApprovedTemplates(force), configured: true });
+    return NextResponse.json({ templates: await getApprovedTemplates(force, account), configured: true });
   } catch (error) {
     log.error({ err: error }, "Error loading WhatsApp templates");
     return NextResponse.json({ error: "No se pudieron cargar las plantillas de Meta" }, { status: 502 });
@@ -49,7 +53,7 @@ const schema = z.object({
 
 /** Manda una plantilla nueva a revisión de Meta. Queda "en revisión" hasta que la apruebe o rechace. */
 export async function POST(request: Request) {
-  const gate = await requireRole(WHATSAPP_ROLES);
+  const gate = await requireWhatsAppLine(request);
   if (!gate.success) return gate.response;
 
   if (esDemo()) return NextResponse.json({ error: "No disponible en la demostración" }, { status: 403 });
@@ -62,14 +66,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const created = await submitNewTemplate(validation.data);
+    const created = await submitNewTemplate(validation.data, templatesAccountOf(gate.line));
 
     await logOperatorAction({
       userId: gate.session.user.id,
       action: "WHATSAPP_TEMPLATE_CREATED",
       entityType: "WhatsAppTemplate",
       entityId: created.id,
-      description: `Envió a revisión de Meta la plantilla ${validation.data.name} (${validation.data.language}, ${validation.data.category})`,
+      description: `Envió a revisión de Meta la plantilla ${validation.data.name} (${validation.data.language}, ${validation.data.category}) en ${gate.line.label}`,
     }).catch((err) => log.error({ err }, "No se pudo auditar la creación de la plantilla"));
 
     return NextResponse.json({ ok: true, id: created.id, status: created.status, category: created.category });

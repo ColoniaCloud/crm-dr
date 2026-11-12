@@ -1,6 +1,7 @@
 import { createLogger } from "@/lib/logger";
 import type { BulkOutcome, BulkRecipient } from "@/lib/whatsapp/bulk-rules";
 import { InboxSendError, getPeerStatus, sendToPeer } from "@/lib/whatsapp/inbox";
+import type { WhatsAppLine } from "@/lib/whatsapp/lines";
 import { looksLikeWaNumber, peerKey } from "@/lib/whatsapp/peer";
 
 const log = createLogger("lib/whatsapp/bulk");
@@ -23,6 +24,7 @@ export async function sendTemplateBatch(args: {
   recipients: BulkRecipient[];
   skipExisting: boolean;
   userId: string;
+  line: WhatsAppLine;
 }): Promise<BulkOutcome[]> {
   const outcomes: BulkOutcome[] = [];
 
@@ -34,7 +36,7 @@ export async function sendTemplateBatch(args: {
     }
 
     try {
-      if (args.skipExisting && (await getPeerStatus(peer)).hasConversation) {
+      if (args.skipExisting && (await getPeerStatus(peer, args.line)).hasConversation) {
         outcomes.push({ peer: recipient.peer, status: "skipped" });
         continue;
       }
@@ -42,7 +44,8 @@ export async function sendTemplateBatch(args: {
       await sendToPeer(
         peer,
         { kind: "template", name: args.template.name, language: args.template.language, params: recipient.params },
-        args.userId
+        args.userId,
+        args.line
       );
       outcomes.push({ peer: recipient.peer, status: "sent" });
     } catch (err) {

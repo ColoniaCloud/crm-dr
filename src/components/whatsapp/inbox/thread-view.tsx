@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ExternalLink, Loader2, Send } from "@/components/icons";
 import type { Thread } from "@/lib/whatsapp/inbox";
+import { withLine } from "@/lib/whatsapp/line-url";
 import type { InboxTemplate } from "@/lib/whatsapp/templates";
 import { MessageBubble } from "./message-bubble";
 import { TemplateDialog } from "./template-dialog";
@@ -26,6 +27,8 @@ const dayLabel = (iso: string) =>
  */
 export function ThreadView({
   peer,
+  line,
+  lineLabel,
   templates,
   templatesLoading,
   templatesError,
@@ -33,6 +36,10 @@ export function ThreadView({
   onSent,
 }: {
   peer: string;
+  /** La bandeja a la que pertenece el chat; sin ella, la que el servidor da por defecto. */
+  line?: string;
+  /** Nombre de la línea, solo si quien mira puede usar más de una: se muestra para no mandar por la equivocada. */
+  lineLabel?: string;
   templates: InboxTemplate[];
   templatesLoading: boolean;
   templatesError: string | null;
@@ -50,14 +57,14 @@ export function ThreadView({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/whatsapp/conversations/${encodeURIComponent(peer)}/messages`, { cache: "no-store" });
+      const res = await fetch(withLine(`/api/whatsapp/conversations/${encodeURIComponent(peer)}/messages`, line), { cache: "no-store" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "No se pudo cargar el chat");
       setThread((await res.json()) as Thread);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo cargar el chat");
     }
-  }, [peer]);
+  }, [peer, line]);
 
   // Cada chat se monta de cero (el padre le pone `key={peer}`).
   useEffect(() => {
@@ -81,7 +88,7 @@ export function ThreadView({
     setSending(true);
     setSendError(null);
     try {
-      const res = await fetch(`/api/whatsapp/conversations/${encodeURIComponent(peer)}/messages`, {
+      const res = await fetch(withLine(`/api/whatsapp/conversations/${encodeURIComponent(peer)}/messages`, line), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -124,6 +131,7 @@ export function ThreadView({
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{thread?.name ?? "Cargando…"}</p>
           <p className="truncate text-xs text-muted-foreground">
+            {lineLabel && <span className="font-medium text-foreground">{lineLabel} · </span>}
             {thread?.number}
             {thread && (
               <>
@@ -207,7 +215,7 @@ export function ThreadView({
                   void sendText();
                 }
               }}
-              placeholder="Escribí un mensaje"
+              placeholder={lineLabel ? `Escribí un mensaje (sale por ${lineLabel})` : "Escribí un mensaje"}
               rows={1}
               maxLength={4096}
               className="max-h-40 min-h-10 resize-none"

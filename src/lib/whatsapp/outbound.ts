@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
+import { lineWhere, primaryLine, type WhatsAppLine } from "@/lib/whatsapp/lines";
 import { STUB_TYPE } from "@/lib/whatsapp/stub";
 import type { WhatsAppSendResponse } from "@/types/whatsapp";
 
@@ -30,9 +31,12 @@ export async function recordOutbound(args: {
   response: WhatsAppSendResponse;
   contactId?: string | null;
   sentById?: string | null;
+  /** Por qué línea salió; sin ella, la principal (los avisos automáticos). */
+  line?: WhatsAppLine;
 }): Promise<void> {
   const rawPayload = args.response as unknown as Prisma.InputJsonValue;
-  const from = await businessNumber();
+  const line = args.line ?? primaryLine();
+  const from = await businessNumber(line);
 
   try {
     await prisma.whatsAppCloudMessage.create({
@@ -46,8 +50,8 @@ export async function recordOutbound(args: {
         timestamp: new Date(),
         status: "sent",
         statusUpdatedAt: new Date(),
-        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "",
-        wabaId: process.env.WHATSAPP_WABA_ID ?? "",
+        phoneNumberId: line.phoneNumberId,
+        wabaId: line.wabaId,
         contactId: args.contactId ?? null,
         sentById: args.sentById ?? null,
         templateName: args.templateName ?? null,
@@ -91,20 +95,20 @@ export function cleanParam(value: string): string {
 }
 
 /**
- * El número del negocio, el que ven los clientes (ej. 5491160484312).
+ * El número de la línea, el que ven los clientes (ej. 5491160484312).
  *
- * `WHATSAPP_BUSINESS_NUMBER` si está; si no, el que Meta puso como destino en el
- * último mensaje entrante (`to`), que es siempre ese número. Solo si todavía no
- * entró ningún mensaje se cae al id del número de la API, que no es un teléfono
- * pero al menos identifica de qué número salió.
+ * El que la línea tiene anotado (`WHATSAPP_BUSINESS_NUMBER` en la principal); si
+ * no, el que Meta puso como destino en el último mensaje entrante **de esa
+ * línea** (`to`), que es siempre ese número. Solo si todavía no entró ningún
+ * mensaje se cae al id del número de la API, que no es un teléfono pero al menos
+ * identifica de qué número salió.
  */
-async function businessNumber(): Promise<string> {
-  const fromEnv = (process.env.WHATSAPP_BUSINESS_NUMBER ?? "").replace(/\D/g, "");
-  if (fromEnv) return fromEnv;
+async function businessNumber(line: WhatsAppLine): Promise<string> {
+  if (line.businessNumber) return line.businessNumber;
 
   try {
     const lastInbound = await prisma.whatsAppCloudMessage.findFirst({
-      where: { direction: "inbound" },
+      where: { direction: "inbound", ...lineWhere(line) },
       orderBy: { timestamp: "desc" },
       select: { to: true },
     });
@@ -112,5 +116,5 @@ async function businessNumber(): Promise<string> {
   } catch (err) {
     log.warn({ err }, "No se pudo averiguar el número del negocio");
   }
-  return (process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").replace(/\D/g, "");
+  return line.phoneNumberId.replace(/\D/g, "");
 }

@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/api-auth";
-import { WHATSAPP_ROLES } from "@/lib/whatsapp/access";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { esDemo } from "@/lib/demo-context";
 import { isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { InboxSendError, getThread, sendToPeer } from "@/lib/whatsapp/inbox";
+import { requireWhatsAppLine } from "@/lib/whatsapp/line-access";
 import { looksLikeWaNumber, peerKey } from "@/lib/whatsapp/peer";
 
 const log = createLogger("api/whatsapp/messages");
 
 type Ctx = { params: Promise<{ peer: string }> };
 
-/** Un chat. `?before=<ISO>` trae los mensajes anteriores a esa fecha. */
+/** Un chat de una línea (`?line=`). `?before=<ISO>` trae los mensajes anteriores a esa fecha. */
 export async function GET(request: Request, { params }: Ctx) {
-  const gate = await requireRole(WHATSAPP_ROLES);
+  const gate = await requireWhatsAppLine(request);
   if (!gate.success) return gate.response;
 
   const peer = peerKey((await params).peer);
@@ -28,7 +27,7 @@ export async function GET(request: Request, { params }: Ctx) {
   }
 
   try {
-    return NextResponse.json(await getThread(peer, before));
+    return NextResponse.json(await getThread(peer, gate.line, before));
   } catch (error) {
     log.error({ err: error }, "Error loading WhatsApp thread");
     return NextResponse.json({ error: "Error al cargar la conversación" }, { status: 500 });
@@ -45,9 +44,9 @@ const schema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-/** Manda un texto libre (dentro de las 24 h) o una plantilla aprobada. */
+/** Manda un texto libre (dentro de las 24 h) o una plantilla aprobada, por el número de la línea. */
 export async function POST(request: Request, { params }: Ctx) {
-  const gate = await requireRole(WHATSAPP_ROLES);
+  const gate = await requireWhatsAppLine(request);
   if (!gate.success) return gate.response;
 
   if (esDemo()) return NextResponse.json({ error: "No disponible en la demostración" }, { status: 403 });
@@ -63,7 +62,7 @@ export async function POST(request: Request, { params }: Ctx) {
   }
 
   try {
-    const { wamid } = await sendToPeer(peer, validation.data, gate.session.user.id);
+    const { wamid } = await sendToPeer(peer, validation.data, gate.session.user.id, gate.line);
     return NextResponse.json({ ok: true, wamid });
   } catch (error) {
     if (error instanceof InboxSendError) {

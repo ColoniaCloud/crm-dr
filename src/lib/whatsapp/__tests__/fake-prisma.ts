@@ -23,8 +23,9 @@ function matches(row: Row, where: Where): boolean {
     if (key === "AND") return (cond as Where[]).every((w) => matches(row, w));
     const value = row[key];
     if (cond !== null && typeof cond === "object" && !(cond instanceof Date)) {
-      const c = cond as { in?: unknown[]; not?: unknown; equals?: unknown; gte?: Date; lt?: Date };
+      const c = cond as { in?: unknown[]; notIn?: unknown[]; not?: unknown; equals?: unknown; gte?: Date; lt?: Date };
       if (c.in) return c.in.includes(value);
+      if (c.notIn) return !c.notIn.includes(value);
       if (c.gte) return value instanceof Date && value >= c.gte;
       if (c.lt) return value instanceof Date && value < c.lt;
       if ("not" in c) return value !== c.not;

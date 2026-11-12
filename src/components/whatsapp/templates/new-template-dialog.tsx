@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus, Send } from "@/components/icons";
+import { withLine } from "@/lib/whatsapp/line-url";
 import { fillTemplate } from "@/lib/whatsapp/message-view";
 import {
   TEMPLATE_LANGUAGES,
@@ -40,7 +41,18 @@ const variableCountOf = (body: string): number => {
  * antes de enviar (las mismas que valida el servidor) para no recibir un rechazo
  * críptico, y muestra el mensaje como va a verse, con los ejemplos puestos.
  */
-export function NewTemplateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function NewTemplateDialog({
+  line,
+  lineLabel,
+  onClose,
+  onCreated,
+}: {
+  /** En la cuenta de qué línea se crea; sin ella, la de por defecto de quien la crea. */
+  line?: string;
+  lineLabel?: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("es_AR");
   const [category, setCategory] = useState<NewTemplateInput["category"]>("UTILITY");
@@ -74,7 +86,7 @@ export function NewTemplateDialog({ onClose, onCreated }: { onClose: () => void;
     setSubmitting(true);
     setServerError(null);
     try {
-      const res = await fetch("/api/whatsapp/templates", {
+      const res = await fetch(withLine("/api/whatsapp/templates", line), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...input, header: header.trim() || undefined, footer: footer.trim() || undefined }),
@@ -98,7 +110,7 @@ export function NewTemplateDialog({ onClose, onCreated }: { onClose: () => void;
     <Dialog open onOpenChange={(open) => !open && !submitting && onClose()}>
       <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nueva plantilla</DialogTitle>
+          <DialogTitle>{lineLabel ? `Nueva plantilla · ${lineLabel}` : "Nueva plantilla"}</DialogTitle>
           <DialogDescription>
             Se envía a revisión de Meta. Queda «En revisión» hasta que la aprueben (suele ser cuestión de minutos) y
             recién ahí se puede usar. Una vez creada, el texto no se puede editar: hay que crear otra.
