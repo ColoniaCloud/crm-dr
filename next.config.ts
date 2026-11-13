@@ -42,6 +42,29 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // La página que conecta números de WhatsApp carga el SDK de Meta y habla
+        // con facebook.com (ver src/app/(dashboard)/whatsapp/conectar). Solo esta
+        // ruta: el resto del CRM sigue sin poder cargar scripts de terceros.
+        // Next aplica la última regla que coincide, así que esta reemplaza a la de arriba.
+        source: "/whatsapp/conectar",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://connect.facebook.net",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://*.facebook.com https://*.fbcdn.net",
+              "font-src 'self' data: https://fonts.gstatic.com",
+              "connect-src 'self' https://*.facebook.com https://connect.facebook.net https://*.sentry.io",
+              "frame-src https://*.facebook.com",
+              "worker-src 'self' blob:",
+              "frame-ancestors 'none'",
+            ].join("; "),
+          },
+        ],
+      },
     ];
   },
 };

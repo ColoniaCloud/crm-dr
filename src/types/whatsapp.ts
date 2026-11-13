@@ -31,6 +31,7 @@ export type WhatsAppWebhookEntry = {
 export type WhatsAppWebhookChange =
   | { field: "messages"; value: WhatsAppMessagesValue }
   | { field: "smb_message_echoes"; value: WhatsAppEchoesValue }
+  | { field: "history"; value: WhatsAppHistoryValue }
   | { field: string; value: unknown };
 
 export type WhatsAppMetadata = {
@@ -234,6 +235,46 @@ export type WhatsAppEchoMessage = {
   to: string;
   timestamp: string;
   type: string;
+  [key: string]: unknown;
+};
+
+// ─── field: "history" (coexistencia) ─────────────────────────────────────────
+
+/**
+ * El historial de chats de la app de WhatsApp Business, que Meta manda por
+ * partes una sola vez después de conectar un número en coexistencia (si quien
+ * lo conectó aceptó compartirlo). Cada parte trae hilos (uno por contacto) con
+ * sus mensajes, en los dos sentidos.
+ */
+export type WhatsAppHistoryValue = {
+  messaging_product: "whatsapp";
+  metadata: WhatsAppMetadata;
+  history?: WhatsAppHistoryChunk[];
+};
+
+export type WhatsAppHistoryChunk = {
+  /** phase 0..2, chunk_order para ordenar, progress 0..100. */
+  metadata?: { phase?: number; chunk_order?: number; progress?: number };
+  threads?: WhatsAppHistoryThread[];
+  /** Si no se compartió el historial: code 2593109. */
+  errors?: WhatsAppError[];
+};
+
+export type WhatsAppHistoryThread = {
+  /** El número del contacto (ausente si Meta no lo tiene). */
+  id?: string;
+  context?: { wa_id?: string; user_id?: string; username?: string };
+  messages?: WhatsAppHistoryMessage[];
+};
+
+export type WhatsAppHistoryMessage = {
+  id: string;
+  /** El número de quien lo mandó: el negocio o el contacto. */
+  from?: string;
+  timestamp: string;
+  /** Las fotos, audios y documentos llegan como "media_placeholder". */
+  type: string;
+  history_context?: { status?: string };
   [key: string]: unknown;
 };
 

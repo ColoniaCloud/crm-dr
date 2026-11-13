@@ -7,6 +7,7 @@ import { STUB_CONTENT, STUB_TYPE } from "@/lib/whatsapp/stub";
 import type {
   WhatsAppEchoesValue,
   WhatsAppEchoMessage,
+  WhatsAppHistoryValue,
   WhatsAppInboundMessage,
   WhatsAppMessagesValue,
   WhatsAppMetadata,
@@ -37,6 +38,8 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
           await processMessagesValue(entry.id, change.value as WhatsAppMessagesValue);
         } else if (change.field === "smb_message_echoes") {
           await processEchoesValue(entry.id, change.value as WhatsAppEchoesValue);
+        } else if (change.field === "history") {
+          await processHistoryValue(entry.id, change.value as WhatsAppHistoryValue);
         } else {
           // Plantillas, calidad del número, historial de coexistencia, etc.
           // Todavía no se usan; se anota para saber qué está llegando.
@@ -237,6 +240,74 @@ async function saveEcho(
     contactId,
     rawPayload: toJson(value),
   });
+}
+
+// ─── field: "history" ────────────────────────────────────────────────────────
+
+/** El estado del historial (`history_context.status`) en los términos de `status`. */
+const HISTORY_STATUS: Record<string, WhatsAppStatusValue> = {
+  SENT: "sent",
+  DELIVERED: "delivered",
+  READ: "read",
+  PLAYED: "read",
+  ERROR: "failed",
+};
+
+/**
+ * Los chats viejos de un número que se acaba de conectar en coexistencia. Se
+ * guardan igual que los mensajes en vivo, así la conversación aparece entera en
+ * la bandeja de su línea. Es idempotente por `wamid`: si Meta repite una parte,
+ * no se duplica nada.
+ *
+ * El sentido sale de `from`: si es el número del negocio, lo mandamos nosotros.
+ * Un hilo sin número (Meta a veces solo da un id interno) no se puede ubicar en
+ * ninguna conversación y se saltea. No se crean fichas: son contactos de antes.
+ */
+async function processHistoryValue(wabaId: string, value: WhatsAppHistoryValue): Promise<void> {
+  const business = digitsOnly(value.metadata?.display_phone_number ?? "");
+  let saved = 0;
+  let skipped = 0;
+
+  for (const chunk of value.history ?? []) {
+    for (const error of chunk.errors ?? []) {
+      log.info({ wabaId, code: error.code, title: error.title }, "El historial no se compartió");
+    }
+
+    for (const thread of chunk.threads ?? []) {
+      const peer = digitsOnly(thread.context?.wa_id ?? thread.id ?? "");
+      if (!peer) {
+        skipped += thread.messages?.length ?? 0;
+        continue;
+      }
+      const contactId = await resolveContactForPeer({ waId: peer, allowCreate: false });
+
+      for (const message of thread.messages ?? []) {
+        const outbound = Boolean(business) && digitsOnly(message.from ?? "") === business;
+        const at = fromEpochSeconds(message.timestamp);
+        await guarded("mensaje del historial", message.id, () =>
+          saveMessage({
+            wamid: message.id,
+            direction: outbound ? "outbound" : "inbound",
+            from: outbound ? business : peer,
+            to: outbound ? peer : business,
+            type: message.type,
+            content: toJson(message),
+            timestamp: at,
+            status: outbound ? (HISTORY_STATUS[message.history_context?.status ?? ""] ?? "sent") : null,
+            ...(outbound ? { statusUpdatedAt: at } : {}),
+            phoneNumberId: value.metadata.phone_number_id,
+            wabaId,
+            contactId,
+            rawPayload: toJson({ metadata: value.metadata, chunk: chunk.metadata, thread: thread.id }),
+          })
+        );
+        saved++;
+      }
+    }
+  }
+
+  const progress = value.history?.map((c) => c.metadata?.progress).filter((p) => p !== undefined);
+  log.info({ wabaId, saved, skipped, progress }, "Parte del historial de coexistencia procesada");
 }
 
 // ─── Utilidades ──────────────────────────────────────────────────────────────

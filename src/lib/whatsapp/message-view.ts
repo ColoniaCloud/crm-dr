@@ -92,6 +92,7 @@ export function viewMessage(type: string, content: unknown): MessageView {
     case "unsupported":
       return { kind: "other", label: "Mensaje que WhatsApp no pudo entregar" };
     default:
+      if (type === "media_placeholder") return { kind: "other", label: "Archivo (del historial del celular)" };
       return { kind: "other", label: `Mensaje (${type})` };
   }
 }

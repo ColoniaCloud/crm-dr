@@ -8,8 +8,10 @@ import { WhatsAppInbox } from "@/components/whatsapp/inbox/whatsapp-inbox";
 import { LineSwitcher } from "@/components/whatsapp/line-switcher";
 import { PoweredBy } from "@/components/whatsapp/powered-by";
 import { TemplatesTab } from "@/components/whatsapp/templates/templates-tab";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageCircle } from "@/components/icons";
+import { MessageCircle, QrCode } from "@/components/icons";
 import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import type { WhatsAppLineInfo } from "@/lib/whatsapp/lines";
 
@@ -132,6 +134,14 @@ function WhatsAppScreen() {
           <span className="rounded-md border px-2 py-1 text-xs font-medium text-muted-foreground">{active.label}</span>
         )}
         <PoweredBy className="ml-auto" />
+        {isSuperAdmin && (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/whatsapp/conectar">
+              <QrCode />
+              Conectar número
+            </Link>
+          </Button>
+        )}
       </div>
 
       {lines !== null && (
