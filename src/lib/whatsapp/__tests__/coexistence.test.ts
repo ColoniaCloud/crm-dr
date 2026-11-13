@@ -46,6 +46,7 @@ const rows = () => fakePrisma.whatsAppCloudMessage.rows;
 
 beforeEach(() => {
   resetFakePrisma();
+  vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "");
   vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID", "111111111111111");
   vi.stubEnv("WHATSAPP_APP_SECRET", "secreto-de-prueba");
 });
@@ -158,7 +159,7 @@ describe("alta por Embedded Signup", () => {
     expect(calls[3].body).toEqual({ messaging_product: "whatsapp", sync_type: "smb_app_state_sync" });
     expect(calls[4].body).toEqual({ messaging_product: "whatsapp", sync_type: "history" });
 
-    expect(report).toMatchObject({ coexistence: true, subscribed: { ok: true } });
+    expect(report).toMatchObject({ coexistence: true, codeExchange: { ok: true }, subscribed: { ok: true } });
     expect(report.phones[0]).toMatchObject({ line: "WPP Nati", onBizApp: true, platformType: "CLOUD_API", sync: { contacts: { ok: true }, history: { ok: true } } });
   });
 
@@ -209,6 +210,32 @@ describe("alta por Embedded Signup", () => {
 
     await expect(completeSignup({ code: "CODIGO-VIEJO", wabaId: NATI().wabaId })).rejects.toBeInstanceOf(SignupError);
     expect(calls).toHaveLength(1);
+  });
+
+  it("si Meta rechaza un paso con el token del alta, lo reintenta con el token de sistema", async () => {
+    vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "TOKEN-SISTEMA");
+    mockGraph((c) =>
+      c.auth === "Bearer TOKEN-NEGOCIO" && !c.url.pathname.endsWith("oauth/access_token")
+        ? { status: 403, body: { error: { message: "Falta permiso", code: 200 } } }
+        : happy(c)
+    );
+
+    const report = await completeSignup({ code: "CODIGO-DEL-FLUJO", wabaId: NATI().wabaId });
+
+    expect(report).toMatchObject({ coexistence: true, codeExchange: { ok: true }, subscribed: { ok: true } });
+    const sync = calls.filter((c) => c.url.pathname.endsWith("/smb_app_data"));
+    expect(sync.map((c) => c.auth)).toEqual(["Bearer TOKEN-NEGOCIO", "Bearer TOKEN-SISTEMA", "Bearer TOKEN-NEGOCIO", "Bearer TOKEN-SISTEMA"]);
+  });
+
+  it("si Meta no acepta el código pero hay token de sistema, sigue con ese y lo informa", async () => {
+    vi.stubEnv("WHATSAPP_ACCESS_TOKEN", "TOKEN-SISTEMA");
+    mockGraph((c) => (c.url.pathname.endsWith("oauth/access_token") ? { status: 400, body: { error: { message: "Código vencido" } } } : happy(c)));
+
+    const report = await completeSignup({ code: "CODIGO-VIEJO", wabaId: NATI().wabaId });
+
+    expect(report.codeExchange).toEqual({ ok: false, error: "Código vencido" });
+    expect(report.coexistence).toBe(true);
+    expect(calls.slice(1).every((c) => c.auth === "Bearer TOKEN-SISTEMA")).toBe(true);
   });
 
   it("sin el secreto de la app no intenta nada", async () => {

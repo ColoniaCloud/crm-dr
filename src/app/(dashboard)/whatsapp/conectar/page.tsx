@@ -288,6 +288,7 @@ function Report({ report }: { report: SignupReport }) {
           : "Meta terminó el alta, pero el número no quedó en coexistencia."}
       </p>
       <ul className="space-y-1">
+        <Step label="Meta aceptó el código del alta" result={report.codeExchange} />
         <Step label="Webhooks de la cuenta suscriptos" result={report.subscribed} />
       </ul>
       {report.phones.length === 0 && <p>La cuenta no tiene números.</p>}

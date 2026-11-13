@@ -26,6 +26,13 @@ const log = createLogger("lib/whatsapp/embedded-signup");
  * El token de negocio se usa solo para estos pasos y no se guarda: la cuenta
  * queda en el portfolio de Kristall, al que el token de sistema del CRM ya
  * tiene acceso, y con ese se manda y se leen plantillas después.
+ *
+ * Cada paso prueba primero con el token de negocio (lo que pide Meta) y, si
+ * Meta lo rechaza, con el de sistema. Hace falta porque la app está en modo
+ * live sin App Review: Meta avisa que en ese caso el flujo solo concede los
+ * permisos aprobados, así que el token de negocio puede salir sin los de
+ * WhatsApp. El número es de nuestro propio portfolio, y el token de sistema sí
+ * los tiene sobre él.
  */
 
 /** La app de Meta del CRM (Kristal WPP). No es secreto: va en el navegador. */
@@ -100,6 +107,8 @@ export type StepResult = { ok: true } | { ok: false; error: string };
 export type SignupReport = {
   wabaId: string;
   event: string | null;
+  /** Si Meta aceptó el código del flujo. Si no, se siguió con el token de sistema. */
+  codeExchange: StepResult;
   subscribed: StepResult;
   phones: SignupPhone[];
   /** Está todo bien: al menos un número quedó en coexistencia y se pidió su sincronización. */
@@ -135,16 +144,43 @@ async function exchangeCode(code: string): Promise<string> {
  * resto sigue y la pantalla muestra qué pasó.
  */
 export async function completeSignup(input: { code: string; wabaId: string; event?: string | null }): Promise<SignupReport> {
-  const token = await exchangeCode(input.code);
+  const systemToken = process.env.WHATSAPP_ACCESS_TOKEN || null;
 
-  const subscribed = await step(() => graph(`${input.wabaId}/subscribed_apps`, { method: "POST", token }));
+  let businessToken: string | null = null;
+  let codeExchange: StepResult;
+  try {
+    businessToken = await exchangeCode(input.code);
+    codeExchange = { ok: true };
+  } catch (err) {
+    // Sin token de sistema no hay con qué seguir.
+    if (!systemToken) throw err;
+    codeExchange = { ok: false, error: err instanceof Error ? err.message : "Error desconocido" };
+  }
 
-  const list = await graph<{
-    data?: { id: string; display_phone_number?: string; verified_name?: string; is_on_biz_app?: boolean; platform_type?: string }[];
-  }>(`${input.wabaId}/phone_numbers`, {
-    token,
-    query: { fields: "id,display_phone_number,verified_name,is_on_biz_app,platform_type" },
-  });
+  const tokens = [businessToken, systemToken].filter((t): t is string => Boolean(t));
+  /** Prueba el paso con cada token, en orden, y se queda con el primero que Meta acepta. */
+  const withAnyToken = async <T,>(fn: (token: string) => Promise<T>): Promise<T> => {
+    let last: unknown;
+    for (const token of tokens) {
+      try {
+        return await fn(token);
+      } catch (err) {
+        last = err;
+      }
+    }
+    throw last;
+  };
+
+  const subscribed = await step(() => withAnyToken((token) => graph(`${input.wabaId}/subscribed_apps`, { method: "POST", token })));
+
+  const list = await withAnyToken((token) =>
+    graph<{
+      data?: { id: string; display_phone_number?: string; verified_name?: string; is_on_biz_app?: boolean; platform_type?: string }[];
+    }>(`${input.wabaId}/phone_numbers`, {
+      token,
+      query: { fields: "id,display_phone_number,verified_name,is_on_biz_app,platform_type" },
+    })
+  );
 
   const phones: SignupPhone[] = [];
   for (const p of list.data ?? []) {
@@ -157,10 +193,14 @@ export async function completeSignup(input: { code: string; wabaId: string; even
     const sync = onBizApp
       ? {
           contacts: await step(() =>
-            graph(`${p.id}/smb_app_data`, { method: "POST", token, body: { messaging_product: "whatsapp", sync_type: "smb_app_state_sync" } })
+            withAnyToken((token) =>
+              graph(`${p.id}/smb_app_data`, { method: "POST", token, body: { messaging_product: "whatsapp", sync_type: "smb_app_state_sync" } })
+            )
           ),
           history: await step(() =>
-            graph(`${p.id}/smb_app_data`, { method: "POST", token, body: { messaging_product: "whatsapp", sync_type: "history" } })
+            withAnyToken((token) =>
+              graph(`${p.id}/smb_app_data`, { method: "POST", token, body: { messaging_product: "whatsapp", sync_type: "history" } })
+            )
           ),
         }
       : null;
@@ -178,9 +218,9 @@ export async function completeSignup(input: { code: string; wabaId: string; even
 
   const coexistence = phones.some((p) => p.onBizApp && p.platformType === "CLOUD_API" && p.sync?.history.ok);
   log.info(
-    { wabaId: input.wabaId, event: input.event, subscribed: subscribed.ok, phones: phones.map((p) => ({ id: p.id, onBizApp: p.onBizApp, platformType: p.platformType, line: p.line })) },
+    { wabaId: input.wabaId, event: input.event, codeExchange: codeExchange.ok, subscribed: subscribed.ok, phones: phones.map((p) => ({ id: p.id, onBizApp: p.onBizApp, platformType: p.platformType, line: p.line })) },
     "Alta por Embedded Signup completada"
   );
 
-  return { wabaId: input.wabaId, event: input.event ?? null, subscribed, phones, coexistence };
+  return { wabaId: input.wabaId, event: input.event ?? null, codeExchange, subscribed, phones, coexistence };
 }
