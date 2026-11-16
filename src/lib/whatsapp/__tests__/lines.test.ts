@@ -86,9 +86,14 @@ describe("a qué línea pertenece un mensaje", () => {
     expect(isPrimaryPhoneNumberId(nati().phoneNumberId)).toBe(false);
   });
 
-  it("el filtro de la principal excluye a las otras; el de una secundaria es exacto", () => {
-    expect(lineWhere(primaryLine())).toEqual({ phoneNumberId: { notIn: [nati().phoneNumberId] } });
-    expect(lineWhere(nati())).toEqual({ phoneNumberId: nati().phoneNumberId });
+  it("el filtro de la principal excluye a las otras, también sus números anteriores", () => {
+    expect(lineWhere(primaryLine())).toEqual({ phoneNumberId: { notIn: [nati().phoneNumberId, "925630763976057"] } });
+    expect(lineWhere(nati())).toEqual({ phoneNumberId: { in: [nati().phoneNumberId, "925630763976057"] } });
+  });
+
+  it("los mensajes guardados con el número anterior de una línea siguen siendo de esa línea", () => {
+    expect(lineOfPhoneNumberId("925630763976057").key).toBe("nati");
+    expect(isPrimaryPhoneNumberId("925630763976057")).toBe(false);
   });
 
   it("la principal usa la cuenta de plantillas del entorno; las otras, la suya", () => {

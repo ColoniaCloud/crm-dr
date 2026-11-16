@@ -7,9 +7,10 @@ import { esDemo } from "@/lib/demo-context";
  *   WPP Carlos — la línea de siempre. Sus ids salen de las variables de entorno
  *                (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`) y por ella salen
  *                los avisos automáticos (garantías, turnos, invitaciones).
- *   WPP Nati   — un número en coexistencia (la app de WhatsApp Business del
- *                celular + la API), en su propia cuenta de Meta: tiene sus propias
- *                plantillas y su propia facturación.
+ *   WPP Nati   — un número solo por la API (desde el 2026-11-16; antes estuvo
+ *                vinculado a la app de WhatsApp Business del celular), en su
+ *                propia cuenta de Meta: tiene sus propias plantillas y su propia
+ *                facturación.
  *
  * Todo cuelga de la misma app de Meta, así que el webhook y el token son los
  * mismos; lo que distingue un mensaje de otro es el `phoneNumberId` con que se
@@ -36,6 +37,12 @@ export type WhatsAppLine = {
   primary: boolean;
   /** Emails de quienes solo pueden usar esta línea. */
   users: string[];
+  /**
+   * Ids de números que esta línea usó antes. Los mensajes guardados con ellos
+   * siguen siendo de esta línea: sin esto, al cambiar de número los chats viejos
+   * pasarían a la bandeja principal.
+   */
+  previousPhoneNumberIds?: string[];
 };
 
 /** Lo que se le manda a la pantalla: nada de ids de Meta. */
@@ -51,10 +58,12 @@ const SECONDARY_LINES: Omit<WhatsAppLine, "primary">[] = [
   {
     key: "nati",
     label: "WPP Nati",
-    phoneNumberId: "925630763976057",
-    wabaId: "1378679683744985",
+    phoneNumberId: "1578594722012702",
+    wabaId: "1210976871594819",
     businessNumber: "5491168477185",
     users: ["natalia@kristallfilm.com"],
+    // El mismo número cuando estaba vinculado a la app del celular (hasta el 2026-11-16).
+    previousPhoneNumberIds: ["925630763976057"],
   },
 ];
 
@@ -101,9 +110,12 @@ export function isLineRestricted(user: { role?: string | null; email?: string | 
   return linesFor(user).every((l) => !l.primary);
 }
 
+/** Todos los ids de número de una línea: el actual y los que usó antes. */
+const idsOf = (line: WhatsAppLine): string[] => [line.phoneNumberId, ...(line.previousPhoneNumberIds ?? [])];
+
 /** A qué línea pertenece un mensaje, por el id del número con que se guardó. */
 export function lineOfPhoneNumberId(phoneNumberId: string | null | undefined): WhatsAppLine {
-  return secondaryLines().find((l) => l.phoneNumberId === phoneNumberId) ?? primaryLine();
+  return secondaryLines().find((l) => idsOf(l).includes(phoneNumberId ?? "")) ?? primaryLine();
 }
 
 export function isPrimaryPhoneNumberId(phoneNumberId: string | null | undefined): boolean {
@@ -117,9 +129,12 @@ export function isPrimaryPhoneNumberId(phoneNumberId: string | null | undefined)
  * así entran también las filas viejas o de prueba que se guardaron con otro id,
  * y nada queda huérfano sin bandeja.
  */
-export function lineWhere(line: WhatsAppLine): { phoneNumberId: string | { notIn: string[] } } {
-  if (!line.primary) return { phoneNumberId: line.phoneNumberId };
-  return { phoneNumberId: { notIn: secondaryLines().map((l) => l.phoneNumberId) } };
+export function lineWhere(line: WhatsAppLine): { phoneNumberId: string | { in: string[] } | { notIn: string[] } } {
+  if (!line.primary) {
+    const ids = idsOf(line);
+    return { phoneNumberId: ids.length === 1 ? ids[0] : { in: ids } };
+  }
+  return { phoneNumberId: { notIn: secondaryLines().flatMap(idsOf) } };
 }
 
 /**
