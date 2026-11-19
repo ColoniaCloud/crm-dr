@@ -98,7 +98,7 @@ async function crearProductos() {
       sku: "TPUKX", name: "PPF KRISTALL", category: "PPF" as const, subcategory: "GLOSS",
       shade: null, description: "Film de poliuretano termoplástico 7.5mil. Transparente. Self-healing por calor.",
       price: 210_000, cost: 140_000, width: 1.52, length: 15, stock: 15, minStock: 5,
-      rollMeses: 36, instalacionMeses: 180, abrevCodigo: "PPF",
+      rollMeses: 36, instalacionMeses: 120, abrevCodigo: "PPF",
     },
   ];
 

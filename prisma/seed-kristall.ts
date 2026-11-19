@@ -90,7 +90,7 @@ const products: ProductSeed[] = [
   {
     name: "PPF KRISTALL", sku: "TPUKX", category: "PPF", subcategory: "GLOSS", shade: null,
     description: "Film de poliuretano termoplástico 7.5mil. Transparente. Self-healing por calor. Rollo 1.52m x 15m.",
-    installWarrantyMonths: 180,
+    installWarrantyMonths: 120,
   },
 ];
 
