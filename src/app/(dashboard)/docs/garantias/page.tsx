@@ -83,7 +83,7 @@ export default function WarrantyDocsPage() {
           </Step>
           <Step n={4} title="Cliente activa la garantía">
             Desde la ficha del cliente en el CRM se copia el link{" "}
-            <code className="rounded bg-muted px-1 text-xs">/garantia/[token]</code>. El cliente lo abre,
+            <code className="rounded bg-muted px-1 text-xs">kristallfilm.com/garantia/[token]</code> (solo ADMIN+). El cliente lo abre,
             completa sus datos y la instalación pasa a <em>ACTIVE</em> con fecha de vencimiento calculada.
           </Step>
           <Step n={5} title="Reclamo (si algo sale mal)">

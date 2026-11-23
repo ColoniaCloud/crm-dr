@@ -96,6 +96,16 @@ export default auth((req) => {
     return noSharedCache(NextResponse.next());
   }
 
+  // El CRM ya no tiene páginas de garantía: la única es la de kristallfilm.com,
+  // que es adonde apuntan los mails y los "Copiar link". Hasta noviembre 2026
+  // vivían acá `/garantia/<token>` y su API `/api/garantia/*` (sin key, sin
+  // chequeo de vencimiento al reclamar, sin certificado al activar). Un link
+  // viejo que alguien haya guardado se manda al lugar correcto con su token.
+  if (pathname === "/garantia" || pathname.startsWith("/garantia/")) {
+    const destino = (process.env.CLIENT_PORTAL_URL || "https://kristallfilm.com").replace(/\/$/, "");
+    return noSharedCache(NextResponse.redirect(`${destino}${pathname}`, 308));
+  }
+
   // Política de privacidad y términos: públicos a propósito (los lee cualquiera,
   // y Meta exige una URL abierta para la app de WhatsApp). Son páginas estáticas
   // sin datos del negocio.

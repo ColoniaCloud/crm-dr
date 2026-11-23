@@ -38,7 +38,7 @@ interface SaleItem {
   product: { id: string; name: string; category: string | null; sku: string | null };
   warrantyRoll: {
     fullRollCode: string;
-    installations: { activationToken: string; status: string }[];
+    installations: { activationUrl: string; status: string }[];
   } | null;
 }
 
@@ -549,7 +549,7 @@ export default function SaleDetailPage() {
             {sale.items.map((item) => {
               const pending = item.warrantyRoll?.installations.find((i) => i.status === "PENDING");
               if (!pending) return null;
-              const url = `${window.location.origin}/garantia/${pending.activationToken}`;
+              const url = pending.activationUrl;
               return (
                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
                   <div className="min-w-0">
@@ -562,12 +562,12 @@ export default function SaleDetailPage() {
                     className="shrink-0"
                     onClick={() => {
                       navigator.clipboard.writeText(url).catch(() => {});
-                      setCopiedToken(pending.activationToken);
+                      setCopiedToken(pending.activationUrl);
                       setTimeout(() => setCopiedToken(null), 2000);
                     }}
                   >
-                    {copiedToken === pending.activationToken ? <Check className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
-                    {copiedToken === pending.activationToken ? "Copiado" : "Copiar link"}
+                    {copiedToken === pending.activationUrl ? <Check className="h-4 w-4 mr-1 text-green-600" /> : <Copy className="h-4 w-4 mr-1" />}
+                    {copiedToken === pending.activationUrl ? "Copiado" : "Copiar link"}
                   </Button>
                 </div>
               );

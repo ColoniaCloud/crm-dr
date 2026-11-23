@@ -7,6 +7,7 @@ import { logOperatorAction, ensurePaymentAuditTable, notifyAdmins } from "@/lib/
 import { confirmSale, restoreSaleStock } from "@/lib/sales";
 import { avisarFacturaPendiente } from "@/lib/factura-notify";
 import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
+import { linkPublicoDeGarantia } from "@/lib/warranty";
 
 const log = createLogger("api/sales/[id]");
 
@@ -79,7 +80,27 @@ export async function GET(
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
     }
 
-    return NextResponse.json(sale);
+    // El activationToken es la capacidad completa sobre la garantía: no sale
+    // crudo. ADMIN+ recibe el link público ya armado (kristallfilm.com; el CRM
+    // no tiene página pública de garantía) y un OPERATOR no recibe nada.
+    const esAdmin = session.user.role === "ADMIN" || session.user.role === "SUPERADMIN";
+    return NextResponse.json({
+      ...sale,
+      items: sale.items.map((item) => ({
+        ...item,
+        warrantyRoll: item.warrantyRoll
+          ? {
+              fullRollCode: item.warrantyRoll.fullRollCode,
+              installations: esAdmin
+                ? item.warrantyRoll.installations.map(({ activationToken, status }) => ({
+                    status,
+                    activationUrl: linkPublicoDeGarantia(activationToken),
+                  }))
+                : [],
+            }
+          : null,
+      })),
+    });
   } catch (error) {
     log.error({ err: error }, "Error fetching sale");
     return NextResponse.json({ error: "Error al obtener venta" }, { status: 500 });

@@ -7,6 +7,7 @@ import { notifyAdmins } from "@/lib/notifications";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { columnasObra, numeroOnull, recortarDireccion, type ColumnasObra, type DatosObra } from "@/lib/obra";
 import { formatM2, m2DelProducto, saldoDeRollo } from "@/lib/rollo-m2";
+import { portalBaseUrl } from "@/lib/portal-tokens";
 
 type Tx = Prisma.TransactionClient;
 
@@ -215,6 +216,45 @@ export async function getRollsWhere(where: Prisma.WarrantyRollWhereInput) {
     include: ROLL_TRACE_INCLUDE,
     orderBy: { createdAt: "asc" },
   });
+}
+
+/** Link público de una garantía: siempre kristallfilm.com, nunca el CRM. */
+export function linkPublicoDeGarantia(activationToken: string): string {
+  return `${portalBaseUrl()}/garantia/${encodeURIComponent(activationToken)}`;
+}
+
+type RollTrace = NonNullable<Awaited<ReturnType<typeof getRollByCode>>>;
+
+/**
+ * Lo que una pantalla del CRM puede recibir de un rollo, según el rol.
+ *
+ * `ROLL_TRACE_INCLUDE` trae el `activationToken` —la capacidad completa sobre
+ * la garantía: activarla, cambiarle la contraseña, reclamar— y el mail, el
+ * teléfono, el DNI y la dirección de cada cliente final. Antes salía tal cual a
+ * cualquier usuario logueado, OPERATOR incluido.
+ *
+ * - **ADMIN+**: todo, pero el token viaja ya armado como `activationUrl` hacia
+ *   kristallfilm.com (el CRM no tiene página pública de garantía).
+ * - **OPERATOR**: sin token ni link, sin mail/teléfono/DNI y con la dirección
+ *   recortada. Conserva el nombre del titular, el estado y las fechas, que es
+ *   lo que necesita para atender una consulta.
+ */
+export function proyectarRollo(roll: RollTrace, esAdmin: boolean) {
+  return {
+    ...roll,
+    installations: roll.installations.map(({ activationToken, ...inst }) =>
+      esAdmin
+        ? { ...inst, activationUrl: linkPublicoDeGarantia(activationToken) }
+        : {
+            ...inst,
+            activationUrl: null,
+            clientEmail: null,
+            clientPhone: null,
+            clientDni: null,
+            siteAddress: recortarDireccion(inst.siteAddress),
+          }
+    ),
+  };
 }
 
 /**
@@ -719,10 +759,17 @@ export async function activateInstallationWarranty(
 /**
  * Reserva un slot de instalación en un rollo, dentro de una transacción ajena.
  *
- * Reusa el `-I1` que `linkRollToSaleItem` deja en PENDING al vender el rollo;
- * recién cuando no queda ninguno libre crea el siguiente sub-código. Es la
- * misma cuenta que hace `createAdditionalInstallation` (sección 4.8 del
- * contrato), sin abrir transacción propia.
+ * **Siempre crea un sub-código nuevo; nunca reusa uno PENDING.** Hasta
+ * noviembre 2026 reusaba el primer PENDING que encontraba, pero un PENDING no
+ * es un slot libre: el taller pudo haberlo precargado para otro cliente desde
+ * Stock, haberle mandado el mail o haber copiado el link, y nada de eso queda
+ * registrado. Reusarlo le activaba a la persona B la garantía cuyo link tenía
+ * la persona A — con el nombre de B, pero la patente y la obra de A, porque la
+ * activación no pisa lo precargado. El costo de no reusar es que un `-I1` que
+ * nadie usa ocupa un lugar del tope; es preferible a cruzar dos garantías.
+ *
+ * Misma cuenta que `createAdditionalInstallation` (sección 4.8 del contrato),
+ * sin abrir transacción propia.
  *
  * Devuelve null cuando el rollo ya no admite más instalaciones o está anulado.
  * El que llama decide si eso es un error o algo que se reporta y sigue.
@@ -737,37 +784,21 @@ export async function allocateInstallationTx(
       id: true,
       fullRollCode: true,
       status: true,
-      installations: {
-        orderBy: { installationNumber: "asc" },
-        select: {
-          id: true,
-          installationNumber: true,
-          installationCode: true,
-          activationToken: true,
-          status: true,
-        },
-      },
+      // El número más alto, no la cantidad: si alguna vez se borró un slot del
+      // medio, `length + 1` chocaría con el @@unique([rollId, installationNumber]).
+      installations: { orderBy: { installationNumber: "desc" }, take: 1, select: { installationNumber: true } },
+      _count: { select: { installations: true } },
       product: { select: { category: true, warrantyConfig: { select: { maxInstallations: true } } } },
     },
   });
   if (!roll || roll.status === "VOIDED") return null;
 
-  const libre = roll.installations.find((i) => i.status === "PENDING");
-  if (libre) {
-    return {
-      id: libre.id,
-      installationCode: libre.installationCode,
-      activationToken: libre.activationToken,
-    };
-  }
-
   const maxInstallations = limiteDeInstalaciones(roll.product);
-  const nextNumber = roll.installations.length + 1;
-  if (nextNumber > maxInstallations) {
+  if (roll._count.installations >= maxInstallations) {
     await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
     return null;
   }
-
+  const nextNumber = (roll.installations[0]?.installationNumber ?? 0) + 1;
   const creada = await tx.warrantyInstallation.create({
     data: {
       rollId: roll.id,
@@ -779,7 +810,7 @@ export async function allocateInstallationTx(
     select: { id: true, installationCode: true, activationToken: true },
   });
 
-  if (nextNumber >= maxInstallations) {
+  if (roll._count.installations + 1 >= maxInstallations) {
     await tx.warrantyRoll.update({ where: { id: roll.id }, data: { status: "EXHAUSTED" } });
   }
 

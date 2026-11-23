@@ -103,10 +103,11 @@ interface WarrantyInstallationSummary {
   id: string;
   installationNumber: number;
   installationCode: string;
-  activationToken: string;
+  /** Link público (kristallfilm.com). Null para OPERATOR: no recibe el token. */
+  activationUrl: string | null;
   status: string;
   clientName: string;
-  clientEmail: string;
+  clientEmail: string | null;
   clientPhone: string | null;
   clientDni: string | null;
   assetType: string;
@@ -939,12 +940,12 @@ export default function ClientDetailPage() {
                       Ver cliente
                     </Button>
                   )}
-                  {inst.status === "PENDING" && (
+                  {inst.status === "PENDING" && inst.activationUrl && (
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        const url = `${window.location.origin}/garantia/${inst.activationToken}`
+                        const url = inst.activationUrl!
                         navigator.clipboard.writeText(url).catch(() => {})
                         setCopiedToken(inst.id)
                         setTimeout(() => setCopiedToken(null), 2000)

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
-import { getRollByCode } from "@/lib/warranty";
+import { getRollByCode, proyectarRollo } from "@/lib/warranty";
 import { saldoDeRollo } from "@/lib/rollo-m2";
 
 const log = createLogger("api/warranty-rolls/[code]");
@@ -17,6 +17,11 @@ export async function GET(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    // ADMIN+, como el Centro de Garantías, que es quien lo usa. Antes alcanzaba
+    // con estar logueado, y la respuesta trae datos del cliente final.
+    if (session.user.role !== "ADMIN" && session.user.role !== "SUPERADMIN") {
+      return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+    }
 
     const { code } = await params;
     const roll = await getRollByCode(code);
@@ -26,7 +31,7 @@ export async function GET(
 
     // Cuánto trae, cuánto se usó y cuánto queda (ver rollo-m2.ts).
     const saldo = await saldoDeRollo(prisma, roll.id);
-    return NextResponse.json({ ...roll, saldo });
+    return NextResponse.json({ ...proyectarRollo(roll, true), saldo });
   } catch (error) {
     log.error({ err: error }, "Error fetching warranty roll");
     return NextResponse.json({ error: "Error al buscar el código" }, { status: 500 });
