@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { KeyRound, Mail, AlertTriangle, ExternalLink } from "@/components/icons";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 type AccessLevel = "BASIC" | "INSTALLER" | "RESELLER";
 
@@ -25,6 +25,17 @@ interface PortalAccountInfo {
   whatsappMismatch: { portal: string; crm: string; updatedAt: string | null } | null;
   contactEmail: string | null;
   canInvite: boolean;
+}
+
+/** Un intento de mandar la invitación, tal como lo devuelve /portal-invite. */
+interface InviteLogEntry {
+  id: string;
+  createdAt: string;
+  status: "SENT" | "FAILED";
+  error: string | null;
+  sentToEmail: string;
+  accessLevel: AccessLevel;
+  userName: string;
 }
 
 interface ClientPortalAccessProps {
@@ -66,6 +77,10 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
   const [reminding, setReminding] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  // Resultado de la invitación y su historial: van debajo del botón de invitar,
+  // no arriba del diálogo, para que se vea sin scrollear hacia otro lado.
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [invitations, setInvitations] = useState<InviteLogEntry[]>([]);
 
   async function load() {
     const res = await fetch(`/api/clients/${clientId}/portal-account`);
@@ -87,10 +102,23 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
+  async function loadInvitations() {
+    try {
+      const res = await fetch(`/api/clients/${clientId}/portal-invite`);
+      if (!res.ok) return;
+      const data: { invitations: InviteLogEntry[] } = await res.json();
+      setInvitations(data.invitations);
+    } catch {
+      // El historial es un extra: si no carga, el botón sigue andando.
+    }
+  }
+
   async function openDialog() {
     setOpen(true);
     setError("");
     setNotice("");
+    setInviteMsg(null);
+    loadInvitations();
     setLoading(true);
     try {
       await load();
@@ -142,8 +170,7 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
    */
   async function invitar() {
     setInviting(true);
-    setError("");
-    setNotice("");
+    setInviteMsg(null);
     try {
       const res = await fetch(`/api/clients/${clientId}/portal-invite`, {
         method: "POST",
@@ -152,15 +179,21 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar la invitación");
-      setNotice(
-        `Invitación enviada a ${data.sentTo} con nivel ${LEVEL_LABEL[form.accessLevel]}. ` +
-          "El link vence en 24 h."
-      );
+      setInviteMsg({
+        ok: true,
+        text:
+          `Invitación enviada a ${data.sentTo} con nivel ${LEVEL_LABEL[form.accessLevel]}. ` +
+          "El link vence en 24 h.",
+      });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo enviar la invitación");
+      setInviteMsg({
+        ok: false,
+        text: err instanceof Error ? err.message : "No se pudo enviar la invitación",
+      });
     } finally {
       setInviting(false);
+      loadInvitations();
     }
   }
 
@@ -392,6 +425,42 @@ export function ClientPortalAccess({ clientId, clientEmail }: ClientPortalAccess
                     <p className="text-xs text-destructive">
                       Este cliente no tiene email en la ficha. Cargalo primero para poder invitarlo.
                     </p>
+                  )}
+                  {inviteMsg && (
+                    <p
+                      role="status"
+                      className={`mt-3 rounded-md px-3 py-2 text-sm ${
+                        inviteMsg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+                      }`}
+                    >
+                      {inviteMsg.text}
+                    </p>
+                  )}
+                  {invitations.length > 0 && (
+                    <div className="mt-3">
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">Envíos anteriores</p>
+                      <ul className="max-h-40 divide-y overflow-y-auto rounded-md border text-xs">
+                        {invitations.map((inv) => (
+                          <li key={inv.id} className="flex items-start justify-between gap-3 px-3 py-2">
+                            <div className="min-w-0">
+                              <p>{formatDateTime(inv.createdAt)}</p>
+                              <p className="truncate text-muted-foreground">
+                                {inv.sentToEmail} · {LEVEL_LABEL[inv.accessLevel]} · {inv.userName}
+                              </p>
+                              {inv.status === "FAILED" && inv.error && (
+                                <p className="text-red-600">{inv.error}</p>
+                              )}
+                            </div>
+                            <Badge
+                              variant={inv.status === "SENT" ? "default" : "destructive"}
+                              className="shrink-0"
+                            >
+                              {inv.status === "SENT" ? "Enviado" : "No se envió"}
+                            </Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               )}

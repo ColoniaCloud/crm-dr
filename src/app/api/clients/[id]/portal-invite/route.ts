@@ -8,6 +8,7 @@ import { logOperatorAction, escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
+import type { PortalInviteStatus } from "@prisma/client";
 
 const log = createLogger("api/clients/[id]/portal-invite");
 
@@ -34,6 +35,41 @@ const schema = z.object({
   accessLevel: z.enum(["BASIC", "INSTALLER", "RESELLER"]).optional(),
 });
 
+/**
+ * Historial de envíos de la invitación, para mostrarlo debajo del botón. Los
+ * últimos 20 alcanzan: es para ver "¿le llegó? ¿cuándo se la mandé?", no para
+ * auditar.
+ */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const gate = await requireRole(["ADMIN", "SUPERADMIN"]);
+  if (!gate.success) return gate.response;
+
+  try {
+    const { id } = await params;
+    const invitations = await prisma.portalInviteLog.findMany({
+      where: { contactId: id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        createdAt: true,
+        status: true,
+        error: true,
+        sentToEmail: true,
+        accessLevel: true,
+        userName: true,
+      },
+    });
+    return NextResponse.json({ invitations });
+  } catch (error) {
+    log.error({ err: error }, "Error fetching portal invite log");
+    return NextResponse.json({ error: "No se pudo cargar el historial de invitaciones" }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -48,8 +84,33 @@ export async function POST(
   if (!validation.success) return validation.response;
   const accessLevel = validation.data.accessLevel ?? "BASIC";
 
+  const { id } = await params;
+  // Email al que se intenta mandar. Mientras sea null no hay intento que
+  // registrar: los rechazos previos (cliente inexistente, sin email, ya activo)
+  // los frena el diálogo antes de mostrar el botón.
+  let destino: string | null = null;
+
+  /** Deja constancia del intento. Nunca rompe la respuesta: es un registro. */
+  async function registrar(status: PortalInviteStatus, error?: string) {
+    if (!destino) return;
+    try {
+      await prisma.portalInviteLog.create({
+        data: {
+          contactId: id,
+          userId: session.user.id,
+          userName: session.user.name || session.user.email || "Operador",
+          sentToEmail: destino,
+          accessLevel,
+          status,
+          error: error ? error.slice(0, 500) : null,
+        },
+      });
+    } catch (err) {
+      log.error({ err }, "No se pudo registrar el envío de la invitación");
+    }
+  }
+
   try {
-    const { id } = await params;
 
     const contact = await prisma.contact.findFirst({
       where: { id, ...WHERE_COMPRADOR },
@@ -80,11 +141,11 @@ export async function POST(
         { status: 409 }
       );
     }
+    destino = contact.email;
     if (!isSmtpConfigured()) {
-      return NextResponse.json(
-        { error: "El envío de mails no está configurado en el servidor (falta SMTP)." },
-        { status: 503 }
-      );
+      const error = "El envío de mails no está configurado en el servidor (falta SMTP).";
+      await registrar("FAILED", error);
+      return NextResponse.json({ error }, { status: 503 });
     }
 
     // La fila de la cuenta se crea acá, sin contraseña, para poder dejar el
@@ -113,10 +174,9 @@ export async function POST(
       // El email del acceso es único en toda la tabla: si otro contacto ya lo
       // usa, hay que resolverlo a mano antes de poder invitar.
       if (error && typeof error === "object" && "code" in error && (error as { code: string }).code === "P2002") {
-        return NextResponse.json(
-          { error: "Ese email ya está en uso por el acceso al portal de otro cliente." },
-          { status: 409 }
-        );
+        const mensaje = "Ese email ya está en uso por el acceso al portal de otro cliente.";
+        await registrar("FAILED", mensaje);
+        return NextResponse.json({ error: mensaje }, { status: 409 });
       }
       throw error;
     }
@@ -141,21 +201,32 @@ export async function POST(
         generás y la gestión de tu taller`
       : "tus compras y el estado de tu cuenta corriente";
 
-    await transporter.sendMail({
-      from: FROM(),
-      to: contact.email,
-      subject: `Activá tu acceso al ${panel} — Kristall Film`,
-      html: `
-        <p>Hola ${escapeHtml(contact.firstName)},</p>
-        <p>Te damos acceso al <strong>${escapeHtml(panel)}</strong> de Kristall Film, donde vas a poder ver
-        ${queVa}.</p>
-        <p>Para crear tu contraseña, entrá en este link:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>El link vence el ${expiresAt.toLocaleString("es-AR")} y se puede usar una sola vez.
-        Si no lo pediste, ignorá este mensaje.</p>
-        <p>— Equipo Kristall Film</p>
-      `,
-    });
+    try {
+      await transporter.sendMail({
+        from: FROM(),
+        to: contact.email,
+        subject: `Activá tu acceso al ${panel} — Kristall Film`,
+        html: `
+          <p>Hola ${escapeHtml(contact.firstName)},</p>
+          <p>Te damos acceso al <strong>${escapeHtml(panel)}</strong> de Kristall Film, donde vas a poder ver
+          ${queVa}.</p>
+          <p>Para crear tu contraseña, entrá en este link:</p>
+          <p><a href="${link}">${link}</a></p>
+          <p>El link vence el ${expiresAt.toLocaleString("es-AR")} y se puede usar una sola vez.
+          Si no lo pediste, ignorá este mensaje.</p>
+          <p>— Equipo Kristall Film</p>
+        `,
+      });
+    } catch (err) {
+      log.error({ err }, "Error sending portal invite mail");
+      const detalle = err instanceof Error && err.message ? `: ${err.message}` : "";
+      const mensaje = `No se pudo enviar el mail${detalle}`;
+      await registrar("FAILED", mensaje);
+      return NextResponse.json({ error: mensaje }, { status: 502 });
+    }
+    await registrar("SENT");
+    // El mail ya salió: si algo de acá en adelante falla, no es un envío fallido.
+    destino = null;
 
     await logOperatorAction({
       userId: session.user.id,
@@ -169,6 +240,7 @@ export async function POST(
     return NextResponse.json({ ok: true, sentTo: contact.email, expiresAt, accessLevel });
   } catch (error) {
     log.error({ err: error }, "Error sending portal invite");
+    await registrar("FAILED", "Error interno al preparar la invitación");
     return NextResponse.json({ error: "Error al enviar la invitación" }, { status: 500 });
   }
 }
