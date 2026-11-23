@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { logOperatorAction, notifyAdmins, escapeHtml } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { templateFilterWhere } from "@/lib/whatsapp/template-tags";
 const log = createLogger("api/leads");
 
 export async function GET(request: Request) {
@@ -54,6 +55,13 @@ export async function GET(request: Request) {
           tag: { id: tagId }
         }
       };
+    }
+
+    // Por plantilla de WhatsApp recibida (o no recibida). Ver lib/whatsapp/template-tags.ts.
+    const waTemplate = searchParams.get("waTemplate");
+    if (waTemplate) {
+      const mode = searchParams.get("waTemplateMode") === "not_sent" ? "not_sent" : "sent";
+      Object.assign(where, await templateFilterWhere(waTemplate, mode));
     }
 
     const hasAddress = searchParams.get("hasAddress");

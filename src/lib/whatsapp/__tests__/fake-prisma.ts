@@ -81,6 +81,34 @@ export class FakeTable {
     return this.rows.filter((r) => matches(r, args.where ?? {})).length;
   }
 
+  /** Solo lo que usa `template-tags.ts`: agrupar por un campo, con `_count._all` y `_max`. */
+  async groupBy(args: {
+    by: string[];
+    where?: Where;
+    _count?: { _all?: boolean };
+    _max?: Record<string, boolean>;
+  }): Promise<Row[]> {
+    await tick();
+    const groups = new Map<string, Row[]>();
+    for (const r of this.rows.filter((row) => matches(row, args.where ?? {}))) {
+      const key = JSON.stringify(args.by.map((f) => r[f] ?? null));
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    return [...groups.values()].map((rows) => {
+      const out: Row = Object.fromEntries(args.by.map((f) => [f, rows[0][f] ?? null]));
+      if (args._count) out._count = { _all: rows.length };
+      if (args._max) {
+        out._max = Object.fromEntries(
+          Object.keys(args._max).map((f) => [
+            f,
+            rows.map((r) => r[f]).reduce((a, b) => (b != null && (a == null || (b as Date) > (a as Date)) ? b : a), null),
+          ])
+        );
+      }
+      return out;
+    });
+  }
+
   async create(args: { data: Row }): Promise<Row> {
     await tick();
     for (const key of this.unique) {

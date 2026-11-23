@@ -183,6 +183,10 @@ export default function LeadsPage() {
   const [filterSector, setFilterSector] = useState<string | null>(null);
   const [filterHasAddress, setFilterHasAddress] = useState(false);
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
+  // Plantilla de WhatsApp recibida (o no): ver lib/whatsapp/template-tags.ts
+  const [filterWaTemplate, setFilterWaTemplate] = useState<string | null>(null);
+  const [filterWaTemplateMode, setFilterWaTemplateMode] = useState<"sent" | "not_sent">("sent");
+  const [allWaTemplates, setAllWaTemplates] = useState<string[]>([]);
   const [filterState, setFilterState] = useState<string | null>(null);
   const [filterCity, setFilterCity] = useState<string | null>(null);
   const [filterNeighborhood, setFilterNeighborhood] = useState<string | null>(null);
@@ -210,6 +214,7 @@ export default function LeadsPage() {
     filterSector !== null,
     filterHasAddress,
     filterTagId !== null,
+    filterWaTemplate !== null,
     filterState !== null,
     filterCity !== null,
     filterNeighborhood !== null,
@@ -283,6 +288,10 @@ export default function LeadsPage() {
       if (filterContacted !== null) params.set("contacted", String(filterContacted));
       if (filterSector) params.set("sector", filterSector);
       if (filterTagId) params.set("tagId", filterTagId);
+      if (filterWaTemplate) {
+        params.set("waTemplate", filterWaTemplate);
+        params.set("waTemplateMode", filterWaTemplateMode);
+      }
       if (filterHasAddress) params.set("hasAddress", "1");
       if (myLeads) params.set("myLeads", "1");
       if (sortDate) params.set("sortDate", sortDate);
@@ -316,6 +325,8 @@ export default function LeadsPage() {
         if (f.filterSector !== undefined) setFilterSector(f.filterSector);
         if (f.filterHasAddress) setFilterHasAddress(true);
         if (f.filterTagId !== undefined) setFilterTagId(f.filterTagId);
+        if (f.filterWaTemplate !== undefined) setFilterWaTemplate(f.filterWaTemplate);
+        if (f.filterWaTemplateMode === "not_sent") setFilterWaTemplateMode("not_sent");
         if (f.filterState !== undefined) setFilterState(f.filterState);
         if (f.filterCity !== undefined) setFilterCity(f.filterCity);
         if (f.filterNeighborhood !== undefined) setFilterNeighborhood(f.filterNeighborhood);
@@ -330,16 +341,16 @@ export default function LeadsPage() {
   // Reset page when any filter changes (skip during initial restore)
   useEffect(() => {
     if (!filtersReady) return;
-    const key = `${search}|${filterState}|${filterCity}|${filterNeighborhood}|${filterContacted}|${filterSector}|${filterHasAddress}|${filterTagId}|${sortDate}|${myLeads}`;
+    const key = `${search}|${filterState}|${filterCity}|${filterNeighborhood}|${filterContacted}|${filterSector}|${filterHasAddress}|${filterTagId}|${filterWaTemplate}|${filterWaTemplateMode}|${sortDate}|${myLeads}`;
     if (prevFilterKeyRef.current && prevFilterKeyRef.current !== key) setPage(1);
     prevFilterKeyRef.current = key;
-  }, [search, filterState, filterCity, filterNeighborhood, filterContacted, filterSector, filterHasAddress, filterTagId, sortDate, myLeads, filtersReady]);
+  }, [search, filterState, filterCity, filterNeighborhood, filterContacted, filterSector, filterHasAddress, filterTagId, filterWaTemplate, filterWaTemplateMode, sortDate, myLeads, filtersReady]);
 
   // Fetch leads only after filters are restored
   useEffect(() => {
     if (!filtersReady) return;
     fetchLeads();
-  }, [search, page, filterState, filterCity, filterNeighborhood, filterContacted, filterSector, filterHasAddress, filterTagId, sortDate, myLeads, filtersReady]);
+  }, [search, page, filterState, filterCity, filterNeighborhood, filterContacted, filterSector, filterHasAddress, filterTagId, filterWaTemplate, filterWaTemplateMode, sortDate, myLeads, filtersReady]);
 
   // Persist filters to sessionStorage
   useEffect(() => {
@@ -347,11 +358,11 @@ export default function LeadsPage() {
     try {
       sessionStorage.setItem("leads-filters", JSON.stringify({
         search, searchInput, filterContacted, filterSector, filterHasAddress,
-        filterTagId, filterState, filterCity, filterNeighborhood,
+        filterTagId, filterWaTemplate, filterWaTemplateMode, filterState, filterCity, filterNeighborhood,
         sortDate, myLeads, page,
       }));
     } catch {}
-  }, [filtersReady, search, searchInput, filterContacted, filterSector, filterHasAddress, filterTagId, filterState, filterCity, filterNeighborhood, sortDate, myLeads, page]);
+  }, [filtersReady, search, searchInput, filterContacted, filterSector, filterHasAddress, filterTagId, filterWaTemplate, filterWaTemplateMode, filterState, filterCity, filterNeighborhood, sortDate, myLeads, page]);
 
   async function fetchTags() {
     try {
@@ -360,6 +371,14 @@ export default function LeadsPage() {
     } catch { /* silent */ }
   }
   useEffect(() => { fetchTags(); }, []);
+
+  // Las plantillas que ya se le mandaron a alguna ficha: las opciones del filtro
+  useEffect(() => {
+    fetch("/api/whatsapp/template-tags", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { names?: string[] } | null) => { if (data?.names) setAllWaTemplates(data.names); })
+      .catch(() => { /* silent */ });
+  }, []);
 
   // Ahora todos los filtros y el ordenamiento se aplican en el backend
   const visibleLeads = leads;
@@ -372,6 +391,8 @@ export default function LeadsPage() {
     setFilterSector(null);
     setFilterHasAddress(false);
     setFilterTagId(null);
+    setFilterWaTemplate(null);
+    setFilterWaTemplateMode("sent");
     setFilterState(null);
     setFilterCity(null);
     setFilterNeighborhood(null);
@@ -1562,6 +1583,44 @@ export default function LeadsPage() {
               >
                 <Plus size={12} /> Gestionar etiquetas
               </button>
+            </div>
+
+            {/* Por plantilla de WhatsApp */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Plantilla de WhatsApp</p>
+              {allWaTemplates.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Todavía no se mandó ninguna plantilla</p>
+              ) : (
+                <>
+                  <Select value={filterWaTemplate ?? ""} onValueChange={(v) => setFilterWaTemplate(v === "" ? null : v)}>
+                    <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectContent>
+                      {allWaTemplates.map((name) => (
+                        <SelectItem key={name} value={name}><span className="font-mono text-xs">{name}</span></SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {filterWaTemplate && (
+                    <div className="flex gap-2">
+                      {([["sent", "La recibieron"], ["not_sent", "No la recibieron"]] as const).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          onClick={() => setFilterWaTemplateMode(mode)}
+                          className={cn("flex-1 rounded-md border px-3 py-2 text-sm transition-colors",
+                            filterWaTemplateMode === mode ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted")}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {filterWaTemplate && (
+                <button onClick={() => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <X size={11} /> Quitar filtro
+                </button>
+              )}
             </div>
 
             {/* Con dirección */}

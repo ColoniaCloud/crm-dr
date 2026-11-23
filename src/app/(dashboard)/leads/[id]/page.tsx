@@ -25,6 +25,7 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { useCurrency } from "@/contexts/currency-context";
 import { CallDialog } from "@/components/call-dialog";
 import { ContactadoModal } from "@/components/contactado-modal";
+import { WhatsappTemplateTags } from "@/components/whatsapp/contact/whatsapp-template-tags";
 import { UserSearchSelect } from "@/components/user-search-select";
 import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { QUOTE_STATUS_COLORS, LEAD_ACTIVITY_COLORS } from "@/lib/design-tokens";
@@ -990,6 +991,9 @@ export default function LeadDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* ── Etiquetas de WhatsApp: las plantillas que se le mandaron ── */}
+              <WhatsappTemplateTags contactId={leadId} />
 
               {/* ── Inteligencia del lead ── */}
               <div className="py-3 border-b">
