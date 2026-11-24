@@ -228,14 +228,48 @@ export default function ClientsPage() {
     }
   }
 
+  // Los filtros se recuerdan durante la sesión, como en Leads: al volver de una
+  // ficha la lista sigue como estaba.
+  const [filtersReady, setFiltersReady] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("clients-filters");
+      if (raw) {
+        const f = JSON.parse(raw);
+        if (f.search) { setSearch(f.search); setSearchInput(f.search); }
+        if (f.filterSector) setFilterSector(f.filterSector);
+        if (f.filterHasAddress) setFilterHasAddress(true);
+        if (f.filterWithBalance) setFilterWithBalance(true);
+        if (f.filterReseller === "any" || f.filterReseller === "none") setFilterReseller(f.filterReseller);
+        if (f.filterTagId) setFilterTagId(f.filterTagId);
+        if (f.filterState) setFilterState(f.filterState);
+        if (f.filterCity) setFilterCity(f.filterCity);
+        if (f.filterWaTemplate) setFilterWaTemplate(f.filterWaTemplate);
+        if (f.filterWaTemplateMode === "not_sent") setFilterWaTemplateMode("not_sent");
+        if (f.sortDate === "asc" || f.sortDate === "desc") setSortDate(f.sortDate);
+        if (f.myClients) setMyClients(true);
+        if (f.page > 1) setPage(f.page);
+      }
+    } catch {}
+    setFiltersReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!filtersReady) return;
+    try {
+      sessionStorage.setItem("clients-filters", JSON.stringify({ search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients, page }));
+    } catch {}
+  }, [filtersReady, search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients, page]);
+
   // Reset page when filters change
   useEffect(() => {
+    if (!filtersReady) return;
     const key = `${search}|${filterSector}|${filterHasAddress}|${filterWithBalance}|${filterReseller}|${filterTagId}|${filterState}|${filterCity}|${filterWaTemplate}|${filterWaTemplateMode}|${sortDate}|${myClients}`;
     if (prevFilterKeyRef.current && prevFilterKeyRef.current !== key) setPage(1);
     prevFilterKeyRef.current = key;
-  }, [search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
+  }, [filtersReady, search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
 
-  useEffect(() => { fetchClients(); }, [search, page, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
+  useEffect(() => { if (filtersReady) fetchClients(); }, [filtersReady, search, page, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
 
   // Las plantillas que ya se le mandaron a alguna ficha (las borradas no): las opciones del filtro
   useEffect(() => {
