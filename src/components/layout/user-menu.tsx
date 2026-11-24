@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { LogOut, User, Settings, Sun, Moon, RefreshCw } from "@/components/icons";
+import { LogOut, User, Settings, Sun, Moon, RefreshCw, BookOpen, Headphones, Mail, DollarSign } from "@/components/icons";
+import { SoporteModal } from "@/components/soporte-modal";
+import { PWAInstallMenuItem } from "@/components/pwa-install";
+import { useCurrency } from "@/contexts/currency-context";
 import {
   Dialog,
   DialogContent,
@@ -33,27 +36,29 @@ export function UserMenu() {
   const avatarUrl = (session?.user as { avatarUrl?: string })?.avatarUrl ?? "";
   const initials = name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
   const [resetOpen, setResetOpen] = useState(false);
+  const [soporteOpen, setSoporteOpen] = useState(false);
+  const { currency, toggle: toggleCurrency } = useCurrency();
 
   return (
     <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-8 gap-2 px-2">
+        <Button variant="ghost" className="h-11 gap-2 px-2 sm:h-9" aria-label={`Menú de ${name}`}>
           <Avatar className="h-6 w-6">
             {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
             <AvatarFallback className="bg-primary/20 text-primary text-xs">
               {initials || <User className="h-3 w-3" />}
             </AvatarFallback>
           </Avatar>
-          <span className="hidden text-sm sm:block">{name}</span>
+          <span className="hidden text-sm xl:block">{name}</span>
           {role && (
-            <span className="hidden rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary sm:block">
+            <span className="hidden rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary 2xl:block">
               {role}
             </span>
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium">{name}</p>
@@ -73,6 +78,30 @@ export function UserMenu() {
             Configuración
           </Link>
         </DropdownMenuItem>
+        {/* En el celular Mail y la moneda no entran en el header: van acá. */}
+        <DropdownMenuItem asChild className="sm:hidden">
+          <Link href="/mail" className="cursor-pointer">
+            <Mail className="mr-2 h-4 w-4" />
+            Mail
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer sm:hidden" onSelect={(e) => { e.preventDefault(); toggleCurrency(); }}>
+          <DollarSign className="mr-2 h-4 w-4" />
+          Moneda: {currency}
+          <span className="ml-auto text-xs text-muted-foreground">Cambiar a {currency === "USD" ? "ARS" : "USD"}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/docs" className="cursor-pointer">
+            <BookOpen className="mr-2 h-4 w-4" />
+            Ayuda y docs
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => setSoporteOpen(true)}>
+          <Headphones className="mr-2 h-4 w-4" />
+          Soporte técnico
+        </DropdownMenuItem>
+        <PWAInstallMenuItem />
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="cursor-pointer"
@@ -93,8 +122,18 @@ export function UserMenu() {
           <LogOut className="mr-2 h-4 w-4" />
           Cerrar sesión
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <div className="flex flex-wrap items-center gap-x-1.5 px-2 py-1.5 text-[11px] text-muted-foreground">
+          <Link href="/privacidad" className="hover:text-foreground">Privacidad</Link>
+          <span aria-hidden>·</span>
+          <Link href="/terminos" className="hover:text-foreground">Términos</Link>
+          <span aria-hidden>·</span>
+          <a href="https://colonia.cloud" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">colonia.cloud</a>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <SoporteModal open={soporteOpen} onOpenChange={setSoporteOpen} />
 
     <Dialog open={resetOpen} onOpenChange={setResetOpen}>
       <DialogContent className="sm:max-w-md">

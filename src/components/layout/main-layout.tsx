@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ChevronRight, Mail, MessageCircle } from "@/components/icons";
@@ -13,13 +12,13 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { canUseWhatsApp } from "@/lib/whatsapp/access";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { ReleaseNotice } from "@/components/layout/release-notice";
-import logoColonia from "@/public/Logo.png";
+import { GlobalSearch } from "@/components/layout/global-search";
+import { CurrencyToggle } from "@/components/layout/currency-toggle";
 import { CurrencyProvider } from "@/contexts/currency-context";
 import {
   PWAInstallProvider,
   PWAInstallBanner,
   PWAInstallModal,
-  PWAInstallFooterButton,
 } from "@/components/pwa-install";
 
 const UserMenu = dynamic(
@@ -36,7 +35,7 @@ interface MainLayoutProps {
 function PageHeading({ pathname, override }: { pathname: string; override?: string }) {
   const { section, sectionHref, subpage } = getPageTitle(pathname);
   return (
-    <div className="flex flex-1 min-w-0 items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+    <div className="flex flex-1 min-w-[6rem] items-center gap-1.5 truncate text-base font-semibold text-foreground">
       {override ?? (subpage ? (
         <>
           <Link href={sectionHref} className="truncate text-muted-foreground transition-colors hover:text-foreground">
@@ -62,32 +61,35 @@ export function MainLayout({ children, title }: MainLayoutProps) {
         <SidebarInset>
           <PWAInstallBanner />
           <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur-sm px-4">
-            <SidebarTrigger className="-ml-1" />
+            <SidebarTrigger className="-ml-1 size-11 sm:size-7" />
             <Separator orientation="vertical" className="mx-2 h-4" />
             <PageHeading pathname={pathname} override={title} />
             {status === "authenticated" && (
-              <>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <GlobalSearch />
+                <CurrencyToggle className="hidden sm:flex" />
                 <Link
                   href="/mail"
                   aria-label="Mail"
-                  className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md border border-border bg-card px-0 sm:px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                  className="hidden h-9 w-9 items-center justify-center gap-1.5 rounded-md border border-border bg-card text-xs font-semibold text-foreground transition-colors hover:bg-muted sm:flex xl:w-auto xl:px-3"
                 >
                   <Mail className="h-4 w-4" />
-                  <span className="hidden sm:inline">Mail</span>
+                  <span className="hidden xl:inline">Mail</span>
                 </Link>
+                {/* Con borde, como Mail: el verde sólido le ganaba a la acción principal de cada pantalla. */}
                 {canUseWhatsApp(session?.user?.role) && (
                   <Link
                     href="/whatsapp"
                     aria-label="WhatsApp"
-                    className="flex h-9 w-9 sm:w-auto items-center justify-center gap-1.5 rounded-md bg-whatsapp px-0 sm:px-4 text-xs font-semibold text-whatsapp-foreground transition-colors hover:bg-whatsapp/90"
+                    className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-md border border-border bg-card text-xs font-semibold text-foreground transition-colors hover:bg-muted sm:h-9 sm:w-9 xl:w-auto xl:px-3"
                   >
-                    <MessageCircle className="h-4 w-4" />
-                    <span className="hidden sm:inline">WhatsApp</span>
+                    <MessageCircle className="h-4 w-4 text-whatsapp" />
+                    <span className="hidden xl:inline">WhatsApp</span>
                   </Link>
                 )}
                 <NotificationBell />
-                <Separator orientation="vertical" className="mx-2 h-4" />
-              </>
+                <Separator orientation="vertical" className="mx-1 hidden h-4 sm:block" />
+              </div>
             )}
             <UserMenu />
           </header>
@@ -98,47 +100,7 @@ export function MainLayout({ children, title }: MainLayoutProps) {
           <PWAInstallModal />
           <ReleaseNotice />
 
-          {/* Footer */}
-          <footer className="flex items-center justify-end gap-2 border-t px-3 sm:px-6 py-2 text-xs text-muted-foreground">
-            <PWAInstallFooterButton />
-            <Link href="/docs" className="text-primary hover:text-primary/80 transition-colors font-medium">
-              Docs
-            </Link>
-            <span className="opacity-40">·</span>
-            <Link href="/privacidad" className="hover:text-foreground transition-colors">
-              Privacidad
-            </Link>
-            <span className="opacity-40">·</span>
-            <Link href="/terminos" className="hover:text-foreground transition-colors">
-              Términos
-            </Link>
-            <span className="hidden sm:inline opacity-40">·</span>
-            <span className="hidden sm:inline">© {new Date().getFullYear()}</span>
-            <span className="opacity-40">·</span>
-            <span className="hidden sm:inline">Desarrollado por</span>
-            <a
-              href="https://colonia.cloud"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group relative flex items-center overflow-hidden"
-              aria-label="colonia.cloud"
-            >
-              <span
-                className="absolute inset-0 flex items-center justify-start whitespace-nowrap text-xs font-medium
-                  translate-y-full opacity-0 transition-all duration-300 ease-out
-                  group-hover:translate-y-0 group-hover:opacity-100"
-              >
-                colonia.cloud
-              </span>
-              <Image
-                src={logoColonia}
-                alt="Colonia Cloud"
-                height={16}
-                className="object-contain opacity-50 transition-all duration-300 ease-out
-                  group-hover:-translate-y-full group-hover:opacity-0"
-              />
-            </a>
-          </footer>
+          {/* Sin pie de página: Docs, Soporte, Instalar app y los legales están en el menú de usuario. */}
         </SidebarInset>
       </SidebarProvider>
       </PWAInstallProvider>

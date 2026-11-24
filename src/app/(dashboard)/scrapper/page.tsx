@@ -571,7 +571,7 @@ export default function ScrapperPage() {
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
           <MapPin className="h-7 w-7 text-orange-500" />
-          Kristall Scrapp
+          Buscador de comercios
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Encontrá negocios potenciales en Argentina por zona y agregalos como leads

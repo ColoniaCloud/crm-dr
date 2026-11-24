@@ -57,7 +57,7 @@ export default function AIInsightsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">AI Insights</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Análisis IA</h1>
         <p className="text-muted-foreground mt-1">Análisis inteligente de ventas y detección de oportunidades con Claude AI</p>
       </div>
 

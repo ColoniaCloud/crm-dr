@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Bell, BellDot, CheckCheck, CalendarDays, Phone, ArrowRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 
@@ -31,7 +32,6 @@ export function NotificationBell() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [fetchError, setFetchError] = useState("");
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   const unread = notifs.filter((n) => !n.read).length;
 
@@ -64,14 +64,6 @@ export function NotificationBell() {
     return () => clearInterval(interval);
   }, [status]);
 
-  // Close on outside click
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, []);
 
   async function markRead(id: string) {
     if (status !== "authenticated") return;
@@ -96,13 +88,15 @@ export function NotificationBell() {
   }
 
   return (
-    <div ref={ref} className="relative">
+    // Popover de Radix: cierra con Escape y al tocar afuera, devuelve el foco a la
+    // campana y anuncia si está abierto (antes era un div a mano sin nada de eso).
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
       <Button
         variant="ghost"
         size="icon"
-        className="relative h-9 w-9"
-        aria-label="Notificaciones"
-        onClick={() => setOpen((v) => !v)}
+        className="relative h-11 w-11 sm:h-9 sm:w-9"
+        aria-label={unread > 0 ? `Notificaciones: ${unread} sin leer` : "Notificaciones"}
       >
         {unread > 0 ? <BellDot className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
         {unread > 0 && (
@@ -111,9 +105,9 @@ export function NotificationBell() {
           </span>
         )}
       </Button>
+      </PopoverTrigger>
 
-      {open && (
-        <div className="absolute right-0 top-10 z-50 w-[calc(100vw-2rem)] sm:w-80 max-w-xs sm:max-w-none rounded-lg border bg-background shadow-lg">
+      <PopoverContent align="end" className="w-[calc(100vw-2rem)] max-w-sm p-0 sm:w-80">
           {/* Header */}
           <div className="flex items-center justify-between border-b px-4 py-3">
             <span className="text-sm font-semibold">Notificaciones</span>
@@ -192,8 +186,7 @@ export function NotificationBell() {
               <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }

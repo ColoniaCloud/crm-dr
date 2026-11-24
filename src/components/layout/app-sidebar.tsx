@@ -26,10 +26,8 @@ import {
   ClipboardList,
   BarChart3,
   ChevronRight,
-  Bell,
   Wrench,
   Store,
-  Plus,
   MessageSquare,
   ShieldCheck,
   Assistant,
@@ -41,8 +39,10 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -55,55 +55,46 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useCurrency } from "@/contexts/currency-context";
 
-function CurrencyToggle() {
-  const { currency, rate, loading, toggle } = useCurrency();
-  return (
-    <button
-      onClick={toggle}
-      title={rate ? `1 USD = $${rate.toLocaleString("es-AR")} ARS` : "Cargando cotización..."}
-      className="flex w-full items-center justify-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs font-semibold transition-colors hover:bg-muted"
-    >
-      <span className={currency === "USD" ? "text-foreground" : "text-muted-foreground"}>USD</span>
-      <span className="text-muted-foreground/40">/</span>
-      <span className={currency === "ARS" ? "text-foreground" : "text-muted-foreground"}>ARS</span>
-      {loading && <span className="ml-1 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-    </button>
-  );
-}
+type NavItem = { label: string; href: string; icon: React.ComponentType<{ className?: string }> };
 
-const simpleItems = [
+/**
+ * El menú en grupos con título: primero el trabajo diario con clientes, después la
+ * operación (que es de ADMIN), las herramientas y lo administrativo. Antes eran ~20
+ * entradas sueltas y lo diario (Visitas, Llamadas) quedaba al fondo, mezclado con
+ * las herramientas.
+ *
+ * Revendedores va pegado a Clientes: comercialmente son lo mismo —compran, deben,
+ * tienen portal— y quien busca "a quién le vendemos" los busca juntos.
+ *
+ * Notificaciones no está: vive en la campana del header (que tiene "Ver todas").
+ * La moneda USD/ARS también pasó al header, para que se vea con el menú cerrado.
+ */
+const comercialItems: NavItem[] = [
   { label: "Clientes", href: "/clients", icon: Users },
   { label: "Leads", href: "/leads", icon: UserPlus },
-  // Revendedores va pegado a Clientes y no al final: comercialmente son lo
-  // mismo —compran, deben, tienen portal— y quien busca "a quien le vendemos"
-  // los busca juntos. Lo que los separa es que su cartera de talleres no es
-  // nuestra, no el tipo de relacion.
   { label: "Revendedores", href: "/revendedores", icon: Store },
   { label: "Instaladores", href: "/installers", icon: Wrench },
-];
-
-const bottomItems = [
-  { label: "Actividad Operadores", href: "/activities", icon: ClipboardList },
-  { label: "Competencia", href: "/competitors", icon: Target },
-  { label: "Agentes", href: "/agents", icon: Bot },
-  { label: "AI Insights", href: "/ai-insights", icon: Brain },
-  { label: "RRSS Creator", href: "/social-creator", icon: Sparkles },
-  { label: "Kristall Scrapp", href: "/scrapper", icon: MapPin },
   { label: "Visitas", href: "/calendar/visits", icon: CalendarDays },
   { label: "Llamadas", href: "/calendar/calls", icon: Phone },
-  { label: "Notificaciones", href: "/notifications", icon: Bell },
 ];
 
-const productosSubItems = [
+const herramientasItems: NavItem[] = [
+  { label: "Agentes", href: "/agents", icon: Bot },
+  { label: "Análisis IA", href: "/ai-insights", icon: Brain },
+  { label: "Redes sociales", href: "/social-creator", icon: Sparkles },
+  { label: "Buscador de comercios", href: "/scrapper", icon: MapPin },
+  { label: "Competencia", href: "/competitors", icon: Target },
+];
+
+const productosSubItems: NavItem[] = [
   { label: "Productos / Stock", href: "/products", icon: Package },
   { label: "Proveedores", href: "/suppliers", icon: Truck },
   { label: "Órdenes de Compra", href: "/purchase-orders", icon: ClipboardList },
   { label: "Movimientos Stock", href: "/stock-movements", icon: BarChart3 },
 ];
 
-const ventasSubItems = [
+const ventasSubItems: NavItem[] = [
   { label: "Ventas", href: "/sales", icon: ShoppingCart },
   { label: "Presupuestos", href: "/quotes", icon: FileText },
   { label: "Remitos", href: "/remitos", icon: FileCheck },
@@ -115,19 +106,21 @@ interface ConversationSummary {
   title: string;
 }
 
-export function AppSidebar() {
+function useNav() {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const onNavigate = () => {
+    if (isMobile) setOpenMobile(false);
+  };
+  return { pathname, isActive, onNavigate };
+}
+
+export function AppSidebar() {
+  const { pathname, isActive, onNavigate } = useNav();
   const { data: session } = useSession();
   const userRole = (session?.user?.role as string) || "OPERATOR";
   const isAdminUser = userRole === "ADMIN" || userRole === "SUPERADMIN";
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
-
-  const handleNavClick = () => {
-    if (isMobile) setOpenMobile(false);
-  };
 
   const productosActive = productosSubItems.some((i) => isActive(i.href));
   const ventasActive = ventasSubItems.some((i) => isActive(i.href));
@@ -205,34 +198,80 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <NavLink item={{ label: "Panel de control", href: "/", icon: LayoutDashboard }} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-              {/* Asistente (collapsible with conversation history) */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Comercial</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {comercialItems.map((item) => (
+                <NavLink key={item.href} item={item} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {isAdminUser && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Operación</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <NavCollapsible
+                  label="Productos"
+                  icon={Package}
+                  open={productosOpen}
+                  onOpenChange={setProductosOpen}
+                  active={productosActive}
+                  // Órdenes de compra son costos de fábrica: solo SUPERADMIN.
+                  items={productosSubItems.filter((item) => item.href !== "/purchase-orders" || userRole === "SUPERADMIN")}
+                />
+                <NavCollapsible
+                  label="Ventas"
+                  icon={ShoppingCart}
+                  open={ventasOpen}
+                  onOpenChange={setVentasOpen}
+                  active={ventasActive}
+                  items={ventasSubItems}
+                />
+                <NavLink item={{ label: "Garantías", href: "/warranty-claims", icon: ShieldCheck }} />
+                {/* Control de gastos: solo SUPERADMIN (canSeeExpenses en money-visibility.ts). */}
+                {userRole === "SUPERADMIN" && (
+                  <NavLink item={{ label: "Control de gastos", href: "/expenses", icon: Wallet }} />
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Herramientas</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {/* Asistente: el nombre abre una conversación nueva; la flecha, las últimas. */}
               <Collapsible open={asistenteOpen} onOpenChange={setAsistenteOpen} className="group/collapsible">
                 <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton isActive={asistenteActive} tooltip="Asistente">
+                  <SidebarMenuButton asChild isActive={asistenteActive} tooltip="Asistente">
+                    <Link href="/assistant" onClick={onNavigate}>
                       <Assistant className="sidebar-icon" />
                       <span>Asistente</span>
-                      <ChevronRight className="sidebar-chevron ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
+                    </Link>
+                  </SidebarMenuButton>
+                  {conversations.length > 0 && (
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuAction aria-label="Conversaciones recientes del asistente">
+                        <ChevronRight className="sidebar-chevron transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      </SidebarMenuAction>
+                    </CollapsibleTrigger>
+                  )}
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {/* Nueva conversación */}
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton asChild>
-                          <Link href="/assistant" onClick={handleNavClick}>
-                            <Plus className="sidebar-icon" />
-                            <span>Nueva conversación</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-
-                      {/* Last 3 saved conversations */}
                       {conversations.map((conv) => (
                         <SidebarMenuSubItem key={conv.id}>
                           <SidebarMenuSubButton asChild>
-                            <Link href={`/assistant?conv=${conv.id}`} onClick={handleNavClick}>
+                            <Link href={`/assistant?conv=${conv.id}`} onClick={onNavigate}>
                               <MessageSquare className="sidebar-icon shrink-0" />
                               <span className="truncate">{conv.title}</span>
                             </Link>
@@ -243,160 +282,23 @@ export function AppSidebar() {
                   </CollapsibleContent>
                 </SidebarMenuItem>
               </Collapsible>
-
-              {/* Dashboard */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/")} tooltip="Dashboard">
-                  <Link href="/" onClick={handleNavClick}>
-                    <LayoutDashboard className="sidebar-icon" />
-                    <span>Dashboard</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* Simple items: Clientes, Leads, Instaladores */}
-              {simpleItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.href)}
-                    tooltip={item.label}
-                  >
-                    <Link href={item.href} onClick={handleNavClick}>
-                      <item.icon className="sidebar-icon" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+              {herramientasItems.map((item) => (
+                <NavLink key={item.href} item={item} />
               ))}
-
-              {/* Productos (collapsible) — ADMIN/SUPERADMIN only */}
-              {isAdminUser && (
-              <Collapsible open={productosOpen} onOpenChange={setProductosOpen} className="group/collapsible">
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      isActive={productosActive}
-                      tooltip="Productos"
-                    >
-                      <Package className="sidebar-icon" />
-                      <span>Productos</span>
-                      <ChevronRight className="sidebar-chevron ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {/* Órdenes de compra son costos de fábrica: solo SUPERADMIN. */}
-                      {productosSubItems.filter((item) => item.href !== "/purchase-orders" || userRole === "SUPERADMIN").map((item) => (
-                        <SidebarMenuSubItem key={item.href}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive(item.href)}
-                          >
-                            <Link href={item.href} onClick={handleNavClick}>
-                              <item.icon className="sidebar-icon" />
-                              <span>{item.label}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-              )}
-
-              {/* Ventas (collapsible) — ADMIN/SUPERADMIN only */}
-              {isAdminUser && (
-              <Collapsible open={ventasOpen} onOpenChange={setVentasOpen} className="group/collapsible">
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      isActive={ventasActive}
-                      tooltip="Ventas"
-                    >
-                      <ShoppingCart className="sidebar-icon" />
-                      <span>Ventas</span>
-                      <ChevronRight className="sidebar-chevron ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {ventasSubItems.map((item) => (
-                        <SidebarMenuSubItem key={item.href}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive(item.href)}
-                          >
-                            <Link href={item.href} onClick={handleNavClick}>
-                              <item.icon className="sidebar-icon" />
-                              <span>{item.label}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-              )}
-
-              {/* Control de gastos — SUPERADMIN only (canSeeExpenses en money-visibility.ts) */}
-              {userRole === "SUPERADMIN" && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive("/expenses")}
-                    tooltip="Control de gastos"
-                  >
-                    <Link href="/expenses" onClick={handleNavClick}>
-                      <Wallet className="sidebar-icon" />
-                      <span>Control de gastos</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {/* Centro de Garantías — ADMIN/SUPERADMIN only */}
-              {isAdminUser && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive("/warranty-claims")}
-                    tooltip="Garantías"
-                  >
-                    <Link href="/warranty-claims" onClick={handleNavClick}>
-                      <ShieldCheck className="sidebar-icon" />
-                      <span>Garantías</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {/* WhatsApp se movió al botón del header, junto a Mail — ver main-layout.tsx */}
-
-              {/* Bottom items */}
-              {bottomItems.filter((item) => {
-                if (item.href === "/activities" && !isAdminUser) return false;
-                return true;
-              }).map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.href)}
-                    tooltip={item.label}
-                  >
-                    <Link href={item.href} onClick={handleNavClick}>
-                      <item.icon className="sidebar-icon" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdminUser && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administración</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <NavLink item={{ label: "Actividad de operadores", href: "/activities", icon: ClipboardList }} />
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="bg-muted/60 border-t border-border/40">
@@ -408,17 +310,73 @@ export function AppSidebar() {
               tooltip="Configuración"
               className="sidebar-settings-btn"
             >
-              <Link href="/settings" onClick={handleNavClick}>
+              <Link href="/settings" onClick={onNavigate}>
                 <Settings className="sidebar-icon" />
                 <span>Configuración</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="px-2 pb-2 group-data-[collapsible=icon]:hidden">
-          <CurrencyToggle />
-        </div>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function NavLink({ item }: { item: NavItem }) {
+  const { isActive, onNavigate } = useNav();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
+        <Link href={item.href} onClick={onNavigate}>
+          <item.icon className="sidebar-icon" />
+          <span>{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function NavCollapsible({
+  label,
+  icon: Icon,
+  open,
+  onOpenChange,
+  active,
+  items,
+}: {
+  label: string;
+  icon: NavItem["icon"];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  active: boolean;
+  items: NavItem[];
+}) {
+  const { isActive, onNavigate } = useNav();
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange} className="group/collapsible">
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton isActive={active} tooltip={label}>
+            <Icon className="sidebar-icon" />
+            <span>{label}</span>
+            <ChevronRight className="sidebar-chevron ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {items.map((item) => (
+              <SidebarMenuSubItem key={item.href}>
+                <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                  <Link href={item.href} onClick={onNavigate}>
+                    <item.icon className="sidebar-icon" />
+                    <span>{item.label}</span>
+                  </Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
   );
 }

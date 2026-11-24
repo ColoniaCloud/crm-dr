@@ -72,7 +72,7 @@ export default function SocialCreatorPage() {
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
           <Sparkles className="h-7 w-7 text-orange-500" />
-          RRSS Creator
+          Redes sociales
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Generá copy para redes sociales optimizado para el nicho de polarizados, PPF y film de arquitectura

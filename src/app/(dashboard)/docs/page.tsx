@@ -336,17 +336,17 @@ function ToolsSection() {
         <FeatureCard icon={CalendarDays} title="Visitas" description="Programá y registrá visitas comerciales a clientes y leads. Se muestran en el dashboard del día." />
         <FeatureCard icon={Phone} title="Llamadas" description="Registrá llamadas telefónicas con notas y resultado del contacto." />
         <FeatureCard icon={Target} title="Competencia" description="Seguimiento de competidores con datos de productos, precios y estrategias." />
-        <FeatureCard icon={MapPin} title="Kristall Scrapp" description="Buscador integrado con Google Maps para encontrar potenciales clientes por zona y rubro." />
-        <FeatureCard icon={Brain} title="AI Insights" description="Análisis automáticos con IA sobre tendencias de ventas, comportamiento de clientes y oportunidades." />
-        <FeatureCard icon={Sparkles} title="RRSS Creator" description="Generador de contenido para redes sociales con asistencia de IA." />
+        <FeatureCard icon={MapPin} title="Buscador de comercios" description="Buscador integrado con Google Maps para encontrar potenciales clientes por zona y rubro." />
+        <FeatureCard icon={Brain} title="Análisis IA" description="Análisis automáticos con IA sobre tendencias de ventas, comportamiento de clientes y oportunidades." />
+        <FeatureCard icon={Sparkles} title="Redes sociales" description="Generador de contenido para redes sociales con asistencia de IA." />
         <FeatureCard icon={ClipboardList} title="Actividad Operadores" description="Log de actividades de los operadores del CRM para auditoría, con exportación a CSV filtrada por operador y rango de fechas." />
         <FeatureCard icon={Bell} title="Notificaciones" description="Centro de notificaciones con alertas sobre asignaciones, ventas y eventos importantes." />
       </div>
 
       <h3 className="text-lg font-semibold mt-6">Caso de uso: Buscar clientes potenciales con Scrapper</h3>
       <div className="space-y-4">
-        <Step n={1} title="Accedé a Kristall Scrapp">
-          Desde la barra lateral, seleccioná <strong>&quot;Kristall Scrapp&quot;</strong>.
+        <Step n={1} title="Abrí el Buscador de comercios">
+          Desde la barra lateral, seleccioná <strong>&quot;Buscador de comercios&quot;</strong>.
         </Step>
         <Step n={2} title="Buscá por zona">
           Ingresá una ubicación y tipo de negocio (ej: &quot;vidriería en Montevideo&quot;). El buscador usa Google Maps para encontrar resultados.
@@ -374,8 +374,8 @@ function ToolsSection() {
 
       <h3 className="text-lg font-semibold mt-6">Caso de uso: Generar contenido con IA</h3>
       <div className="space-y-4">
-        <Step n={1} title="Abrí RRSS Creator">
-          Accedé al módulo de <strong>&quot;RRSS Creator&quot;</strong> en la barra lateral.
+        <Step n={1} title="Abrí Redes sociales">
+          Accedé al módulo de <strong>&quot;Redes sociales&quot;</strong> en la barra lateral.
         </Step>
         <Step n={2} title="Describí lo que necesitás">
           Indicá el tipo de publicación, tono, producto o tema que querés comunicar.

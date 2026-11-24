@@ -7,6 +7,7 @@ import {
 import { X, Download, Share, ArrowDown } from "@/components/icons";
 import { BRAND } from "@/lib/brand";
 import { cn } from "@/lib/utils";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 // ── BeforeInstallPromptEvent type ─────────────────────────────────────────────
 interface BeforeInstallPromptEvent extends Event {
@@ -268,5 +269,18 @@ export function PWAInstallModal() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Menú de usuario ───────────────────────────────────────────────────────────
+/** "Instalar app" como ítem de menú (el pie de página ya no existe en el panel). */
+export function PWAInstallMenuItem({ className }: { className?: string }) {
+  const { canInstall, isIOS, hasNativePrompt, install, openModal } = usePWA();
+  if (!canInstall) return null;
+  return (
+    <DropdownMenuItem className={cn("cursor-pointer", className)} onSelect={() => (isIOS || !hasNativePrompt ? openModal() : install())}>
+      <Download className="mr-2 h-4 w-4" />
+      Instalar app
+    </DropdownMenuItem>
   );
 }
