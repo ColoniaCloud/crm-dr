@@ -1617,6 +1617,7 @@ export async function createBooking(
       photoMimeType: datos.photo && datos.photoMimeType ? datos.photoMimeType : null,
       preferredAt: datos.preferredAt,
       cancelToken: newCancelToken(),
+      actionToken: newCancelToken(),
     },
     select: { id: true, cancelToken: true },
   });

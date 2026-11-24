@@ -130,6 +130,39 @@ export async function sendTextMessage(
 }
 
 /**
+ * Mensaje con botones de respuesta (hasta 3). Como el texto libre, **solo dentro
+ * de las 24 h**: sirve para seguir una conversación que la otra parte abrió (por
+ * ejemplo, tocando un botón de una plantilla). Cada toque vuelve por el webhook
+ * como `interactive.button_reply` con el `id` del botón.
+ *
+ * Meta limita el `title` de cada botón a 20 caracteres y el `id` a 256.
+ */
+export async function sendReplyButtons(
+  to: string,
+  text: string,
+  buttons: { id: string; title: string }[],
+  fromPhoneNumberId?: string
+): Promise<WhatsAppSendResponse> {
+  return postMessage(
+    {
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text },
+        action: {
+          buttons: buttons.slice(0, 3).map((b) => ({
+            type: "reply",
+            reply: { id: b.id.slice(0, 256), title: b.title.slice(0, 20) },
+          })),
+        },
+      },
+    },
+    fromPhoneNumberId
+  );
+}
+
+/**
  * Plantilla aprobada. Es lo único que se puede mandar para *iniciar* una
  * conversación o fuera de la ventana de 24 h.
  *

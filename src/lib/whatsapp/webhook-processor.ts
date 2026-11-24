@@ -4,6 +4,7 @@ import { createLogger } from "@/lib/logger";
 import { resolveContactForPeer } from "@/lib/whatsapp/contact-link";
 import { isPrimaryPhoneNumberId } from "@/lib/whatsapp/lines";
 import { STUB_CONTENT, STUB_TYPE } from "@/lib/whatsapp/stub";
+import { parseBookingButton } from "@/lib/whatsapp/booking-buttons";
 import type {
   WhatsAppEchoesValue,
   WhatsAppEchoMessage,
@@ -109,7 +110,7 @@ async function saveInboundMessage(
     allowCreate: isPrimaryPhoneNumberId(metadata.phone_number_id),
   });
 
-  await saveMessage({
+  const created = await saveMessage({
     wamid: message.id,
     direction: "inbound",
     from: message.from,
@@ -123,6 +124,14 @@ async function saveInboundMessage(
     contactId,
     rawPayload: toJson(rawValue),
   });
+
+  // Confirmar / Rechazar del aviso de pedido de turno. Solo la primera vez que
+  // llega el mensaje: un reintento de Meta no tiene que responder dos veces.
+  // Import dinámico: arrastra Mi Taller y los mails, que el resto del webhook no usa.
+  if (created && parseBookingButton(message)) {
+    const { handleBookingButton } = await import("@/lib/whatsapp/booking-actions");
+    await handleBookingButton(message, metadata.phone_number_id);
+  }
 }
 
 // ─── Estados ─────────────────────────────────────────────────────────────────
@@ -284,8 +293,8 @@ async function processHistoryValue(wabaId: string, value: WhatsAppHistoryValue):
       for (const message of thread.messages ?? []) {
         const outbound = Boolean(business) && digitsOnly(message.from ?? "") === business;
         const at = fromEpochSeconds(message.timestamp);
-        await guarded("mensaje del historial", message.id, () =>
-          saveMessage({
+        await guarded("mensaje del historial", message.id, async () => {
+          await saveMessage({
             wamid: message.id,
             direction: outbound ? "outbound" : "inbound",
             from: outbound ? business : peer,
@@ -299,8 +308,8 @@ async function processHistoryValue(wabaId: string, value: WhatsAppHistoryValue):
             wabaId,
             contactId,
             rawPayload: toJson({ metadata: value.metadata, chunk: chunk.metadata, thread: thread.id }),
-          })
-        );
+          });
+        });
         saved++;
       }
     }
@@ -337,9 +346,11 @@ type NewMessage = {
  *     el contenido real, **sin tocar el estado**, que ya es el más avanzado que
  *     vimos (un eco entra como "sent", el rango más bajo);
  *   - existe y ya es un mensaje → reintento de Meta, no se hace nada.
+ *
+ * Devuelve si el mensaje es nuevo (se creó o completó la fila).
  */
-async function saveMessage(data: NewMessage): Promise<void> {
-  if (await createIfAbsent(data)) return;
+async function saveMessage(data: NewMessage): Promise<boolean> {
+  if (await createIfAbsent(data)) return true;
 
   await prisma.whatsAppCloudMessage.updateMany({
     where: { wamid: data.wamid, type: STUB_TYPE },
@@ -356,6 +367,7 @@ async function saveMessage(data: NewMessage): Promise<void> {
       rawPayload: data.rawPayload,
     },
   });
+  return false;
 }
 
 /**

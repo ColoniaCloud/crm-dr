@@ -80,6 +80,13 @@ export function viewMessage(type: string, content: unknown): MessageView {
     }
     case "interactive": {
       const i = isObj(c.interactive) ? c.interactive : null;
+      // Un mensaje con botones que mandamos nosotros (ver `booking-actions.ts`):
+      // se muestra el texto y los botones que llevaba.
+      const body = i && isObj(i.body) ? str(i.body.text) : undefined;
+      if (body) {
+        const titles = i && Array.isArray(i.buttons) ? i.buttons.filter((b): b is string => typeof b === "string") : [];
+        return { kind: "text", text: titles.length ? `${body}\n\n[${titles.join("] [")}]` : body };
+      }
       const reply = i && (isObj(i.button_reply) ? i.button_reply : isObj(i.list_reply) ? i.list_reply : null);
       return { kind: "reply", text: (reply && str(reply.title)) || "Respuesta" };
     }

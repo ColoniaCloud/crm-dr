@@ -2303,6 +2303,13 @@ model WorkshopBooking {
   /// Aleatorio y no el id: va en una URL que se manda por correo (F0-23).
   cancelToken String @unique
 
+  /// La llave de los botones Confirmar / Rechazar del WhatsApp al instalador
+  /// (ver `whatsapp/booking-actions.ts`). Va en el payload del botón, que vuelve
+  /// por el webhook: aleatoria y no el id, igual que `cancelToken`, y distinta de
+  /// ella porque esa la tiene el cliente. Null en los pedidos anteriores a los
+  /// botones: esos se responden desde el panel.
+  actionToken String? @unique
+
   /// Se llena al confirmar. Es el puente al mundo de Mi Taller.
   workOrderId String?    @unique
   workOrder   WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)

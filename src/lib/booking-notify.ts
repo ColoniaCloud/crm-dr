@@ -8,6 +8,7 @@ import {
 import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { sendBookingNotice } from "@/lib/whatsapp/notices";
+import { bookingButtonPayloads } from "@/lib/whatsapp/booking-buttons";
 import { isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { BRAND } from "@/lib/brand";
 import { portalBaseUrl } from "@/lib/portal-tokens";
@@ -78,6 +79,7 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
         notes: true,
         preferredAt: true,
         contactId: true,
+        actionToken: true,
         contact: { select: { email: true, phone: true } },
       },
     });
@@ -175,6 +177,8 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
                 ? `patente ${b.plate}`
                 : "",
           linkBandeja,
+          // Confirmar / Rechazar desde el mismo WhatsApp (booking-actions.ts).
+          buttonPayloads: b.actionToken ? bookingButtonPayloads(b.actionToken) : undefined,
         });
       })(),
     ]);

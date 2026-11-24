@@ -3,6 +3,7 @@ import { esDemo } from "@/lib/demo-context";
 import { isCloudApiConfigured, sendTemplateMessage, WhatsAppApiError } from "@/lib/whatsapp/client";
 import { cleanParam, recordOutbound } from "@/lib/whatsapp/outbound";
 import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
+import { primaryLine } from "@/lib/whatsapp/lines";
 import type { WhatsAppSendResponse, WhatsAppTemplateComponent } from "@/types/whatsapp";
 
 const log = createLogger("lib/whatsapp/notices");
@@ -27,6 +28,12 @@ const log = createLogger("lib/whatsapp/notices");
 const LANGUAGE = "es_AR";
 
 const TEMPLATE_BOOKING = process.env.WHATSAPP_TEMPLATE_BOOKING || "kristall_pedido_turno";
+/**
+ * La misma que `TEMPLATE_BOOKING` con dos botones de respuesta rápida:
+ * Confirmar (índice 0) y Rechazar (índice 1). Ver `booking-actions.ts`.
+ */
+const TEMPLATE_BOOKING_BUTTONS =
+  process.env.WHATSAPP_TEMPLATE_BOOKING_BUTTONS || "kristall_pedido_turno_botones";
 const TEMPLATE_DATA_REQUEST = process.env.WHATSAPP_TEMPLATE_DATA_REQUEST || "kristall_pedir_datos";
 
 // ─── Avisos ──────────────────────────────────────────────────────────────────
@@ -36,8 +43,13 @@ const TEMPLATE_DATA_REQUEST = process.env.WHATSAPP_TEMPLATE_DATA_REQUEST || "kri
  *
  * Variables: {{1}} servicio · {{2}} cuándo · {{3}} cliente y teléfono ·
  * {{4}} detalle (patente o dirección) · {{5}} link a la bandeja.
+ *
+ * Con `buttonPayloads` (Confirmar, Rechazar) sale la versión con botones. Si
+ * esa no sale —típicamente porque Meta todavía no la aprobó—, se manda la de
+ * siempre: el aviso llega igual y el pedido se responde desde el panel. Así el
+ * código se puede desplegar antes de que la plantilla nueva esté aprobada.
  */
-export function sendBookingNotice(args: {
+export async function sendBookingNotice(args: {
   to: string;
   contactId?: string | null;
   serviceName: string;
@@ -45,11 +57,24 @@ export function sendBookingNotice(args: {
   clientLine: string;
   detalle: string;
   linkBandeja: string;
+  buttonPayloads?: [confirmar: string, rechazar: string];
 }): Promise<boolean> {
+  const variables = [args.serviceName, args.cuando, args.clientLine, args.detalle || "Sin detalle", args.linkBandeja];
+  if (args.buttonPayloads) {
+    const sent = await sendTemplateNotice({
+      to: args.to,
+      templateName: TEMPLATE_BOOKING_BUTTONS,
+      variables,
+      quickReplyPayloads: args.buttonPayloads,
+      contactId: args.contactId,
+    });
+    if (sent) return true;
+    log.warn({ template: TEMPLATE_BOOKING_BUTTONS }, "La plantilla con botones no salió; va la de siempre");
+  }
   return sendTemplateNotice({
     to: args.to,
     templateName: TEMPLATE_BOOKING,
-    variables: [args.serviceName, args.cuando, args.clientLine, args.detalle || "Sin detalle", args.linkBandeja],
+    variables,
     contactId: args.contactId,
   });
 }
@@ -87,6 +112,12 @@ async function sendTemplateNotice(args: {
   variables: string[];
   /** Índices (0-based) de variables que no se guardan en el registro. */
   redact?: number[];
+  /**
+   * El payload de cada botón de respuesta rápida, en el orden de la plantilla.
+   * Es lo que vuelve por el webhook cuando lo tocan. No se guarda en el
+   * registro: es una llave.
+   */
+  quickReplyPayloads?: string[];
   contactId?: string | null;
   sentById?: string | null;
 }): Promise<boolean> {
@@ -108,11 +139,21 @@ async function sendTemplateNotice(args: {
 
   const components: WhatsAppTemplateComponent[] = [
     { type: "body", parameters: args.variables.map((v) => ({ type: "text", text: cleanParam(v) })) },
+    ...(args.quickReplyPayloads ?? []).map(
+      (payload, i): WhatsAppTemplateComponent => ({
+        type: "button",
+        sub_type: "quick_reply",
+        index: String(i),
+        parameters: [{ type: "payload", payload }],
+      })
+    ),
   ];
 
   let response: WhatsAppSendResponse;
   try {
-    response = await sendTemplateMessage(to, args.templateName, LANGUAGE, components);
+    // Siempre por la línea principal (WPP Carlos): los toques en los botones
+    // vuelven a la línea que mandó el mensaje, y el webhook solo los atiende ahí.
+    response = await sendTemplateMessage(to, args.templateName, LANGUAGE, components, primaryLine().phoneNumberId || undefined);
   } catch (err) {
     const detail = err instanceof WhatsAppApiError ? { code: err.code, status: err.httpStatus } : {};
     log.error(
