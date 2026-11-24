@@ -91,7 +91,8 @@ export default function VisitDetailPage() {
 
   const contactName = visit.contact.company || `${visit.contact.firstName} ${visit.contact.lastName}`;
   const location = [visit.contact.address, visit.contact.city, visit.contact.state].filter(Boolean).join(", ");
-  const waNum = visit.contact.whatsapp ? normalizeWa(visit.contact.whatsapp) : null;
+  const waRaw = visit.contact.whatsapp?.trim() || visit.contact.phone?.trim() || null;
+  const waNum = waRaw ? normalizeWa(waRaw) : null;
 
   const dateStr = new Date(visit.scheduledDate).toLocaleString("es-AR", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  contactWhatsappNumber,
+  contactWhatsappRaw,
   countryFromName,
   isPlausibleWhatsappNumber,
   normalizeWhatsappNumber,
@@ -99,5 +101,22 @@ describe("país y plausibilidad", () => {
     expect(isPlausibleWhatsappNumber("51987654321")).toBe(true);
     expect(isPlausibleWhatsappNumber("123")).toBe(false);
     expect(isPlausibleWhatsappNumber("")).toBe(false);
+  });
+});
+
+describe("número de una ficha: WhatsApp y, si está vacío, Teléfono", () => {
+  it("usa el campo WhatsApp cuando está cargado", () => {
+    expect(contactWhatsappRaw({ whatsapp: "+598 96 082 266", phone: "11 6666-0000" })).toBe("+598 96 082 266");
+    expect(contactWhatsappNumber({ whatsapp: "+598 96 082 266", phone: "11 6666-0000" })).toBe("59896082266");
+  });
+
+  it("cae al Teléfono y lo normaliza para WhatsApp", () => {
+    expect(contactWhatsappNumber({ whatsapp: "  ", phone: "011 6666-0000" })).toBe("541166660000");
+    expect(contactWhatsappNumber({ whatsapp: null, phone: "099 123 456" }, "UY")).toBe("59899123456");
+  });
+
+  it("sin ninguno de los dos no hay número", () => {
+    expect(contactWhatsappRaw({ whatsapp: "", phone: null })).toBeNull();
+    expect(contactWhatsappNumber({})).toBe("");
   });
 });

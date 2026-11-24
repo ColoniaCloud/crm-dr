@@ -89,7 +89,7 @@ export async function buildRemitoShareInfo(db: Db, remitoId: string): Promise<Re
     select: {
       number: true,
       signedAt: true,
-      sale: { select: { contact: { select: { firstName: true, lastName: true, company: true, email: true, phone: true } } } },
+      sale: { select: { contact: { select: { firstName: true, lastName: true, company: true, email: true, phone: true, whatsapp: true } } } },
     },
   });
   const c = r.sale.contact;
@@ -104,7 +104,7 @@ export async function buildRemitoShareInfo(db: Db, remitoId: string): Promise<Re
     remitoNumber: r.number,
     signed: !!r.signedAt,
     contact: { name, email: c.email, phone: c.phone },
-    whatsappUrl: whatsappLink(c.phone, message),
+    whatsappUrl: whatsappLink(c.whatsapp?.trim() || c.phone, message),
     message,
   };
 }

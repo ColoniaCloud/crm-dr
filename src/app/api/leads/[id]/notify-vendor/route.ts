@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { sendNotification, escapeHtml, logOperatorAction } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { contactWhatsappNumber } from "@/lib/whatsapp/phone";
 const log = createLogger("api/leads/[id]/notify-vendor");
 
 export async function POST(
@@ -76,7 +77,7 @@ export async function POST(
       .join("");
 
     const location = [lead.address, lead.city, lead.state].filter(Boolean).join(", ");
-    const waNum = lead.whatsapp ? lead.whatsapp.replace(/\D/g, "") : null;
+    const waNum = contactWhatsappNumber(lead) || null;
 
     const btn =
       "display:inline-block;padding:8px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin:0 6px 6px 0;";

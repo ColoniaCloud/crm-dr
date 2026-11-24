@@ -59,7 +59,8 @@ export function buildAssignmentMessage(params: {
   const eventLabel = eventType === "call" ? "llamada" : "visita";
   const duration = durationMin ? ` (${durationMin} min)` : "";
   const location = [contact.city, contact.state].filter(Boolean).join(", ");
-  const waNum = contact.whatsapp ? normalizeWa(contact.whatsapp) : null;
+  const waRaw = contact.whatsapp?.trim() || contact.phone?.trim() || null;
+  const waNum = waRaw ? normalizeWa(waRaw) : null;
 
   const btn =
     "display:inline-block;padding:8px 18px;border-radius:6px;text-decoration:none;" +

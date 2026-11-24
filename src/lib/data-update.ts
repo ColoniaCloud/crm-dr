@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { issuePortalToken, portalBaseUrl } from "@/lib/portal-tokens";
-import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
+import { contactWhatsappNumber } from "@/lib/whatsapp/phone";
 import { WHERE_COMPRADOR } from "@/lib/contact-types";
 
 /**
@@ -65,7 +65,7 @@ const sinEmail = { OR: [{ email: null }, { email: "" }] };
 
 /** El número al que se le escribe: el de WhatsApp, o el teléfono si no hay. "" si ninguno sirve. */
 export function numeroDestino(c: { whatsapp: string | null; phone: string | null }): string {
-  const n = normalizeWhatsappNumber(c.whatsapp || c.phone || "");
+  const n = contactWhatsappNumber(c);
   return n.length >= 10 ? n : "";
 }
 

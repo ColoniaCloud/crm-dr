@@ -70,3 +70,21 @@ export function normalizeWhatsappNumber(raw: string, country: WaCountry = "AR"):
 export function isPlausibleWhatsappNumber(normalized: string): boolean {
   return /^\d{10,15}$/.test(normalized);
 }
+
+/**
+ * El número al que se le escribe por WhatsApp a una ficha: el campo WhatsApp y,
+ * si está vacío, el Teléfono. Devuelve lo cargado, sin normalizar (para mostrarlo
+ * o pasarlo a quien normaliza con el país de la ficha); `null` si no hay ninguno.
+ */
+export function contactWhatsappRaw(c: { whatsapp?: string | null; phone?: string | null }): string | null {
+  return c.whatsapp?.trim() || c.phone?.trim() || null;
+}
+
+/** Lo mismo, ya normalizado para la Cloud API y `wa.me`; "" si no hay número. */
+export function contactWhatsappNumber(
+  c: { whatsapp?: string | null; phone?: string | null },
+  country: WaCountry = "AR"
+): string {
+  const raw = contactWhatsappRaw(c);
+  return raw ? normalizeWhatsappNumber(raw, country) : "";
+}

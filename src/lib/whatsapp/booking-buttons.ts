@@ -1,4 +1,4 @@
-import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
+import { contactWhatsappRaw, normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import type { WhatsAppInboundMessage } from "@/types/whatsapp";
 
 /**
@@ -88,7 +88,7 @@ export function sameWhatsappNumber(a: string | null | undefined, b: string | nul
  * rastro, a los que lo tienen en WhatsApp.
  */
 export function installerWhatsapp(contact: { whatsapp?: string | null; phone?: string | null }): string | null {
-  return contact.whatsapp?.trim() || contact.phone?.trim() || null;
+  return contactWhatsappRaw(contact);
 }
 
 /**

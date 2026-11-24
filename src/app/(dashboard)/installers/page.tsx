@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { AR_PROVINCES, UY_DEPARTMENTS } from "@/lib/argentina-geo";
 import { WhatsAppContactDialog } from "@/components/whatsapp/contact/whatsapp-contact";
-import { countryFromName } from "@/lib/whatsapp/phone";
+import { contactWhatsappRaw, countryFromName } from "@/lib/whatsapp/phone";
 
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
   return (
@@ -600,9 +600,9 @@ export default function InstallersPage() {
       </Dialog>
 
       {/* ── Email Dialog ── */}
-      {waInstaller?.whatsapp && (
+      {waInstaller && contactWhatsappRaw(waInstaller) && (
         <WhatsAppContactDialog
-          number={waInstaller.whatsapp}
+          number={contactWhatsappRaw(waInstaller)!}
           country={countryFromName(waInstaller.installerCountry)}
           name={`${waInstaller.firstName} ${waInstaller.lastName}`.trim()}
           onClose={() => setWaInstaller(null)}
@@ -791,7 +791,7 @@ export default function InstallersPage() {
                             <Mail size={14} className="mr-2" /> Enviar email
                           </DropdownMenuItem>
                         )}
-                        {installer.whatsapp && (
+                        {contactWhatsappRaw(installer) && (
                           <DropdownMenuItem onClick={() => setWaInstaller(installer)} className="flex items-center gap-2">
                             <WhatsAppIcon size={14} /> Contactar por WhatsApp
                           </DropdownMenuItem>

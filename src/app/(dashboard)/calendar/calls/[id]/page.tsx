@@ -92,7 +92,8 @@ export default function CallDetailPage() {
 
   const contactName = call.contact.company || `${call.contact.firstName} ${call.contact.lastName}`;
   const location = [call.contact.address, call.contact.city, call.contact.state].filter(Boolean).join(", ");
-  const waNum = call.contact.whatsapp ? normalizeWa(call.contact.whatsapp) : null;
+  const waRaw = call.contact.whatsapp?.trim() || call.contact.phone?.trim() || null;
+  const waNum = waRaw ? normalizeWa(waRaw) : null;
 
   const dateStr = new Date(call.scheduledAt).toLocaleString("es-AR", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",

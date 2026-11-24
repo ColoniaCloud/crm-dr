@@ -4,6 +4,7 @@ import { esDemo } from "@/lib/demo-context";
 import { transporter, FROM, isSmtpConfigured } from "@/lib/mailer";
 import { escapeHtml } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
+import { contactWhatsappNumber } from "@/lib/whatsapp/phone";
 import { zoneKey, zoneLabel } from "@/lib/agents/leads/geo";
 import { sectorLabel } from "@/lib/agents/leads/prioritizer/config";
 
@@ -43,7 +44,7 @@ export async function sendMorningMails(agent: Agent, sellerIds: string[]): Promi
           const c = t.contactId ? porId.get(t.contactId) : undefined;
           if (!c) return "";
           const nombre = c.company?.trim() || `${c.firstName} ${c.lastName}`.trim();
-          const wa = (c.whatsapp || c.phone || "").replace(/\D/g, "");
+          const wa = contactWhatsappNumber(c);
           const medios = [
             c.phone ? `Tel: ${escapeHtml(c.phone)}` : null,
             wa ? `<a href="https://wa.me/${wa}">WhatsApp</a>` : null,
