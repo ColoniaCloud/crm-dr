@@ -1,5 +1,6 @@
 import {
   createTemplate,
+  deleteTemplate,
   listTemplates,
   type GraphTemplate,
   type NewGraphButton,
@@ -216,4 +217,32 @@ export async function submitNewTemplate(t: NewTemplateInput, wabaId = "") {
   allCache.delete(wabaId);
   cache.delete(wabaId);
   return created;
+}
+
+// ─── Borrar una plantilla ────────────────────────────────────────────────────
+
+/**
+ * Borra una plantilla (ese idioma, si viene `hsmId`) de la cuenta que se pasa, y
+ * vacía las cachés para que desaparezca enseguida de la gestión, de la bandeja y
+ * de los filtros de las listas.
+ */
+export async function removeTemplate(name: string, hsmId: string | undefined, wabaId = ""): Promise<void> {
+  if (wabaId) await deleteTemplate(name, hsmId, wabaId);
+  else await deleteTemplate(name, hsmId);
+  allCache.delete(wabaId);
+  cache.delete(wabaId);
+}
+
+/**
+ * Los nombres de las plantillas que existen hoy en alguna de las cuentas (las
+ * borradas no). Sirve para que los filtros no ofrezcan una plantilla borrada.
+ * `null` si Meta no respondió: quien llama no filtra en ese caso.
+ */
+export async function existingTemplateNames(accounts: string[]): Promise<Set<string> | null> {
+  try {
+    const all = await Promise.all(accounts.map((a) => getAllTemplates(false, a)));
+    return new Set(all.flat().map((t) => t.name));
+  } catch {
+    return null;
+  }
 }

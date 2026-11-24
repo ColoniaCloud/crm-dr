@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, RefreshCw } from "@/components/icons";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2, Plus, RefreshCw, Trash2 } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { withLine } from "@/lib/whatsapp/line-url";
 import type { TemplateRow, TemplateState } from "@/lib/whatsapp/template-rules";
@@ -56,6 +59,7 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
   const [filter, setFilter] = useState<TemplateState | "all">("all");
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<TemplateRow | null>(null);
 
   const load = useCallback(async (force: boolean) => {
     setRefreshing(true);
@@ -147,10 +151,23 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
               <Badge variant="outline" className={cn("ml-auto shrink-0", STATE[t.state].className)}>
                 {STATE[t.state].label}
               </Badge>
+              {!t.system && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleting(t)}
+                  title="Borrar plantilla"
+                  aria-label={`Borrar la plantilla ${t.name} (${t.language})`}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {t.language} · {CATEGORY[t.category] ?? t.category}
               {t.status !== "APPROVED" && t.status !== "PENDING" && t.state !== "rejected" ? ` · ${t.status}` : ""}
+              {t.system ? " · La usan los avisos automáticos" : ""}
             </p>
             <div className="mt-3 whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm">
               {t.header && <p className="mb-1 font-semibold">{t.header}</p>}
@@ -168,6 +185,21 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
         ))}
       </ul>
 
+      {deleting && (
+        <DeleteTemplateDialog
+          template={deleting}
+          line={line}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            const gone = deleting;
+            setDeleting(null);
+            setRows((prev) => prev?.filter((r) => !(r.name === gone.name && r.language === gone.language)) ?? prev);
+            setNotice(`Plantilla «${gone.name}» (${gone.language}) borrada. Ya no aparece en los filtros de las listas.`);
+            void load(true);
+          }}
+        />
+      )}
+
       {creating && (
         <NewTemplateDialog
           line={line}
@@ -181,5 +213,64 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
         />
       )}
     </div>
+  );
+}
+
+/** Confirmación del borrado: es en Meta y no se puede deshacer. */
+function DeleteTemplateDialog({
+  template,
+  line,
+  onClose,
+  onDeleted,
+}: {
+  template: TemplateRow;
+  line?: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(withLine("/api/whatsapp/templates", line), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: template.name, language: template.language, ...(template.id ? { id: template.id } : {}) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "No se pudo borrar la plantilla");
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>¿Borrar la plantilla?</DialogTitle>
+          <DialogDescription>
+            <span className="font-mono">{template.name}</span> ({template.language}) se borra de Meta y deja de
+            aparecer en los filtros de Leads. No se puede deshacer, y Meta no deja crear otra con el mismo nombre
+            durante 30 días. Los envíos que ya se hicieron siguen en el historial de cada ficha.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            Borrar plantilla
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

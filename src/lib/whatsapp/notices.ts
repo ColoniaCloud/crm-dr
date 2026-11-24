@@ -4,6 +4,7 @@ import { isCloudApiConfigured, sendTemplateMessage, WhatsAppApiError } from "@/l
 import { cleanParam, recordOutbound } from "@/lib/whatsapp/outbound";
 import { normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import { primaryLine } from "@/lib/whatsapp/lines";
+import { PERU_OUTREACH_TEMPLATE } from "@/lib/whatsapp/template-rules";
 import type { WhatsAppSendResponse, WhatsAppTemplateComponent } from "@/types/whatsapp";
 
 const log = createLogger("lib/whatsapp/notices");
@@ -259,4 +260,21 @@ async function sendTemplateNotice(args: {
     });
   }
   return true;
+}
+
+/**
+ * Las plantillas que el CRM manda solo (avisos de turnos, pedir datos, invitación
+ * a distribuidores, campaña de Perú). Borrarlas desde la gestión de plantillas
+ * dejaría esos envíos fallando en silencio, así que no se ofrecen para borrar.
+ */
+export function systemTemplateNames(): string[] {
+  return [
+    TEMPLATE_BOOKING,
+    TEMPLATE_BOOKING_BUTTONS,
+    TEMPLATE_DATA_REQUEST,
+    TEMPLATE_BOOKING_CONFIRMED,
+    TEMPLATE_BOOKING_REJECTED,
+    process.env.WHATSAPP_TEMPLATE_DISTRIBUTOR || "kristall_propuesta_distribuidor",
+    PERU_OUTREACH_TEMPLATE,
+  ];
 }

@@ -308,3 +308,19 @@ export async function createTemplate(
   if (!res.ok) return failFrom(res);
   return (await res.json()) as { id: string; status: string; category: string };
 }
+
+/**
+ * Borra una plantilla de la cuenta (WABA). Con `hsmId` borra solo ese idioma; sin
+ * él, Meta borra el nombre en todos los idiomas. El nombre queda bloqueado 30
+ * días: Meta no deja crear otra plantilla con el mismo nombre en ese tiempo.
+ */
+export async function deleteTemplate(name: string, hsmId?: string, wabaId?: string): Promise<void> {
+  const { base } = config();
+  const waba = wabaId || process.env.WHATSAPP_WABA_ID;
+  if (!waba) throw new WhatsAppApiError("Falta WHATSAPP_WABA_ID para borrar plantillas", 503);
+
+  const params = new URLSearchParams({ name });
+  if (hsmId) params.set("hsm_id", hsmId);
+  const res = await graphFetch(`${base}/${waba}/message_templates?${params}`, { method: "DELETE" }, SEND_TIMEOUT_MS);
+  if (!res.ok) return failFrom(res);
+}

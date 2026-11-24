@@ -144,3 +144,8 @@ export function lineWhere(line: WhatsAppLine): { phoneNumberId: string | { in: s
 export function templatesAccountOf(line: WhatsAppLine): string {
   return line.primary ? "" : line.wabaId;
 }
+
+/** Todas las cuentas de plantillas configuradas (la principal es `""`), sin repetir. */
+export function allTemplateAccounts(): string[] {
+  return [...new Set(["", ...secondaryLines().map(templatesAccountOf)])];
+}
