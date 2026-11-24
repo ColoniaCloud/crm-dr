@@ -47,6 +47,7 @@ process.env.WHATSAPP_PHONE_NUMBER_ID = LINEA_CARLOS;
 import { handleBookingButton } from "@/lib/whatsapp/booking-actions";
 import {
   bookingButtonPayloads,
+  installerWhatsapp,
   parseBookingButton,
   sameWhatsappNumber,
 } from "@/lib/whatsapp/booking-buttons";
@@ -96,6 +97,12 @@ describe("payloads", () => {
     expect(sameWhatsappNumber("5491166660000", "+54 9 11 6666-0000")).toBe(true);
     expect(sameWhatsappNumber("5491166660000", "11 6666-0001")).toBe(false);
     expect(sameWhatsappNumber("5491166660000", null)).toBe(false);
+  });
+
+  it("el aviso va al campo WhatsApp y, si está vacío, al Teléfono", () => {
+    expect(installerWhatsapp({ whatsapp: "+59896082266", phone: "11 6666-0000" })).toBe("+59896082266");
+    expect(installerWhatsapp({ whatsapp: "  ", phone: "11 6666-0000" })).toBe("11 6666-0000");
+    expect(installerWhatsapp({ whatsapp: null, phone: "" })).toBeNull();
   });
 });
 
@@ -147,6 +154,12 @@ describe("quién puede tocar", () => {
     await handleBookingButton(templateTap(CONFIRMAR, "5491177770000"), LINEA_CARLOS);
     expect(confirmBooking).not.toHaveBeenCalled();
     expect(sendTextMessage).not.toHaveBeenCalled();
+  });
+
+  it("número cargado solo en el campo WhatsApp de la ficha: vale", async () => {
+    findUnique.mockResolvedValue({ ...booking, contact: { phone: null, whatsapp: "+598 96 082 266" } });
+    await handleBookingButton(templateTap(CONFIRMAR, "59896082266"), LINEA_CARLOS);
+    expect(confirmBooking).toHaveBeenCalledWith("inst_1", "bk_1");
   });
 
   it("llave que no existe: no contesta", async () => {

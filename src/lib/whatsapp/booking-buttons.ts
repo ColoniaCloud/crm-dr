@@ -81,6 +81,27 @@ export function sameWhatsappNumber(a: string | null | undefined, b: string | nul
   return ca !== "" && ca === canonical(b);
 }
 
+/**
+ * A qué número va el aviso de turno del instalador: el campo WhatsApp de la
+ * ficha y, si está vacío, el Teléfono. Muchos instaladores tienen el número
+ * cargado solo en uno de los dos; leer solo Teléfono dejaba sin aviso, y sin
+ * rastro, a los que lo tienen en WhatsApp.
+ */
+export function installerWhatsapp(contact: { whatsapp?: string | null; phone?: string | null }): string | null {
+  return contact.whatsapp?.trim() || contact.phone?.trim() || null;
+}
+
+/**
+ * ¿El que toca el botón es el instalador? Vale cualquiera de los dos números de
+ * su ficha: el aviso pudo salir a uno u otro, y los dos son suyos.
+ */
+export function isInstallerNumber(
+  from: string | null | undefined,
+  contact: { whatsapp?: string | null; phone?: string | null }
+): boolean {
+  return sameWhatsappNumber(from, contact.whatsapp) || sameWhatsappNumber(from, contact.phone);
+}
+
 function canonical(raw: string | null | undefined): string {
   let d = normalizeWhatsappNumber(raw ?? "");
   if (d.startsWith("549")) d = `54${d.slice(3)}`;

@@ -9,8 +9,8 @@ import { isPrimaryPhoneNumberId, primaryLine } from "@/lib/whatsapp/lines";
 import { recordOutbound } from "@/lib/whatsapp/outbound";
 import {
   bookingButtonPayload,
+  isInstallerNumber,
   parseBookingButton,
-  sameWhatsappNumber,
 } from "@/lib/whatsapp/booking-buttons";
 import type { WhatsAppInboundMessage, WhatsAppSendResponse } from "@/types/whatsapp";
 
@@ -55,12 +55,12 @@ export async function handleBookingButton(
         category: true,
         timeWindow: true,
         preferredAt: true,
-        contact: { select: { phone: true } },
+        contact: { select: { phone: true, whatsapp: true } },
         workOrder: { select: { scheduledAt: true } },
       },
     });
 
-    if (!booking || !sameWhatsappNumber(message.from, booking.contact.phone)) {
+    if (!booking || !isInstallerNumber(message.from, booking.contact)) {
       log.warn(
         { from: message.from, action: parsed.action, found: Boolean(booking) },
         "Botón de turno con una llave que no es de quien la toca: se ignora"

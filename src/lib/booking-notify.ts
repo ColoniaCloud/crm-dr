@@ -8,7 +8,7 @@ import {
 import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
 import { sendBookingNotice } from "@/lib/whatsapp/notices";
-import { bookingButtonPayloads } from "@/lib/whatsapp/booking-buttons";
+import { bookingButtonPayloads, installerWhatsapp } from "@/lib/whatsapp/booking-buttons";
 import { isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { BRAND } from "@/lib/brand";
 import { portalBaseUrl } from "@/lib/portal-tokens";
@@ -80,7 +80,7 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
         preferredAt: true,
         contactId: true,
         actionToken: true,
-        contact: { select: { email: true, phone: true } },
+        contact: { select: { email: true, phone: true, whatsapp: true } },
       },
     });
     if (!b) return;
@@ -159,9 +159,14 @@ export async function avisarPedidoAlInstalador(bookingId: string): Promise<void>
 
       // ── whatsapp ────────────────────────────────────────────────────────
       (async () => {
-        if (!b.contact.phone || !isCloudApiConfigured()) return;
+        const to = installerWhatsapp(b.contact);
+        if (!to) {
+          log.warn({ bookingId, contactId: b.contactId }, "El instalador no tiene WhatsApp ni teléfono: el pedido no se le avisa por WhatsApp");
+          return;
+        }
+        if (!isCloudApiConfigured()) return;
         await sendBookingNotice({
-          to: b.contact.phone,
+          to,
           contactId: b.contactId,
           serviceName: b.serviceName,
           cuando,
