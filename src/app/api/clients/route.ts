@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { logOperatorAction, notifyAdmins, escapeHtml } from "@/lib/notifications";
 import { createLogger } from "@/lib/logger";
 import { resolveResellerId, RESELLER_SUMMARY_SELECT } from "@/lib/subclients";
+import { templateFilterWhere } from "@/lib/whatsapp/template-tags";
 const log = createLogger("api/clients");
 
 export async function GET(request: Request) {
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
         { company: { contains: search } },
         { email: { contains: search } },
         { phone: { contains: search } },
+        { whatsapp: { contains: search } },
       ];
     }
     if (city) where.city = { contains: city };
@@ -58,6 +60,11 @@ export async function GET(request: Request) {
     if (resellerFilter === "none") where.resellerId = null;
     else if (resellerFilter === "any") where.resellerId = { not: null };
     else if (resellerFilter) where.resellerId = resellerFilter;
+    const waTemplate = searchParams.get("waTemplate");
+    if (waTemplate) {
+      const mode = searchParams.get("waTemplateMode") === "not_sent" ? "not_sent" : "sent";
+      Object.assign(where, await templateFilterWhere(waTemplate, mode));
+    }
     if (myClients === "1" && session?.user?.id) {
       where.assignedToId = session.user.id;
     }

@@ -28,7 +28,7 @@ import {
 import {
   MapPin, Mail, Phone, Filter, Send, User, Upload, Plus, Download,
   ChevronDown, ChevronRight, ChevronLeft, Headphones, Search, ArrowUpDown, ArrowUp, ArrowDown,
-  CheckCircle2, XCircle, Tag, X, Settings2, Trash2, AlertTriangle, Pencil,
+  CheckCircle2, Tag, X, Settings2, Trash2, AlertTriangle, Pencil,
 } from "@/components/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -38,11 +38,13 @@ import {
 import { SoporteModal } from "@/components/soporte-modal";
 import { AR_PROVINCES, AR_CITIES } from "@/lib/argentina-geo";
 import { WhatsAppTrigger } from "@/components/whatsapp/contact/whatsapp-contact";
+import { contactWhatsappRaw } from "@/lib/whatsapp/phone";
 import { SearchableSelect } from "@/components/searchable-select";
 import { cn } from "@/lib/utils";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
+  ActiveFilterChips, FilterSection, FilterSheet, OptionList, Segmented, SwitchRow,
+  useDebouncedValue, type ActiveFilterChip,
+} from "@/components/filters/list-filters";
 
 // ── WhatsApp SVG ──────────────────────────────────────────────────────────────
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
@@ -218,8 +220,6 @@ export default function LeadsPage() {
     filterState !== null,
     filterCity !== null,
     filterNeighborhood !== null,
-    sortDate !== null,
-    myLeads,
   ].filter(Boolean).length;
 
   // Modals
@@ -376,7 +376,13 @@ export default function LeadsPage() {
   useEffect(() => {
     fetch("/api/whatsapp/template-tags", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { names?: string[] } | null) => { if (data?.names) setAllWaTemplates(data.names); })
+      .then((data: { names?: string[] } | null) => {
+        if (!data?.names) return;
+        const names = data.names;
+        setAllWaTemplates(names);
+        // Un filtro guardado con una plantilla que ya se borró no queda colgado.
+        setFilterWaTemplate((current) => (current && !names.includes(current) ? null : current));
+      })
       .catch(() => { /* silent */ });
   }, []);
 
@@ -396,9 +402,23 @@ export default function LeadsPage() {
     setFilterState(null);
     setFilterCity(null);
     setFilterNeighborhood(null);
-    setSortDate(null);
-    setMyLeads(false);
   }
+
+  // Lo aplicado, como chips quitables de a uno (ver components/filters/list-filters.tsx).
+  const filterChips: ActiveFilterChip[] = [
+    search && { key: "search", label: "Búsqueda", value: search, onRemove: () => { setSearchInput(""); setSearch(""); } },
+    filterContacted !== null && { key: "contacted", label: "Estado", value: filterContacted ? "Contactados" : "No contactados", onRemove: () => setFilterContacted(null) },
+    filterSector && { key: "sector", label: "Rubro", value: sectorLabel[filterSector] ?? filterSector, onRemove: () => setFilterSector(null) },
+    filterTagId && { key: "tag", label: "Etiqueta", value: allTags.find((t) => t.id === filterTagId)?.name ?? "…", onRemove: () => setFilterTagId(null) },
+    filterWaTemplate && {
+      key: "wa", label: filterWaTemplateMode === "sent" ? "Recibió" : "No recibió", value: filterWaTemplate,
+      onRemove: () => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); },
+    },
+    filterHasAddress && { key: "address", label: "Dirección", value: "Con dirección", onRemove: () => setFilterHasAddress(false) },
+    filterState && { key: "state", label: "Provincia", value: filterState, onRemove: () => { setFilterState(null); setFilterCity(null); setFilterNeighborhood(null); } },
+    filterCity && { key: "city", label: "Ciudad", value: filterCity, onRemove: () => { setFilterCity(null); setFilterNeighborhood(null); } },
+    filterNeighborhood && { key: "nb", label: "Barrio", value: filterNeighborhood, onRemove: () => setFilterNeighborhood(null) },
+  ].filter((c): c is ActiveFilterChip => Boolean(c));
 
   async function addTagToLead(leadId: string, tagId: string) {
     await fetch(`/api/contacts/${leadId}/tags`, {
@@ -455,7 +475,17 @@ export default function LeadsPage() {
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  function applySearch() { setSearch(searchInput); }
+  function applySearch() { setSearch(searchInput.trim()); }
+
+  // Al dejar de escribir se busca sola. El primer valor se saltea: es el vacío del
+  // montaje, y pisaría la búsqueda que se restaura de la sesión.
+  const debouncedSearch = useDebouncedValue(searchInput);
+  const lastDebouncedRef = useRef(debouncedSearch);
+  useEffect(() => {
+    if (debouncedSearch === lastDebouncedRef.current) return;
+    lastDebouncedRef.current = debouncedSearch;
+    setSearch(debouncedSearch.trim());
+  }, [debouncedSearch]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -1027,26 +1057,29 @@ export default function LeadsPage() {
       {/* ── Table Card ── */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
 
             {/* Search con Enter simulator */}
-            <div className="relative flex items-center flex-1 min-w-0 sm:max-w-60">
+            <div className="relative flex items-center flex-1 min-w-0 sm:min-w-[220px] sm:max-w-80">
               <Search size={15} className="absolute left-3 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Buscar leads..."
+                placeholder="Buscar nombre, empresa, teléfono…"
+                aria-label="Buscar leads"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") applySearch(); }}
-                className="pl-9 pr-10 w-full"
+                onKeyDown={(e) => { if (e.key === "Enter") applySearch(); if (e.key === "Escape") { setSearchInput(""); setSearch(""); } }}
+                className="pl-9 pr-9 w-full"
               />
-              <button
-                type="button"
-                onClick={applySearch}
-                title="Buscar (Enter)"
-                className="absolute right-2 flex items-center justify-center h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <kbd className="text-[10px] font-mono leading-none">↵</kbd>
-              </button>
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(""); setSearch(""); }}
+                  aria-label="Borrar búsqueda"
+                  className="absolute right-1.5 flex items-center justify-center h-7 w-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
             {/* ── Desktop: Inline buttons ── */}
@@ -1065,9 +1098,12 @@ export default function LeadsPage() {
               <Button variant="outline" className="gap-2 h-9" onClick={() => setCampaignOpen(true)}>
                 <Send size={14} /> Campaña
               </Button>
-              <Button variant="outline" className="gap-2 h-9" onClick={() => setMyLeads(!myLeads)}>
-                <User size={14} /> {myLeads ? "Todos" : "Mis leads"}
-              </Button>
+              <Segmented
+                ariaLabel="De quién"
+                value={myLeads ? "mine" : "all"}
+                onChange={(v) => setMyLeads(v === "mine")}
+                options={[{ value: "all", label: "Todos" }, { value: "mine", label: "Míos" }]}
+              />
               <Button variant="outline" className="gap-2 h-9" onClick={() => setCsvDialogOpen(true)}>
                 <Upload size={14} /> Importar
               </Button>
@@ -1105,7 +1141,7 @@ export default function LeadsPage() {
                   <Send size={13} /> Campaña de Mail
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setMyLeads(!myLeads)} className="gap-2">
-                  <User size={13} /> Mis leads {myLeads && "✓"}
+                  <User size={13} /> Solo mis leads {myLeads && "✓"}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setCsvDialogOpen(true)} className="gap-2">
                   <Upload size={13} /> Importar Leads (CSV)
@@ -1158,37 +1194,35 @@ export default function LeadsPage() {
           ) : (
             <>
               {/* ── Barra de lista: contactados + orden ── */}
-              <div className="flex items-center gap-1 mb-3">
-                {([
-                  { label: "Todos", value: null },
-                  { label: "Contactados", value: true },
-                  { label: "No contactados", value: false },
-                ] as const).map((opt) => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={() => setFilterContacted(opt.value)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors cursor-pointer ${
-                      filterContacted === opt.value
-                        ? "bg-secondary text-secondary-foreground border-border"
-                        : "bg-background text-muted-foreground border-border hover:bg-muted"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <Segmented
+                  ariaLabel="Estado de contacto"
+                  value={filterContacted === null ? "all" : filterContacted ? "yes" : "no"}
+                  onChange={(v) => setFilterContacted(v === "all" ? null : v === "yes")}
+                  options={[
+                    { value: "all", label: "Todos" },
+                    { value: "yes", label: "Contactados" },
+                    { value: "no", label: "No contactados" },
+                  ]}
+                />
+                <span className="ml-auto text-xs text-muted-foreground tabular-nums" aria-live="polite">
+                  {totalLeads.toLocaleString("es-AR")} {totalLeads === 1 ? "lead" : "leads"}
+                </span>
                 <button
                   onClick={() => setSortDate(sortDate === null ? "desc" : sortDate === "desc" ? "asc" : null)}
+                  title="Ordenar por fecha de alta"
                   className={cn(
-                    "ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors cursor-pointer",
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors cursor-pointer",
                     sortDate !== null
                       ? "bg-secondary text-secondary-foreground border-border"
                       : "bg-background text-muted-foreground border-border hover:bg-muted"
                   )}
                 >
                   {sortDate === "desc" ? <ArrowDown size={13} /> : sortDate === "asc" ? <ArrowUp size={13} /> : <ArrowUpDown size={13} />}
-                  Fecha
+                  {sortDate === "desc" ? "Más nuevos" : sortDate === "asc" ? "Más viejos" : "Fecha"}
                 </button>
               </div>
+              <ActiveFilterChips chips={filterChips} onClearAll={clearFilters} className="mb-3" />
 
               {/* ── Vista móvil ── */}
               <div className="md:hidden space-y-2">
@@ -1200,7 +1234,8 @@ export default function LeadsPage() {
                 {visibleLeads.map((lead) => {
                   const displayName = lead.company || `${lead.firstName} ${lead.lastName}`.trim();
                   const subName = lead.company ? `${lead.firstName} ${lead.lastName}`.trim() : null;
-                  const waNum = lead.whatsapp ? normalizeWhatsApp(lead.whatsapp) : null;
+                  const waRaw = contactWhatsappRaw(lead);
+                  const waNum = waRaw ? normalizeWhatsApp(waRaw) : null;
                   return (
                     <div key={lead.id} className="flex items-start gap-3 rounded-lg border px-3 py-2.5">
                       <div className="flex-1 min-w-0 space-y-1">
@@ -1238,7 +1273,7 @@ export default function LeadsPage() {
                             <a href={`tel:${lead.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{lead.phone}</a>
                           )}
                           {waNum && (
-                            <WhatsAppTrigger number={lead.whatsapp!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()} className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
+                            <WhatsAppTrigger number={waRaw!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()} className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
                               <WhatsAppIcon size={14} />
                             </WhatsAppTrigger>
                           )}
@@ -1412,9 +1447,9 @@ export default function LeadsPage() {
                               ) : <span className="text-muted-foreground text-xs">-</span>}
                             </TableCell>
                             <TableCell className="p-2 w-9">
-                              {lead.whatsapp ? (
-                                <WhatsAppTrigger number={lead.whatsapp} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()}
-                                  className="flex items-center justify-center h-8 w-8 transition-colors text-[#25d366] hover:text-[#25d366]/80" title={lead.whatsapp}>
+                              {contactWhatsappRaw(lead) ? (
+                                <WhatsAppTrigger number={contactWhatsappRaw(lead)!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()}
+                                  className="flex items-center justify-center h-8 w-8 transition-colors text-[#25d366] hover:text-[#25d366]/80" title={contactWhatsappRaw(lead)!}>
                                   <WhatsAppIcon size={16} />
                                 </WhatsAppTrigger>
                               ) : <span className="text-muted-foreground text-xs">-</span>}
@@ -1495,233 +1530,121 @@ export default function LeadsPage() {
         </CardContent>
       </Card>
 
-      {/* ── Filter Sheet ── */}
-      <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-        <SheetContent side="right" className="w-80 sm:w-96 flex flex-col p-0">
-          <SheetHeader className="px-6 py-4 border-b shrink-0">
-            <SheetTitle className="flex items-center gap-2 text-base">
-              <Filter size={15} /> Filtros
-              {activeFilterCount > 0 && (
-                <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  {activeFilterCount} activo{activeFilterCount > 1 ? "s" : ""}
-                </span>
-              )}
-            </SheetTitle>
-          </SheetHeader>
+      {/* ── Filtros ── */}
+      <FilterSheet
+        open={filterSheetOpen}
+        onOpenChange={setFilterSheetOpen}
+        activeCount={activeFilterCount}
+        resultCount={loading ? null : totalLeads}
+        resultNoun={totalLeads === 1 ? "lead" : "leads"}
+        onClear={clearFilters}
+      >
+        <FilterSection title="Rubro" onClear={filterSector ? () => setFilterSector(null) : undefined}>
+          <Select value={filterSector ?? ""} onValueChange={(v) => setFilterSector(v === "" ? null : v)}>
+            <SelectTrigger><SelectValue placeholder="Todos los rubros" /></SelectTrigger>
+            <SelectContent>
+              {Object.entries(sectorLabel).map(([val, label]) => (
+                <SelectItem key={val} value={val}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSection>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <FilterSection title="Etiqueta" onClear={filterTagId ? () => setFilterTagId(null) : undefined}>
+          {allTags.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin etiquetas creadas</p>
+          ) : (
+            <Select value={filterTagId ?? ""} onValueChange={(v) => setFilterTagId(v === "" ? null : v)}>
+              <SelectTrigger><SelectValue placeholder="Todas las etiquetas" /></SelectTrigger>
+              <SelectContent>
+                {allTags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 inline-block" style={{ backgroundColor: tag.color }} />
+                      {tag.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <button
+            onClick={() => { setTagManagerOpen(true); setFilterSheetOpen(false); }}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Plus size={12} /> Gestionar etiquetas
+          </button>
+        </FilterSection>
 
-            {/* Estado de contacto */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estado</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setFilterContacted(filterContacted === true ? null : true)}
-                  className={cn("flex-1 flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
-                    filterContacted === true ? "border-primary bg-primary/10 text-primary font-medium" : "hover:bg-muted")}
-                >
-                  <CheckCircle2 size={13} className="text-primary" /> Contactados
-                </button>
-                <button
-                  onClick={() => setFilterContacted(filterContacted === false ? null : false)}
-                  className={cn("flex-1 flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors",
-                    filterContacted === false ? "border-muted-foreground bg-muted/60 font-medium" : "hover:bg-muted")}
-                >
-                  <XCircle size={13} className="text-yellow-500" /> No contactados
-                </button>
-              </div>
-            </div>
-
-            {/* Por rubro */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rubro</p>
-              <Select value={filterSector ?? ""} onValueChange={(v) => setFilterSector(v === "" ? null : v)}>
-                <SelectTrigger><SelectValue placeholder="Todos los rubros" /></SelectTrigger>
+        <FilterSection
+          title="Plantilla de WhatsApp"
+          onClear={filterWaTemplate ? () => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); } : undefined}
+        >
+          {allWaTemplates.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Todavía no se mandó ninguna plantilla</p>
+          ) : (
+            <>
+              <Select value={filterWaTemplate ?? ""} onValueChange={(v) => setFilterWaTemplate(v === "" ? null : v)}>
+                <SelectTrigger><SelectValue placeholder="Cualquiera" /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(sectorLabel).map(([val, label]) => (
-                    <SelectItem key={val} value={val}>{label}</SelectItem>
+                  {allWaTemplates.map((name) => (
+                    <SelectItem key={name} value={name}><span className="font-mono text-xs">{name}</span></SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {filterSector && (
-                <button onClick={() => setFilterSector(null)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <X size={11} /> Quitar filtro
-                </button>
-              )}
-            </div>
-
-            {/* Por etiqueta */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Etiqueta</p>
-              {allTags.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Sin etiquetas creadas</p>
-              ) : (
-                <Select value={filterTagId ?? ""} onValueChange={(v) => setFilterTagId(v === "" ? null : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todas las etiquetas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allTags.map((tag) => (
-                      <SelectItem key={tag.id} value={tag.id}>
-                        <span className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0 inline-block" style={{ backgroundColor: tag.color }} />
-                          {tag.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {filterTagId && (
-                <button onClick={() => setFilterTagId(null)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <X size={11} /> Quitar filtro
-                </button>
-              )}
-              <button
-                onClick={() => { setTagManagerOpen(true); setFilterSheetOpen(false); }}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
-              >
-                <Plus size={12} /> Gestionar etiquetas
-              </button>
-            </div>
-
-            {/* Por plantilla de WhatsApp */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Plantilla de WhatsApp</p>
-              {allWaTemplates.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Todavía no se mandó ninguna plantilla</p>
-              ) : (
-                <>
-                  <Select value={filterWaTemplate ?? ""} onValueChange={(v) => setFilterWaTemplate(v === "" ? null : v)}>
-                    <SelectTrigger><SelectValue placeholder="Todas" /></SelectTrigger>
-                    <SelectContent>
-                      {allWaTemplates.map((name) => (
-                        <SelectItem key={name} value={name}><span className="font-mono text-xs">{name}</span></SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {filterWaTemplate && (
-                    <div className="flex gap-2">
-                      {([["sent", "La recibieron"], ["not_sent", "No la recibieron"]] as const).map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          onClick={() => setFilterWaTemplateMode(mode)}
-                          className={cn("flex-1 rounded-md border px-3 py-2 text-sm transition-colors",
-                            filterWaTemplateMode === mode ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted")}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
               {filterWaTemplate && (
-                <button onClick={() => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <X size={11} /> Quitar filtro
-                </button>
+                <Segmented
+                  ariaLabel="La recibieron o no"
+                  className="w-full"
+                  value={filterWaTemplateMode}
+                  onChange={setFilterWaTemplateMode}
+                  options={[{ value: "sent", label: "La recibieron" }, { value: "not_sent", label: "No la recibieron" }]}
+                />
               )}
-            </div>
-
-            {/* Con dirección */}
-            <div className="flex items-center justify-between">
-              <Label className="text-sm cursor-pointer" onClick={() => setFilterHasAddress(!filterHasAddress)}>
-                <MapPin size={13} className="inline mr-1.5 text-muted-foreground" />
-                Con dirección
-              </Label>
-              <button
-                role="switch"
-                aria-checked={filterHasAddress}
-                onClick={() => setFilterHasAddress(!filterHasAddress)}
-                className={cn("relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  filterHasAddress ? "bg-primary" : "bg-input")}
-              >
-                <span className={cn("pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform",
-                  filterHasAddress ? "translate-x-4" : "translate-x-0")} />
-              </button>
-            </div>
-
-            {/* Por provincia */}
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Provincia</p>
-              {allStates.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Sin provincias registradas</p>
-              ) : (
-                <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border p-1">
-                  {allStates.map((state) => (
-                    <button
-                      key={state}
-                      onClick={() => { setFilterState(filterState === state ? null : state); setFilterCity(null); setFilterNeighborhood(null); }}
-                      className={cn("w-full flex items-center gap-2 rounded px-2.5 py-1.5 text-sm text-left transition-colors",
-                        filterState === state ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted")}
-                    >
-                      {state}
-                      {filterState === state && <X size={12} className="ml-auto text-muted-foreground" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Por ciudad */}
-            {filterState && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ciudad</p>
-                {allCities.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Sin ciudades en esta provincia</p>
-                ) : (
-                  <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border p-1">
-                    {allCities.map((city) => (
-                      <button
-                        key={city}
-                        onClick={() => { setFilterCity(filterCity === city ? null : city); setFilterNeighborhood(null); }}
-                        className={cn("w-full flex items-center gap-2 rounded px-2.5 py-1.5 text-sm text-left transition-colors",
-                          filterCity === city ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted")}
-                      >
-                        {city}
-                        {filterCity === city && <X size={12} className="ml-auto text-muted-foreground" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Por barrio */}
-            {filterCity && allNeighborhoods.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Barrio</p>
-                <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border p-1">
-                  {allNeighborhoods.map((nb) => (
-                    <button
-                      key={nb}
-                      onClick={() => setFilterNeighborhood(filterNeighborhood === nb ? null : nb)}
-                      className={cn("w-full flex items-center gap-2 rounded px-2.5 py-1.5 text-sm text-left transition-colors",
-                        filterNeighborhood === nb ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted")}
-                    >
-                      {nb}
-                      {filterNeighborhood === nb && <X size={12} className="ml-auto text-muted-foreground" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </div>
-
-          {/* Footer — limpiar filtros */}
-          {activeFilterCount > 0 && (
-            <div className="border-t px-6 py-4 shrink-0">
-              <button
-                onClick={clearFilters}
-                className="w-full flex items-center justify-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-              >
-                <X size={14} /> Limpiar {activeFilterCount} filtro{activeFilterCount > 1 ? "s" : ""}
-              </button>
-            </div>
+            </>
           )}
-        </SheetContent>
-      </Sheet>
+        </FilterSection>
+
+        <SwitchRow
+          label="Con dirección"
+          icon={<MapPin size={13} className="text-muted-foreground" />}
+          checked={filterHasAddress}
+          onChange={setFilterHasAddress}
+        />
+
+        <FilterSection title="Provincia" onClear={filterState ? () => { setFilterState(null); setFilterCity(null); setFilterNeighborhood(null); } : undefined}>
+          <OptionList
+            options={allStates}
+            value={filterState}
+            onChange={(v) => { setFilterState(v); setFilterCity(null); setFilterNeighborhood(null); }}
+            searchPlaceholder="Buscar provincia"
+            emptyText="Sin provincias registradas"
+          />
+        </FilterSection>
+
+        {filterState && (
+          <FilterSection title="Ciudad" onClear={filterCity ? () => { setFilterCity(null); setFilterNeighborhood(null); } : undefined}>
+            <OptionList
+              options={allCities}
+              value={filterCity}
+              onChange={(v) => { setFilterCity(v); setFilterNeighborhood(null); }}
+              searchPlaceholder="Buscar ciudad"
+              emptyText="Sin ciudades en esta provincia"
+            />
+          </FilterSection>
+        )}
+
+        {filterCity && allNeighborhoods.length > 0 && (
+          <FilterSection title="Barrio" onClear={filterNeighborhood ? () => setFilterNeighborhood(null) : undefined}>
+            <OptionList
+              options={allNeighborhoods}
+              value={filterNeighborhood}
+              onChange={setFilterNeighborhood}
+              searchPlaceholder="Buscar barrio"
+            />
+          </FilterSection>
+        )}
+      </FilterSheet>
 
     </div>
   );

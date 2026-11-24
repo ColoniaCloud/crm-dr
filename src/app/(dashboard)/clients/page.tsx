@@ -20,8 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent,
-  DropdownMenuSubTrigger, DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   MapPin, Mail, Filter, Send, User, Plus, Download,
@@ -35,6 +35,12 @@ import { useCurrency } from "@/contexts/currency-context";
 import { SECTOR_COLORS } from "@/lib/design-tokens";
 import { ClientCreateDialog } from "@/components/clients/client-create-dialog";
 import { WhatsAppTrigger } from "@/components/whatsapp/contact/whatsapp-contact";
+import { contactWhatsappRaw } from "@/lib/whatsapp/phone";
+import { cn } from "@/lib/utils";
+import {
+  ActiveFilterChips, FilterSection, FilterSheet, OptionList, Segmented, SwitchRow,
+  useDebouncedValue, type ActiveFilterChip,
+} from "@/components/filters/list-filters";
 
 // ── WhatsApp SVG ──────────────────────────────────────────────────────────────
 function WhatsAppIcon({ size = 16 }: { size?: number }) {
@@ -116,6 +122,11 @@ export default function ClientsPage() {
   const [filterTagId, setFilterTagId] = useState<string | null>(null);
   const [filterState, setFilterState] = useState<string | null>(null);
   const [filterCity, setFilterCity] = useState<string | null>(null);
+  // Plantilla de WhatsApp recibida (o no): ver lib/whatsapp/template-tags.ts
+  const [filterWaTemplate, setFilterWaTemplate] = useState<string | null>(null);
+  const [filterWaTemplateMode, setFilterWaTemplateMode] = useState<"sent" | "not_sent">("sent");
+  const [allWaTemplates, setAllWaTemplates] = useState<string[]>([]);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [sortDate, setSortDate] = useState<"asc" | "desc" | null>(null);
   const [myClients, setMyClients] = useState(false);
   const [page, setPage] = useState(1);
@@ -145,8 +156,7 @@ export default function ClientsPage() {
     filterTagId !== null,
     filterState !== null,
     filterCity !== null,
-    sortDate !== null,
-    myClients,
+    filterWaTemplate !== null,
   ].filter(Boolean).length;
 
   // Modals
@@ -195,6 +205,10 @@ export default function ClientsPage() {
       if (filterTagId) params.set("tagId", filterTagId);
       if (filterState) params.set("state", filterState);
       if (filterCity) params.set("city", filterCity);
+      if (filterWaTemplate) {
+        params.set("waTemplate", filterWaTemplate);
+        params.set("waTemplateMode", filterWaTemplateMode);
+      }
       if (myClients) params.set("myClients", "1");
       if (sortDate) params.set("sortDate", sortDate);
       params.set("page", String(page));
@@ -216,12 +230,20 @@ export default function ClientsPage() {
 
   // Reset page when filters change
   useEffect(() => {
-    const key = `${search}|${filterSector}|${filterHasAddress}|${filterWithBalance}|${filterReseller}|${filterTagId}|${filterState}|${filterCity}|${sortDate}|${myClients}`;
+    const key = `${search}|${filterSector}|${filterHasAddress}|${filterWithBalance}|${filterReseller}|${filterTagId}|${filterState}|${filterCity}|${filterWaTemplate}|${filterWaTemplateMode}|${sortDate}|${myClients}`;
     if (prevFilterKeyRef.current && prevFilterKeyRef.current !== key) setPage(1);
     prevFilterKeyRef.current = key;
-  }, [search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, sortDate, myClients]);
+  }, [search, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
 
-  useEffect(() => { fetchClients(); }, [search, page, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, sortDate, myClients]);
+  useEffect(() => { fetchClients(); }, [search, page, filterSector, filterHasAddress, filterWithBalance, filterReseller, filterTagId, filterState, filterCity, filterWaTemplate, filterWaTemplateMode, sortDate, myClients]);
+
+  // Las plantillas que ya se le mandaron a alguna ficha (las borradas no): las opciones del filtro
+  useEffect(() => {
+    fetch("/api/whatsapp/template-tags", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { names?: string[] } | null) => { if (data?.names) setAllWaTemplates(data.names); })
+      .catch(() => { /* silent */ });
+  }, []);
 
   async function fetchTags() {
     try {
@@ -245,10 +267,26 @@ export default function ClientsPage() {
     setFilterTagId(null);
     setFilterState(null);
     setFilterCity(null);
-    setSortDate(null);
-    setMyClients(false);
+    setFilterWaTemplate(null);
+    setFilterWaTemplateMode("sent");
     setPage(1);
   }
+
+  // Lo aplicado, como chips quitables de a uno (ver components/filters/list-filters.tsx).
+  const filterChips: ActiveFilterChip[] = [
+    search && { key: "search", label: "Búsqueda", value: search, onRemove: () => { setSearchInput(""); setSearch(""); } },
+    filterReseller && { key: "reseller", label: "Origen", value: filterReseller === "any" ? "De revendedor" : "Directos", onRemove: () => setFilterReseller(null) },
+    filterWithBalance && { key: "balance", label: "Saldo", value: "Con saldo pendiente", onRemove: () => setFilterWithBalance(false) },
+    filterSector && { key: "sector", label: "Rubro", value: sectorLabel[filterSector] ?? filterSector, onRemove: () => setFilterSector(null) },
+    filterTagId && { key: "tag", label: "Etiqueta", value: allTags.find((t) => t.id === filterTagId)?.name ?? "…", onRemove: () => setFilterTagId(null) },
+    filterWaTemplate && {
+      key: "wa", label: filterWaTemplateMode === "sent" ? "Recibió" : "No recibió", value: filterWaTemplate,
+      onRemove: () => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); },
+    },
+    filterHasAddress && { key: "address", label: "Dirección", value: "Con dirección", onRemove: () => setFilterHasAddress(false) },
+    filterState && { key: "state", label: "Provincia", value: filterState, onRemove: () => { setFilterState(null); setFilterCity(null); } },
+    filterCity && { key: "city", label: "Ciudad", value: filterCity, onRemove: () => setFilterCity(null) },
+  ].filter((c): c is ActiveFilterChip => Boolean(c));
 
   function exportClientsCSV() {
     const data = visibleClients.length > 0 ? visibleClients : clients;
@@ -381,7 +419,16 @@ export default function ClientsPage() {
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  function applySearch() { setSearch(searchInput); }
+  function applySearch() { setSearch(searchInput.trim()); }
+
+  // Al dejar de escribir se busca sola (Enter sigue buscando al instante).
+  const debouncedSearch = useDebouncedValue(searchInput);
+  const lastDebouncedRef = useRef(debouncedSearch);
+  useEffect(() => {
+    if (debouncedSearch === lastDebouncedRef.current) return;
+    lastDebouncedRef.current = debouncedSearch;
+    setSearch(debouncedSearch.trim());
+  }, [debouncedSearch]);
 
   async function handleSendEmail(e: React.FormEvent) {
     e.preventDefault();
@@ -686,127 +733,46 @@ export default function ClientsPage() {
             <div className="relative flex items-center flex-1 min-w-[220px]">
               <Search size={15} className="absolute left-3 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Buscar clientes..."
+                placeholder="Buscar nombre, empresa, teléfono…"
+                aria-label="Buscar clientes"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") applySearch(); }}
-                className="pl-9 pr-10 w-full sm:w-56"
+                onKeyDown={(e) => { if (e.key === "Enter") applySearch(); if (e.key === "Escape") { setSearchInput(""); setSearch(""); } }}
+                className="pl-9 pr-9 w-full sm:w-64"
               />
-              <button
-                type="button"
-                onClick={applySearch}
-                title="Buscar (Enter)"
-                className="absolute right-2 flex items-center justify-center h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <kbd className="text-[10px] font-mono leading-none">↵</kbd>
-              </button>
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(""); setSearch(""); }}
+                  aria-label="Borrar búsqueda"
+                  className="absolute right-1.5 flex items-center justify-center h-7 w-7 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
             {/* ── Desktop: Inline buttons ── */}
             <div className="hidden sm:flex items-center gap-2 flex-wrap">
-              {/* Filtrar button */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="gap-2 h-9">
-                    <Filter size={14} />
-                    Filtrar
-                    {activeFilterCount > 0 && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                        {activeFilterCount}
-                      </span>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52">
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2"><ArrowUpDown size={13} />Por fecha</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      <DropdownMenuItem onClick={() => setSortDate("desc")} className="gap-2">
-                        <ArrowDown size={13} /> Más recientes {sortDate === "desc" && "✓"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setSortDate("asc")} className="gap-2">
-                        <ArrowUp size={13} /> Más antiguos {sortDate === "asc" && "✓"}
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  <DropdownMenuItem onClick={() => setFilterHasAddress(!filterHasAddress)} className="gap-2">
-                    <MapPin size={13} /> Con dirección {filterHasAddress && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterWithBalance(!filterWithBalance)} className="gap-2">
-                    <DollarSign size={13} /> Con saldo pendiente {filterWithBalance && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "any" ? null : "any")} className="gap-2">
-                    <Store size={13} /> Subclientes de revendedor {filterReseller === "any" && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "none" ? null : "none")} className="gap-2">
-                    <User size={13} /> Clientes directos {filterReseller === "none" && "✓"}
-                  </DropdownMenuItem>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2"><Filter size={13} />Por rubro</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {Object.entries(sectorLabel).map(([val, label]) => (
-                        <DropdownMenuItem key={val} onClick={() => setFilterSector(filterSector === val ? null : val)} className="gap-2">
-                          {label} {filterSector === val && "✓"}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2"><Tag size={13} />Por etiqueta</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {allTags.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin etiquetas</DropdownMenuItem>}
-                      {allTags.map((tag) => (
-                        <DropdownMenuItem key={tag.id} onClick={() => setFilterTagId(filterTagId === tag.id ? null : tag.id)} className="gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                          {tag.name} {filterTagId === tag.id && "✓"}
-                        </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setTagManagerOpen(true)} className="gap-2 text-xs">
-                        <Plus size={12} /> Gestionar etiquetas
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2"><MapPin size={13} />Por provincia</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {allStates.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin provincias registradas</DropdownMenuItem>}
-                      {allStates.map((state) => (
-                        <DropdownMenuItem key={state} onClick={() => { setFilterState(filterState === state ? null : state); setFilterCity(null); }} className="gap-2">
-                          {state} {filterState === state && "✓"}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!filterState}>
-                      <MapPin size={13} />Por ciudad
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {!filterState && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Selecciona una provincia primero</DropdownMenuItem>}
-                      {filterState && allCities.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin ciudades en esta provincia</DropdownMenuItem>}
-                      {filterState && allCities.map((city) => (
-                        <DropdownMenuItem key={city} onClick={() => setFilterCity(filterCity === city ? null : city)} className="gap-2">
-                          {city} {filterCity === city && "✓"}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  {activeFilterCount > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={clearFilters} className="text-destructive gap-2">Limpiar filtros</DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button variant="outline" className="gap-2 h-9" onClick={() => setFilterSheetOpen(true)}>
+                <Filter size={14} />
+                Filtrar
+                {activeFilterCount > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
 
               <Button variant="outline" className="gap-2 h-9" onClick={() => setCampaignOpen(true)}>
                 <Send size={14} /> Campaña
               </Button>
-              <Button variant="outline" className="gap-2 h-9" onClick={() => setMyClients(!myClients)}>
-                <User size={14} /> {myClients ? "Todos" : "Mis clientes"}
-              </Button>
+              <Segmented
+                ariaLabel="De quién"
+                value={myClients ? "mine" : "all"}
+                onChange={(v) => setMyClients(v === "mine")}
+                options={[{ value: "all", label: "Todos" }, { value: "mine", label: "Míos" }]}
+              />
               <Button variant="outline" className="gap-2 h-9" onClick={exportClientsCSV}>
                 <Download size={14} /> Exportar
               </Button>
@@ -828,106 +794,11 @@ export default function ClientsPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 {/* ── Filtros ── */}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="gap-2">
-                    <Filter size={13} />
-                    Filtrar
-                    {activeFilterCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{activeFilterCount}</span>}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-52">
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2"><ArrowUpDown size={13} />Por fecha</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem onClick={() => setSortDate("desc")} className="gap-2">
-                          <ArrowDown size={13} /> Más recientes {sortDate === "desc" && "✓"}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setSortDate("asc")} className="gap-2">
-                          <ArrowUp size={13} /> Más antiguos {sortDate === "asc" && "✓"}
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuItem onClick={() => setFilterHasAddress(!filterHasAddress)} className="gap-2">
-                      <MapPin size={13} /> Con dirección {filterHasAddress && "✓"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilterWithBalance(!filterWithBalance)} className="gap-2">
-                      <DollarSign size={13} /> Con saldo pendiente {filterWithBalance && "✓"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "any" ? null : "any")} className="gap-2">
-                      <Store size={13} /> Subclientes de revendedor {filterReseller === "any" && "✓"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilterReseller(filterReseller === "none" ? null : "none")} className="gap-2">
-                      <User size={13} /> Clientes directos {filterReseller === "none" && "✓"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2"><MapPin size={13} />Por provincia {filterState && `(${filterState.split(" ")[0]})`}</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
-                        {allStates.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin provincias registradas</DropdownMenuItem>}
-                        {allStates.map((prov) => (
-                          <DropdownMenuItem key={prov} onClick={() => { setFilterState(filterState === prov ? null : prov); setFilterCity(null); }} className="gap-2">
-                            {prov} {filterState === prov && "✓"}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2"><Filter size={13} />Por rubro</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {Object.entries(sectorLabel).map(([val, label]) => (
-                          <DropdownMenuItem key={val} onClick={() => setFilterSector(filterSector === val ? null : val)} className="gap-2">
-                            {label} {filterSector === val && "✓"}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2"><Tag size={13} />Por etiqueta</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {allTags.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin etiquetas</DropdownMenuItem>}
-                        {allTags.map((tag) => (
-                          <DropdownMenuItem key={tag.id} onClick={() => setFilterTagId(filterTagId === tag.id ? null : tag.id)} className="gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                            {tag.name} {filterTagId === tag.id && "✓"}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => setTagManagerOpen(true)} className="gap-2 text-xs">
-                          <Plus size={12} /> Gestionar etiquetas
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2"><MapPin size={13} />Por provincia</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {allStates.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin provincias registradas</DropdownMenuItem>}
-                        {allStates.map((state) => (
-                          <DropdownMenuItem key={state} onClick={() => { setFilterState(filterState === state ? null : state); setFilterCity(null); }} className="gap-2">
-                            {state} {filterState === state && "✓"}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!filterState}>
-                        <MapPin size={13} />Por ciudad
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {!filterState && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Selecciona una provincia primero</DropdownMenuItem>}
-                        {filterState && allCities.length === 0 && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Sin ciudades en esta provincia</DropdownMenuItem>}
-                        {filterState && allCities.map((city) => (
-                          <DropdownMenuItem key={city} onClick={() => setFilterCity(filterCity === city ? null : city)} className="gap-2">
-                            {city} {filterCity === city && "✓"}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    {activeFilterCount > 0 && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={clearFilters} className="text-destructive gap-2">Limpiar filtros</DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                <DropdownMenuItem className="gap-2" onClick={() => setFilterSheetOpen(true)}>
+                  <Filter size={13} />
+                  Filtrar
+                  {activeFilterCount > 0 && <span className="ml-auto text-xs text-muted-foreground">{activeFilterCount} aplicados</span>}
+                </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 
@@ -936,7 +807,7 @@ export default function ClientsPage() {
                   <Send size={13} /> Campaña de Mail
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setMyClients(!myClients)} className="gap-2">
-                  <User size={13} /> Mis clientes {myClients && "✓"}
+                  <User size={13} /> Solo mis clientes {myClients && "✓"}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={exportClientsCSV} className="gap-2">
                   <Download size={13} /> Exportar Clientes (CSV)
@@ -985,13 +856,33 @@ export default function ClientsPage() {
             </Alert>
           ) : (
             <>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+                {totalClients.toLocaleString("es-AR")} {totalClients === 1 ? "cliente" : "clientes"}
+              </span>
+              <button
+                onClick={() => setSortDate(sortDate === null ? "desc" : sortDate === "desc" ? "asc" : null)}
+                title="Ordenar por fecha de alta"
+                className={cn(
+                  "ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors cursor-pointer",
+                  sortDate !== null
+                    ? "bg-secondary text-secondary-foreground border-border"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                )}
+              >
+                {sortDate === "desc" ? <ArrowDown size={13} /> : sortDate === "asc" ? <ArrowUp size={13} /> : <ArrowUpDown size={13} />}
+                {sortDate === "desc" ? "Más nuevos" : sortDate === "asc" ? "Más viejos" : "Fecha"}
+              </button>
+            </div>
+            <ActiveFilterChips chips={filterChips} onClearAll={clearFilters} className="mb-3" />
             {/* ── Vista móvil ── */}
             <div className="md:hidden space-y-2">
               {visibleClients.length === 0 && (
                 <p className="text-center text-muted-foreground py-8 text-sm">No se encontraron clientes</p>
               )}
               {visibleClients.map((client) => {
-                const waNum = client.whatsapp ? normalizeWhatsApp(client.whatsapp) : null;
+                const waRaw = contactWhatsappRaw(client);
+                const waNum = waRaw ? normalizeWhatsApp(waRaw) : null;
                 return (
                   <div key={client.id} className="flex items-start gap-3 rounded-lg border px-3 py-2.5">
                     <div className="flex-1 min-w-0 space-y-1">
@@ -1024,7 +915,7 @@ export default function ClientsPage() {
                           <a href={`tel:${client.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{client.phone}</a>
                         )}
                         {waNum && (
-                          <WhatsAppTrigger number={client.whatsapp!} name={client.company || `${client.firstName} ${client.lastName}`.trim()} className="text-[#25d366]" title="WhatsApp">
+                          <WhatsAppTrigger number={waRaw!} name={client.company || `${client.firstName} ${client.lastName}`.trim()} className="text-[#25d366]" title="WhatsApp">
                             <WhatsAppIcon size={14} />
                           </WhatsAppTrigger>
                         )}
@@ -1069,7 +960,8 @@ export default function ClientsPage() {
                 </TableHeader>
                 <TableBody>
                   {visibleClients.map((client) => {
-                    const waNum = client.whatsapp ? normalizeWhatsApp(client.whatsapp) : null;
+                    const waRaw = contactWhatsappRaw(client);
+                const waNum = waRaw ? normalizeWhatsApp(waRaw) : null;
                     return (
                       <TableRow key={client.id}>
                         <TableCell className="p-1 w-9">
@@ -1188,13 +1080,13 @@ export default function ClientsPage() {
                         <TableCell>
                           {waNum ? (
                             <WhatsAppTrigger
-                              number={client.whatsapp!}
+                              number={waRaw!}
                               name={client.company || `${client.firstName} ${client.lastName}`.trim()}
                               className="inline-flex items-center gap-1.5 text-sm text-[#25d366] hover:text-[#25d366]/80 transition-colors whitespace-nowrap"
                               title="WhatsApp"
                             >
                               <WhatsAppIcon size={13} />
-                              <span>{client.whatsapp}</span>
+                              <span>{waRaw}</span>
                             </WhatsAppTrigger>
                           ) : "-"}
                         </TableCell>
@@ -1289,6 +1181,133 @@ export default function ClientsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Filtros ── */}
+      <FilterSheet
+        open={filterSheetOpen}
+        onOpenChange={setFilterSheetOpen}
+        activeCount={activeFilterCount}
+        resultCount={loading ? null : totalClients}
+        resultNoun={totalClients === 1 ? "cliente" : "clientes"}
+        onClear={clearFilters}
+      >
+        <FilterSection title="Origen" onClear={filterReseller ? () => setFilterReseller(null) : undefined}>
+          <Segmented
+            ariaLabel="Origen del cliente"
+            className="w-full"
+            value={filterReseller ?? "all"}
+            onChange={(v) => setFilterReseller(v === "all" ? null : v)}
+            options={[
+              { value: "all", label: "Todos" },
+              { value: "none", label: "Directos" },
+              { value: "any", label: "De revendedor" },
+            ]}
+          />
+        </FilterSection>
+
+        <div className="space-y-2">
+          <SwitchRow
+            label="Con saldo pendiente"
+            icon={<DollarSign size={13} className="text-muted-foreground" />}
+            checked={filterWithBalance}
+            onChange={setFilterWithBalance}
+          />
+          <SwitchRow
+            label="Con dirección"
+            icon={<MapPin size={13} className="text-muted-foreground" />}
+            checked={filterHasAddress}
+            onChange={setFilterHasAddress}
+          />
+        </div>
+
+        <FilterSection title="Rubro" onClear={filterSector ? () => setFilterSector(null) : undefined}>
+          <Select value={filterSector ?? ""} onValueChange={(v) => setFilterSector(v === "" ? null : v)}>
+            <SelectTrigger><SelectValue placeholder="Todos los rubros" /></SelectTrigger>
+            <SelectContent>
+              {Object.entries(sectorLabel).map(([val, label]) => (
+                <SelectItem key={val} value={val}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterSection>
+
+        <FilterSection title="Etiqueta" onClear={filterTagId ? () => setFilterTagId(null) : undefined}>
+          {allTags.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sin etiquetas creadas</p>
+          ) : (
+            <Select value={filterTagId ?? ""} onValueChange={(v) => setFilterTagId(v === "" ? null : v)}>
+              <SelectTrigger><SelectValue placeholder="Todas las etiquetas" /></SelectTrigger>
+              <SelectContent>
+                {allTags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    <span className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 inline-block" style={{ backgroundColor: tag.color }} />
+                      {tag.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <button
+            onClick={() => { setTagManagerOpen(true); setFilterSheetOpen(false); }}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Plus size={12} /> Gestionar etiquetas
+          </button>
+        </FilterSection>
+
+        <FilterSection
+          title="Plantilla de WhatsApp"
+          onClear={filterWaTemplate ? () => { setFilterWaTemplate(null); setFilterWaTemplateMode("sent"); } : undefined}
+        >
+          {allWaTemplates.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Todavía no se mandó ninguna plantilla</p>
+          ) : (
+            <>
+              <Select value={filterWaTemplate ?? ""} onValueChange={(v) => setFilterWaTemplate(v === "" ? null : v)}>
+                <SelectTrigger><SelectValue placeholder="Cualquiera" /></SelectTrigger>
+                <SelectContent>
+                  {allWaTemplates.map((name) => (
+                    <SelectItem key={name} value={name}><span className="font-mono text-xs">{name}</span></SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filterWaTemplate && (
+                <Segmented
+                  ariaLabel="La recibieron o no"
+                  className="w-full"
+                  value={filterWaTemplateMode}
+                  onChange={setFilterWaTemplateMode}
+                  options={[{ value: "sent", label: "La recibieron" }, { value: "not_sent", label: "No la recibieron" }]}
+                />
+              )}
+            </>
+          )}
+        </FilterSection>
+
+        <FilterSection title="Provincia" onClear={filterState ? () => { setFilterState(null); setFilterCity(null); } : undefined}>
+          <OptionList
+            options={allStates}
+            value={filterState}
+            onChange={(v) => { setFilterState(v); setFilterCity(null); }}
+            searchPlaceholder="Buscar provincia"
+            emptyText="Sin provincias registradas"
+          />
+        </FilterSection>
+
+        {filterState && (
+          <FilterSection title="Ciudad" onClear={filterCity ? () => setFilterCity(null) : undefined}>
+            <OptionList
+              options={allCities}
+              value={filterCity}
+              onChange={setFilterCity}
+              searchPlaceholder="Buscar ciudad"
+              emptyText="Sin ciudades en esta provincia"
+            />
+          </FilterSection>
+        )}
+      </FilterSheet>
     </div>
   );
 }

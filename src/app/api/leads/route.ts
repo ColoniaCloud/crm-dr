@@ -34,6 +34,7 @@ export async function GET(request: Request) {
         { company: { contains: search } },
         { email: { contains: search } },
         { phone: { contains: search } },
+        { whatsapp: { contains: search } },
       ];
     }
     if (city) where.city = { contains: city };
