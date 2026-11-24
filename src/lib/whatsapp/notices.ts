@@ -35,6 +35,12 @@ const TEMPLATE_BOOKING = process.env.WHATSAPP_TEMPLATE_BOOKING || "kristall_pedi
 const TEMPLATE_BOOKING_BUTTONS =
   process.env.WHATSAPP_TEMPLATE_BOOKING_BUTTONS || "kristall_pedido_turno_botones";
 const TEMPLATE_DATA_REQUEST = process.env.WHATSAPP_TEMPLATE_DATA_REQUEST || "kristall_pedir_datos";
+/** Al cliente: el taller confirmó su turno. Botón URL "Cómo llegar" (Google Maps). */
+const TEMPLATE_BOOKING_CONFIRMED =
+  process.env.WHATSAPP_TEMPLATE_BOOKING_CONFIRMED || "kristall_turno_confirmado";
+/** Al cliente: el taller no pudo tomar su turno. Botón URL "Pedir otro turno". */
+const TEMPLATE_BOOKING_REJECTED =
+  process.env.WHATSAPP_TEMPLATE_BOOKING_REJECTED || "kristall_turno_rechazado";
 
 // ─── Avisos ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +86,55 @@ export async function sendBookingNotice(args: {
 }
 
 /**
+ * Al cliente final: el taller confirmó su turno.
+ *
+ * Variables: {{1}} nombre de pila · {{2}} taller · {{3}} servicio · {{4}} cuándo ·
+ * {{5}} dirección del taller. Botón 0 (URL): lo que va detrás de
+ * `https://www.google.com/maps/dir/?api=1&destination=` — "lat,lng" o la
+ * dirección, ya codificada para URL.
+ */
+export function sendBookingConfirmedToClient(args: {
+  to: string;
+  nombre: string;
+  taller: string;
+  serviceName: string;
+  cuando: string;
+  direccion: string;
+  mapsDestination: string;
+}): Promise<boolean> {
+  return sendTemplateNotice({
+    to: args.to,
+    templateName: TEMPLATE_BOOKING_CONFIRMED,
+    variables: [args.nombre, args.taller, args.serviceName, args.cuando, args.direccion],
+    urlButtonSuffix: args.mapsDestination,
+  });
+}
+
+/**
+ * Al cliente final: el taller no pudo tomar su turno.
+ *
+ * Variables: {{1}} nombre de pila · {{2}} taller · {{3}} servicio · {{4}} cuándo ·
+ * {{5}} teléfono del taller. Botón 0 (URL): el handle de la página del taller,
+ * detrás de `https://polariz.ar/`, para pedir otro horario.
+ */
+export function sendBookingRejectedToClient(args: {
+  to: string;
+  nombre: string;
+  taller: string;
+  serviceName: string;
+  cuando: string;
+  telefonoTaller: string;
+  handle: string;
+}): Promise<boolean> {
+  return sendTemplateNotice({
+    to: args.to,
+    templateName: TEMPLATE_BOOKING_REJECTED,
+    variables: [args.nombre, args.taller, args.serviceName, args.cuando, args.telefonoTaller],
+    urlButtonSuffix: args.handle,
+  });
+}
+
+/**
  * Al cliente sin email: el link personal para que lo cargue.
  *
  * Variables: {{1}} nombre de pila · {{2}} link personal.
@@ -118,6 +173,8 @@ async function sendTemplateNotice(args: {
    * registro: es una llave.
    */
   quickReplyPayloads?: string[];
+  /** Lo que completa el `{{1}}` del final del botón URL (índice 0) de la plantilla. */
+  urlButtonSuffix?: string;
   contactId?: string | null;
   sentById?: string | null;
 }): Promise<boolean> {
@@ -147,6 +204,16 @@ async function sendTemplateNotice(args: {
         parameters: [{ type: "payload", payload }],
       })
     ),
+    ...(args.urlButtonSuffix
+      ? [
+          {
+            type: "button",
+            sub_type: "url",
+            index: "0",
+            parameters: [{ type: "text", text: args.urlButtonSuffix }],
+          } as WhatsAppTemplateComponent,
+        ]
+      : []),
   ];
 
   let response: WhatsAppSendResponse;

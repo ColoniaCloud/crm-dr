@@ -86,7 +86,7 @@ export async function handleBookingButton(
         void avisarRespuestaAlCliente(booking.id, true);
         await reply(
           `✅ Turno confirmado y agendado en Mi Taller.\n\n${resumen}` +
-            (booking.clientEmail ? "\n\nLe avisamos al cliente por mail." : "\n\nEl cliente no dejó mail: avisale vos.") +
+            "\n\nLe avisamos al cliente que su turno fue confirmado." +
             `\n\nSi necesitás cambiar la hora, hacelo desde tu panel: ${linkBandeja()}`
         );
         return true;
@@ -113,10 +113,7 @@ export async function handleBookingButton(
           return true;
         }
         void avisarRespuestaAlCliente(booking.id, false);
-        await reply(
-          `Pedido rechazado.\n\n${resumen}` +
-            (booking.clientEmail ? "\n\nLe avisamos al cliente por mail." : "")
-        );
+        await reply(`Pedido rechazado.\n\n${resumen}\n\nLe avisamos al cliente que su turno fue rechazado.`);
         return true;
       }
 

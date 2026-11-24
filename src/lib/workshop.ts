@@ -4,6 +4,7 @@ import type { BuildingUse, Prisma, ServiceCategory, WorkOrderStatus } from "@pri
 import { columnasObra, type DatosObra } from "@/lib/obra";
 import { saldosDeRollos } from "@/lib/rollo-m2";
 import { createLogger } from "@/lib/logger";
+import { countryFromName, isPlausibleWhatsappNumber, normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import { workshopLogoPath } from "@/lib/workshop-logo";
 import { workshopHeroPath } from "@/lib/workshop-hero";
 import { workshopTeamPath } from "@/lib/workshop-team";
@@ -1543,11 +1544,19 @@ export async function createBooking(
 > {
   const taller = await prisma.workshopSettings.findUnique({
     where: { handle },
-    select: { contactId: true, publicPageEnabled: true },
+    select: { contactId: true, publicPageEnabled: true, contact: { select: { installerCountry: true } } },
   });
   // Un taller que no publicó su página es indistinguible de uno que no existe.
   if (!taller || !taller.publicPageEnabled) {
     return { ok: false, error: "Taller no encontrado", status: 404 };
+  }
+
+  // El WhatsApp del cliente se guarda normalizado (+ código de país): con él le
+  // avisamos si el taller confirma o rechaza. Un número sin código se toma como
+  // local del país del taller, que es de donde es casi todo el que pide turno.
+  const telefono = normalizeWhatsappNumber(datos.clientPhone, countryFromName(taller.contact.installerCountry));
+  if (!isPlausibleWhatsappNumber(telefono)) {
+    return { ok: false, error: "Revisá el número de WhatsApp", status: 400 };
   }
 
   // El servicio se busca ACOTADO al taller: un serviceId de otro taller no
@@ -1595,7 +1604,7 @@ export async function createBooking(
       durationMinutes: servicio?.durationMinutes ?? 60,
       clientName: datos.clientName.trim(),
       clientEmail: datos.clientEmail?.trim() || null,
-      clientPhone: datos.clientPhone.trim(),
+      clientPhone: `+${telefono}`,
       category,
       // Cada rubro guarda lo suyo y **borra lo del otro**. Un pedido de
       // arquitectura con una patente colgada de un intento anterior seria una

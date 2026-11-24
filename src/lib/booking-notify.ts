@@ -7,7 +7,12 @@ import {
 } from "@/lib/property-types";
 import { escapeHtml } from "@/lib/notifications";
 import { transporter, isSmtpConfigured, FROM } from "@/lib/mailer";
-import { sendBookingNotice } from "@/lib/whatsapp/notices";
+import {
+  sendBookingConfirmedToClient,
+  sendBookingNotice,
+  sendBookingRejectedToClient,
+} from "@/lib/whatsapp/notices";
+import { countryFromName, isPlausibleWhatsappNumber, normalizeWhatsappNumber } from "@/lib/whatsapp/phone";
 import { bookingButtonPayloads, installerWhatsapp } from "@/lib/whatsapp/booking-buttons";
 import { isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { BRAND } from "@/lib/brand";
@@ -252,24 +257,99 @@ export async function avisarRespuestaAlCliente(
       where: { id: bookingId },
       select: {
         serviceName: true,
+        clientName: true,
         clientEmail: true,
+        clientPhone: true,
+        category: true,
         preferredAt: true,
         workOrder: { select: { scheduledAt: true } },
         contact: {
           select: {
             phone: true,
-            workshopSettings: { select: { workshopName: true, publicPhone: true, publicAddress: true } },
+            whatsapp: true,
+            installerCountry: true,
+            workshopSettings: {
+              select: {
+                workshopName: true,
+                handle: true,
+                publicPhone: true,
+                publicAddress: true,
+                publicLat: true,
+                publicLng: true,
+              },
+            },
           },
         },
       },
     });
-    if (!b?.clientEmail || !isSmtpConfigured()) return;
+    if (!b) return;
 
     const s = b.contact.workshopSettings;
     const taller = s?.workshopName ?? "El taller";
     // La fecha que vale es la de la orden: el taller pudo correrla al confirmar.
     const cuando = fechaLarga(b.workOrder?.scheduledAt ?? b.preferredAt);
     const telefono = s?.publicPhone ?? b.contact.phone;
+
+    // ── whatsapp ──────────────────────────────────────────────────────────
+    // En paralelo con el mail y cayéndose solo, como en el aviso al instalador.
+    const whatsapp = (async () => {
+      try {
+        const pais = countryFromName(b.contact.installerCountry);
+        const to = normalizeWhatsappNumber(b.clientPhone, pais);
+        if (!isPlausibleWhatsappNumber(to)) {
+          log.warn({ bookingId }, "El WhatsApp del cliente no es válido: no se le avisa la respuesta por WhatsApp");
+          return;
+        }
+        const nombre = b.clientName.trim().split(/\s+/)[0] || b.clientName;
+        const tallerWa = s?.workshopName ?? "el taller";
+
+        if (confirmado) {
+          // Una visita de arquitectura la hace el taller en el inmueble del
+          // cliente: "cómo llegar al taller" no aplica. Esos quedan con el mail.
+          if (b.category === "ARCHITECTURAL") return;
+          const destino =
+            s?.publicLat != null && s?.publicLng != null
+              ? `${Number(s.publicLat)},${Number(s.publicLng)}`
+              : s?.publicAddress?.trim();
+          if (!destino) {
+            log.warn({ bookingId }, "El taller no tiene dirección ni ubicación: no se manda el WhatsApp de turno confirmado");
+            return;
+          }
+          await sendBookingConfirmedToClient({
+            to,
+            nombre,
+            taller: tallerWa,
+            serviceName: b.serviceName,
+            cuando,
+            direccion: s?.publicAddress?.trim() || "la que te marca el botón",
+            mapsDestination: encodeURIComponent(destino),
+          });
+        } else {
+          const tel = s?.publicPhone?.trim() || installerWhatsapp(b.contact);
+          if (!s?.handle || !tel) {
+            log.warn({ bookingId }, "El taller no tiene página o teléfono: no se manda el WhatsApp de turno rechazado");
+            return;
+          }
+          const telNorm = normalizeWhatsappNumber(tel, pais);
+          await sendBookingRejectedToClient({
+            to,
+            nombre,
+            taller: tallerWa,
+            serviceName: b.serviceName,
+            cuando,
+            telefonoTaller: telNorm ? `+${telNorm}` : tel,
+            handle: s.handle,
+          });
+        }
+      } catch (err) {
+        log.error({ err, bookingId }, "No se pudo avisar la respuesta al cliente por WhatsApp");
+      }
+    })();
+
+    if (!b.clientEmail || !isSmtpConfigured()) {
+      await whatsapp;
+      return;
+    }
 
     await transporter.sendMail({
       from: FROM(),
@@ -302,6 +382,7 @@ export async function avisarRespuestaAlCliente(
   </p>
 </div>`,
     });
+    await whatsapp;
   } catch (err) {
     log.error({ err, bookingId }, "No se pudo avisar la respuesta al cliente");
   }
