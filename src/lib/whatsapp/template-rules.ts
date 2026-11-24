@@ -25,8 +25,8 @@ export type TemplateRow = {
   rejectedReason?: string;
   /** Los botones, tal como los tiene Meta (pueden ser de un tipo que el CRM no crea). */
   buttons?: TemplateButtonView[];
-  /** La manda el CRM solo (avisos automáticos): no se ofrece para borrar. */
-  system?: boolean;
+  /** La manda el CRM solo: qué deja de funcionar si se borra. */
+  systemUse?: string;
 };
 
 /** Un botón de una plantilla que ya existe en Meta, para mostrarlo. */

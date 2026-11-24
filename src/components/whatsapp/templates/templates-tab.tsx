@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -151,23 +152,21 @@ export function TemplatesTab({ line, lineLabel }: { line?: string; lineLabel?: s
               <Badge variant="outline" className={cn("ml-auto shrink-0", STATE[t.state].className)}>
                 {STATE[t.state].label}
               </Badge>
-              {!t.system && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => setDeleting(t)}
-                  title="Borrar plantilla"
-                  aria-label={`Borrar la plantilla ${t.name} (${t.language})`}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setDeleting(t)}
+                title="Borrar plantilla"
+                aria-label={`Borrar la plantilla ${t.name} (${t.language})`}
+              >
+                <Trash2 className="size-4" />
+              </Button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {t.language} · {CATEGORY[t.category] ?? t.category}
               {t.status !== "APPROVED" && t.status !== "PENDING" && t.state !== "rejected" ? ` · ${t.status}` : ""}
-              {t.system ? " · La usan los avisos automáticos" : ""}
+              {t.systemUse ? " · La usan los avisos automáticos" : ""}
             </p>
             <div className="mt-3 whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm">
               {t.header && <p className="mb-1 font-semibold">{t.header}</p>}
@@ -230,15 +229,25 @@ function DeleteTemplateDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Las de avisos automáticos piden escribir el nombre: borrarlas corta un envío del CRM.
+  const [typed, setTyped] = useState("");
+  const system = Boolean(template.systemUse);
+  const canConfirm = !system || typed.trim() === template.name;
 
   async function confirm() {
+    if (!canConfirm) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(withLine("/api/whatsapp/templates", line), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: template.name, language: template.language, ...(template.id ? { id: template.id } : {}) }),
+        body: JSON.stringify({
+          name: template.name,
+          language: template.language,
+          ...(template.id ? { id: template.id } : {}),
+          ...(system ? { confirmSystem: true } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "No se pudo borrar la plantilla");
@@ -260,12 +269,33 @@ function DeleteTemplateDialog({
             durante 30 días. Los envíos que ya se hicieron siguen en el historial de cada ficha.
           </DialogDescription>
         </DialogHeader>
+        {system && (
+          <div className="space-y-2">
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              El CRM la usa para {template.systemUse}. Si la borrás, eso deja de salir sin aviso hasta que se cree
+              otra y se configure en el sistema.
+            </p>
+            <label className="block space-y-1 text-sm">
+              <span className="text-muted-foreground">
+                Para confirmar, escribí <span className="font-mono text-foreground">{template.name}</span>
+              </span>
+              <Input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void confirm(); }}
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono"
+              />
+            </label>
+          </div>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
+          <Button variant="destructive" onClick={() => void confirm()} disabled={busy || !canConfirm}>
             {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
             Borrar plantilla
           </Button>

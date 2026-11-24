@@ -8,7 +8,7 @@ import { WhatsAppApiError, isCloudApiConfigured } from "@/lib/whatsapp/client";
 import { requireWhatsAppLine } from "@/lib/whatsapp/line-access";
 import { templatesAccountOf } from "@/lib/whatsapp/lines";
 import { newTemplateSchema } from "@/lib/whatsapp/template-schema";
-import { systemTemplateNames } from "@/lib/whatsapp/notices";
+import { systemTemplateUses } from "@/lib/whatsapp/notices";
 import { getAllTemplates, getApprovedTemplates, removeTemplate, submitNewTemplate } from "@/lib/whatsapp/templates";
 
 const log = createLogger("api/whatsapp/templates");
@@ -34,8 +34,8 @@ export async function GET(request: Request) {
     const force = params.get("refresh") === "1";
     const account = templatesAccountOf(gate.line);
     if (params.get("all") === "1") {
-      const system = new Set(systemTemplateNames());
-      const rows = (await getAllTemplates(force, account)).map((t) => (system.has(t.name) ? { ...t, system: true } : t));
+      const uses = systemTemplateUses();
+      const rows = (await getAllTemplates(force, account)).map((t) => (uses[t.name] ? { ...t, systemUse: uses[t.name] } : t));
       return NextResponse.json({ templates: rows, configured: true });
     }
     return NextResponse.json({ templates: await getApprovedTemplates(force, account), configured: true });
@@ -91,11 +91,14 @@ const deleteSchema = z.object({
   /** El id de Meta de ese idioma; sin él se borra el nombre en todos los idiomas. */
   id: z.string().regex(/^\d+$/).max(40).optional(),
   language: z.string().max(16).optional(),
+  /** Hace falta para borrar una de los avisos automáticos: quien borra ya vio la advertencia. */
+  confirmSystem: z.boolean().optional(),
 });
 
 /**
  * Borra una plantilla de la cuenta de la línea. Solo ADMIN en adelante (el guardia
- * de WhatsApp), nunca en la demostración, y nunca una de las que el CRM manda solo.
+ * de WhatsApp) y nunca en la demostración. Las que el CRM manda solo piden
+ * `confirmSystem`: la pantalla lo manda después de advertir qué deja de funcionar.
  * Al borrarla deja de aparecer también en los filtros de Leads y Clientes.
  */
 export async function DELETE(request: Request) {
@@ -106,11 +109,12 @@ export async function DELETE(request: Request) {
 
   const validation = validateBody(deleteSchema, await request.json().catch(() => null));
   if (!validation.success) return validation.response;
-  const { name, id, language } = validation.data;
+  const { name, id, language, confirmSystem } = validation.data;
 
-  if (systemTemplateNames().includes(name)) {
+  const systemUse = systemTemplateUses()[name];
+  if (systemUse && !confirmSystem) {
     return NextResponse.json(
-      { error: "Esta plantilla la usa el CRM para sus avisos automáticos: si se borra, esos avisos dejan de salir." },
+      { error: `Esta plantilla la usa el CRM para ${systemUse}: si se borra, eso deja de salir.` },
       { status: 409 }
     );
   }
@@ -127,7 +131,7 @@ export async function DELETE(request: Request) {
       action: "WHATSAPP_TEMPLATE_DELETED",
       entityType: "WhatsAppTemplate",
       entityId: id ?? name,
-      description: `Borró la plantilla ${name}${language ? ` (${language})` : ""} en ${gate.line.label}`,
+      description: `Borró la plantilla ${name}${language ? ` (${language})` : ""} en ${gate.line.label}${systemUse ? ` (la usaba ${systemUse})` : ""}`,
     }).catch((err) => log.error({ err }, "No se pudo auditar el borrado de la plantilla"));
 
     return NextResponse.json({ ok: true });

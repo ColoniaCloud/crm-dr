@@ -263,18 +263,19 @@ async function sendTemplateNotice(args: {
 }
 
 /**
- * Las plantillas que el CRM manda solo (avisos de turnos, pedir datos, invitación
- * a distribuidores, campaña de Perú). Borrarlas desde la gestión de plantillas
- * dejaría esos envíos fallando en silencio, así que no se ofrecen para borrar.
+ * Las plantillas que el CRM manda solo, con lo que deja de funcionar si se borran.
+ * Se pueden borrar igual, pero la gestión lo advierte y pide escribir el nombre:
+ * borrarlas deja esos envíos fallando sin que nadie se entere.
  */
-export function systemTemplateNames(): string[] {
-  return [
-    TEMPLATE_BOOKING,
-    TEMPLATE_BOOKING_BUTTONS,
-    TEMPLATE_DATA_REQUEST,
-    TEMPLATE_BOOKING_CONFIRMED,
-    TEMPLATE_BOOKING_REJECTED,
-    process.env.WHATSAPP_TEMPLATE_DISTRIBUTOR || "kristall_propuesta_distribuidor",
-    PERU_OUTREACH_TEMPLATE,
-  ];
+export function systemTemplateUses(): Record<string, string> {
+  return {
+    [TEMPLATE_BOOKING]: "el aviso de pedido de turno al instalador (es la versión sin botones, la de respaldo)",
+    [TEMPLATE_BOOKING_BUTTONS]: "el aviso de pedido de turno al instalador con los botones Confirmar / Rechazar",
+    [TEMPLATE_DATA_REQUEST]: "«Pedir datos»: el link para que el cliente cargue su email",
+    [TEMPLATE_BOOKING_CONFIRMED]: "el aviso al cliente de que el taller confirmó su turno",
+    [TEMPLATE_BOOKING_REJECTED]: "el aviso al cliente de que el taller rechazó su turno",
+    [process.env.WHATSAPP_TEMPLATE_DISTRIBUTOR || "kristall_propuesta_distribuidor"]:
+      "la invitación al Programa Distribuidor (/distribuidores-peru)",
+    [PERU_OUTREACH_TEMPLATE]: "el envío masivo desde Contactos Perú",
+  };
 }
