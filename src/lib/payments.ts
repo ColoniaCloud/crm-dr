@@ -144,19 +144,17 @@ export async function registerPaymentTx(
 
   await lockSale(tx, saleId);
 
-  // La clave se mira DESPUÉS del bloqueo: dos reintentos simultáneos con la
-  // misma clave esperan en fila, y el segundo encuentra el pago del primero.
+  // La clave se mira DESPUÉS del bloqueo: dos reintentos simultáneos sobre la
+  // misma venta esperan en fila, y el segundo encuentra el pago del primero.
+  // Es eso —el bloqueo de la venta— lo que garantiza que no haya duplicados, no
+  // un índice único: agregar uno sobre una tabla con filas hace que
+  // `prisma db push` pida --accept-data-loss y el deploy del VPS lo rechace.
   if (input.clientRequestId) {
-    const previo = await tx.payment.findUnique({
-      where: { clientRequestId: input.clientRequestId },
-      select: { id: true, saleId: true },
+    const previo = await tx.payment.findFirst({
+      where: { clientRequestId: input.clientRequestId, saleId },
+      select: { id: true },
     });
-    if (previo) {
-      if (previo.saleId !== saleId) {
-        return { ok: false, status: 409, error: "La clave del pago ya se usó en otra venta." };
-      }
-      return { ok: true, paymentId: previo.id, duplicate: true };
-    }
+    if (previo) return { ok: true, paymentId: previo.id, duplicate: true };
   }
 
   const sale = await tx.sale.findUnique({
@@ -217,26 +215,7 @@ export async function registerPaymentTx(
 
 /** Registra un pago en su propia transacción. Ver `registerPaymentTx`. */
 export async function registerPayment(input: RegisterPaymentInput): Promise<RegisterPaymentResult> {
-  try {
-    return await prisma.$transaction((tx) => registerPaymentTx(tx, input));
-  } catch (error) {
-    // Red de seguridad del índice único: si igual se coló un duplicado de la
-    // clave, el pago ya existe y el reintento tiene que verlo como hecho.
-    if (
-      input.clientRequestId &&
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      const previo = await prisma.payment.findUnique({
-        where: { clientRequestId: input.clientRequestId },
-        select: { id: true, saleId: true },
-      });
-      if (previo && previo.saleId === input.saleId) {
-        return { ok: true, paymentId: previo.id, duplicate: true };
-      }
-    }
-    throw error;
-  }
+  return prisma.$transaction((tx) => registerPaymentTx(tx, input));
 }
 
 /** Registra el alta en el historial de pagos de la venta (antes solo se veían ediciones y borrados). */

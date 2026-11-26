@@ -896,7 +896,11 @@ model Payment {
   /// no lo duplique: en la ruta, sin señal, el pago llega al CRM, la respuesta
   /// se pierde y el vendedor vuelve a tocar "Registrar". Con la misma clave el
   /// segundo intento devuelve el pago ya creado en vez de crear otro.
-  clientRequestId String? @unique @db.VarChar(64)
+  ///
+  /// Índice común y NO @unique a propósito: un @unique nuevo sobre una tabla con
+  /// filas hace que `prisma db push` pida --accept-data-loss, y el deploy del VPS
+  /// lo rechaza. La unicidad la da el bloqueo de la venta (src/lib/payments.ts).
+  clientRequestId String? @db.VarChar(64)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -910,6 +914,7 @@ model Payment {
   // el CRM o desde la app móvil no tiene una acá.
   declaration PaymentDeclaration?
 
+  @@index([clientRequestId])
   @@map("payments")
 }
 
