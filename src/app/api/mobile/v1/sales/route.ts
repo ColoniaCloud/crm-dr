@@ -11,6 +11,7 @@ import { notifyNewPurchase } from "@/lib/client-portal";
 import { resolveSaleDiscount } from "@/lib/discount-tags";
 import { validateBody } from "@/lib/api-validation";
 import { serializeSaleDetail } from "@/lib/mobile-sale";
+import { computeSaleRemaining, sumCreditedReturns } from "@/lib/account-calc";
 import { createLogger } from "@/lib/logger";
 import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
         contact: { select: { id: true, firstName: true, lastName: true, company: true } },
         items: { select: { id: true, quantity: true } },
         payments: { select: { amount: true } },
+        returns: { select: { total: true, refund: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -75,7 +77,11 @@ export async function GET(request: Request) {
           sale.contact.company || `${sale.contact.firstName} ${sale.contact.lastName}`.trim(),
         total: Number(sale.total),
         totalPaid,
-        remaining: Number(sale.total) - totalPaid,
+        remaining: computeSaleRemaining({
+          total: Number(sale.total),
+          paid: totalPaid,
+          creditedReturns: sumCreditedReturns(sale.returns),
+        }),
         status: sale.status,
         itemsCount: sale.items.length,
         createdAt: sale.createdAt.toISOString(),
@@ -268,6 +274,7 @@ export async function POST(request: Request) {
         items: { include: { product: { select: { id: true, name: true, sku: true } } } },
         remito: { select: REMITO_SUMMARY_SELECT },
         payments: true,
+        returns: { select: { total: true, refund: true } },
       },
     });
 

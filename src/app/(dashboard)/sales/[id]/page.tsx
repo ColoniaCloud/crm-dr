@@ -19,6 +19,7 @@ import PaymentPlanCard from "@/components/sales/payment-plan-card";
 import SaleReturnsCard from "@/components/sales/sale-returns-card";
 import { saleProgress, SALE_PROGRESS_LABEL, SALE_PROGRESS_BADGE_CLASS } from "@/lib/sale-progress";
 import { takeSaleFlash } from "@/lib/sale-flash";
+import { computeSaleRemaining, sumCreditedReturns } from "@/lib/account-calc";
 import {
   ChevronLeft, Trash2, AlertTriangle, User, Package,
   CreditCard, FileCheck, Receipt, Pencil, History, ShieldAlert, DollarSign, Plus,
@@ -100,6 +101,8 @@ interface SaleDetail {
   createdAt: string;
   items: SaleItem[];
   payments: Payment[];
+  /** Las devoluciones a crédito bajan el saldo (ver computeSaleRemaining). */
+  returns?: { total: string; refund: string }[];
   remito: Remito | null;
 }
 
@@ -468,7 +471,11 @@ export default function SaleDetailPage() {
   const contactName = sale.contact.company || `${sale.contact.firstName} ${sale.contact.lastName}`.trim();
   const totalPaid = sale.payments.reduce((s, p) => s + parseFloat(p.amount), 0);
   const totalNum = parseFloat(sale.total);
-  const remaining = totalNum - totalPaid;
+  const remaining = computeSaleRemaining({
+    total: totalNum,
+    paid: totalPaid,
+    creditedReturns: sumCreditedReturns(sale.returns ?? []),
+  });
   const isPaid = remaining <= 0;
   const progress = saleProgress(sale.status, sale.remito);
 

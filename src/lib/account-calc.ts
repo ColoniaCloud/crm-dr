@@ -22,6 +22,43 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Compara importes en centavos: el ruido del punto flotante no deja pasar un centavo de más. */
+export function toCents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
+/**
+ * Saldo de UNA venta: lo que el cliente todavía debe por ella.
+ *
+ * No es `total - pagos`. Una devolución con nota de crédito baja la deuda de la
+ * venta aunque no haya movido un peso: si se compraron $100.000, se devolvieron
+ * $40.000 a crédito y no se pagó nada, se deben $60.000. Contar solo los pagos
+ * hacía que el POS le pidiera al taller los $100.000 enteros — y el tope del
+ * backend lo dejaba cobrar — mientras la ficha del cliente decía $60.000.
+ *
+ * Una devolución en EFECTIVO no cambia el saldo: acredita la mercadería y le
+ * devuelve al cliente esa misma plata (en la cuenta corriente son una nota de
+ * crédito y un REFUND que se cancelan). Por eso entra solo lo devuelto a crédito.
+ *
+ * Puede dar negativo (se cobró de más, o se acreditó más de lo que se debía): es
+ * saldo a favor, y quien lo muestre decide si lo acota a cero.
+ */
+export function computeSaleRemaining(params: {
+  total: number;
+  paid: number;
+  /** Suma de `SaleReturn.total` de las devoluciones con `refund: CREDIT_NOTE`. */
+  creditedReturns: number;
+}): number {
+  return round2(params.total - params.paid - params.creditedReturns);
+}
+
+/** Lo devuelto a crédito de una venta: las devoluciones que no fueron en efectivo. */
+export function sumCreditedReturns(returns: { total: unknown; refund: string }[]): number {
+  return round2(
+    returns.filter((r) => r.refund !== "CASH").reduce((s, r) => s + Number(r.total), 0)
+  );
+}
+
 export function computeSalePaymentStatus(total: number, paid: number): SalePaymentStatus {
   if (paid >= total) return "PAID";
   return paid > 0 ? "PARTIAL" : "PENDING";

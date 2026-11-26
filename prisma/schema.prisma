@@ -892,6 +892,11 @@ model Payment {
   reference    String?
   notes        String?  @db.Text
   paidAt       DateTime @default(now())
+  /// Clave que manda quien registra el pago (hoy, el POS) para que un reintento
+  /// no lo duplique: en la ruta, sin señal, el pago llega al CRM, la respuesta
+  /// se pierde y el vendedor vuelve a tocar "Registrar". Con la misma clave el
+  /// segundo intento devuelve el pago ya creado en vez de crear otro.
+  clientRequestId String? @unique @db.VarChar(64)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

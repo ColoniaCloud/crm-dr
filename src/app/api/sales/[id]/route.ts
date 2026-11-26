@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction, ensurePaymentAuditTable, notifyAdmins } from "@/lib/notifications";
 import { confirmSale, restoreSaleStock } from "@/lib/sales";
+import { getSaleBalance, lockSale } from "@/lib/payments";
+import { round2, toCents } from "@/lib/account-calc";
 import { avisarFacturaPendiente } from "@/lib/factura-notify";
 import { REMITO_SUMMARY_SELECT } from "@/lib/remito-document";
 import { linkPublicoDeGarantia } from "@/lib/warranty";
@@ -64,6 +66,7 @@ export async function GET(
         payments: {
           orderBy: { paidAt: "desc" },
         },
+        returns: { select: { total: true, refund: true } },
         remito: { select: REMITO_SUMMARY_SELECT },
         paymentPlan: {
           include: {
@@ -279,15 +282,49 @@ export async function PATCH(
       tax: tax ?? oldValues.tax,
     };
 
-    const updated = await prisma.sale.update({
-      where: { id },
-      data: {
-        total: new Prisma.Decimal(total),
-        ...(subtotal !== undefined && { subtotal: new Prisma.Decimal(subtotal) }),
-        ...(discount !== undefined && { discount: new Prisma.Decimal(discount) }),
-        ...(tax !== undefined && { tax: new Prisma.Decimal(tax) }),
-      },
+    // Con la venta bloqueada, para que un cobro simultáneo no pase su tope
+    // contra el total viejo mientras acá se baja.
+    const result = await prisma.$transaction(async (tx) => {
+      await lockSale(tx, id);
+
+      if (toCents(total) !== toCents(oldValues.total)) {
+        // Bajar el total por debajo de lo cobrado dejaba la venta con saldo
+        // negativo sin que nadie lo decidiera como saldo a favor.
+        const balance = await getSaleBalance(id, tx);
+        const comprometido = balance ? balance.paid + balance.creditedReturns : 0;
+        if (toCents(total) < toCents(comprometido)) {
+          return {
+            ok: false as const,
+            error: `El total no puede quedar por debajo de lo ya cobrado o acreditado ($${round2(comprometido).toLocaleString("es-AR")}).`,
+          };
+        }
+
+        // Las cuotas suman el total viejo y no se recalculan solas: el plan
+        // seguiría pidiendo la plata de antes.
+        const plan = await tx.paymentPlan.findUnique({ where: { saleId: id }, select: { status: true } });
+        if (plan?.status === "ACTIVE") {
+          return {
+            ok: false as const,
+            error: "Esta venta tiene un plan de cuotas activo. Cancelá el plan, editá el total y volvé a crearlo.",
+          };
+        }
+      }
+
+      const sale = await tx.sale.update({
+        where: { id },
+        data: {
+          total: new Prisma.Decimal(total),
+          ...(subtotal !== undefined && { subtotal: new Prisma.Decimal(subtotal) }),
+          ...(discount !== undefined && { discount: new Prisma.Decimal(discount) }),
+          ...(tax !== undefined && { tax: new Prisma.Decimal(tax) }),
+        },
+      });
+      return { ok: true as const, sale };
     });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+    const updated = result.sale;
 
     const contactName =
       existing.contact.company ||
@@ -356,9 +393,12 @@ export async function DELETE(
       // No-op if the sale was still PENDING (nothing was ever decremented);
       // restores stock + releases the warranty roll if it had been CONFIRMED
       // or DELIVERED — same logic CANCELLED uses via PUT. Also blocks (and
-      // rolls back the whole delete) if there's a plan with payments applied.
+      // rolls back the whole delete) if the sale has money collected: before,
+      // this line deleted the payments and, by cascade, their audit history.
       const restored = await restoreSaleStock(tx, id, session.user.id, `Venta #${sale.number} eliminada`);
       if (!restored.ok) throw new Error(restored.error);
+      // Lo que queda son pagos netos en cero (cobrados y devueltos en
+      // efectivo): sin esto el FK de payments frena el borrado.
       await tx.payment.deleteMany({ where: { saleId: id } });
       await tx.remito.deleteMany({ where: { saleId: id } });
       await tx.saleItem.deleteMany({ where: { saleId: id } });

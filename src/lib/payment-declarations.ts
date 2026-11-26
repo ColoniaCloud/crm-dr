@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma, type PaymentDeclarationStatus } from "@prisma/client";
 import { notifyAdmins, logOperatorAction } from "@/lib/notifications";
-import { rebuildAllocations } from "@/lib/account";
+import { getSaleBalance, registerPaymentTx, logPaymentCreated } from "@/lib/payments";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("lib/payment-declarations");
@@ -20,6 +20,16 @@ const log = createLogger("lib/payment-declarations");
 /** Compara importes en centavos: evita que el ruido de punto flotante deje pasar un centavo de más. */
 function cents(amount: number): number {
   return Math.round(amount * 100);
+}
+
+/** Para salir de la transacción de confirmación deshaciendo el paso a CONFIRMED. */
+class DeclaracionRechazada extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+  }
 }
 
 /** Los cuatro tipos que acepta el portal al subir un comprobante. */
@@ -133,8 +143,9 @@ export async function createPaymentDeclaration(
   // avisarlo. El chequeo de saldo de abajo ya es el que de verdad importa —no
   // deja declarar de más ni contra una venta saldada— y es agnóstico de si
   // hay plan o no, así que alcanza solo con él.
-  const agg = await prisma.payment.aggregate({ where: { saleId: sale.id }, _sum: { amount: true } });
-  const remaining = Number(sale.total) - Number(agg._sum.amount ?? 0);
+  // El saldo descuenta las devoluciones a crédito, igual que la cuenta
+  // corriente (ver computeSaleRemaining).
+  const remaining = (await getSaleBalance(sale.id))?.remaining ?? Number(sale.total);
   if (cents(input.amount) > cents(remaining)) {
     return {
       ok: false,
@@ -259,45 +270,58 @@ export async function confirmPaymentDeclaration(
   const { declaracion } = cargado;
   const { sale } = declaracion;
 
-  if (sale.status === "CANCELLED") {
-    return { ok: false, error: `La venta #${sale.number} está anulada.`, status: 409 };
-  }
-
+  // Todo en una transacción, con la venta bloqueada y la declaración pasada a
+  // CONFIRMED de forma condicional: antes, dos clics (o dos admins a la vez)
+  // veían los dos la declaración PENDING y creaban dos pagos por la misma plata.
   // El saldo pudo cambiar desde que se declaró (otro pago, otra declaración
-  // confirmada primero): se revalida antes de crear el Payment real.
-  const agg = await prisma.payment.aggregate({ where: { saleId: sale.id }, _sum: { amount: true } });
-  const remaining = Number(sale.total) - Number(agg._sum.amount ?? 0);
+  // confirmada primero, una devolución): registerPaymentTx lo revalida.
   const amount = Number(declaracion.amount);
-  if (cents(amount) > cents(remaining)) {
-    return {
-      ok: false,
-      error: `El saldo restante de la venta #${sale.number} ya no alcanza para este pago (quedan $${Math.max(remaining, 0).toLocaleString("es-AR")}).`,
-      status: 409,
-    };
-  }
+  const resultado = await prisma.$transaction(async (tx) => {
+    const tomada = await tx.paymentDeclaration.updateMany({
+      where: { id: declaracion.id, status: "PENDING" },
+      data: { status: "CONFIRMED", reviewedById: reviewerUserId, reviewedAt: new Date() },
+    });
+    if (tomada.count === 0) {
+      return { ok: false as const, error: "Esta declaración ya fue revisada", status: 409 };
+    }
 
-  const payment = await prisma.payment.create({
-    data: {
+    const registro = await registerPaymentTx(tx, {
       saleId: sale.id,
-      contactId: declaracion.contactId,
-      amount: declaracion.amount,
+      amount,
       method: declaracion.method,
       reference: declaracion.reference,
       notes: declaracion.notes,
-    },
+      expectedContactId: declaracion.contactId,
+    });
+    if (!registro.ok) {
+      // Tirar deshace también el paso a CONFIRMED: la declaración sigue PENDING.
+      throw new DeclaracionRechazada(
+        registro.status,
+        registro.error.replace("El saldo de la venta", "El saldo restante de la venta")
+      );
+    }
+
+    await tx.paymentDeclaration.update({
+      where: { id: declaracion.id },
+      data: { paymentId: registro.paymentId },
+    });
+    return { ok: true as const, paymentId: registro.paymentId };
+  }).catch((err: unknown) => {
+    if (err instanceof DeclaracionRechazada) {
+      return { ok: false as const, error: err.message, status: err.status };
+    }
+    throw err;
   });
+  if (!resultado.ok) return resultado;
+  const paymentId = resultado.paymentId;
 
-  // Si la venta tiene plan de cuotas, imputa este pago. Sin plan no hace nada.
-  await rebuildAllocations(sale.id);
-
-  await prisma.paymentDeclaration.update({
-    where: { id: declaracion.id },
-    data: {
-      status: "CONFIRMED",
-      paymentId: payment.id,
-      reviewedById: reviewerUserId,
-      reviewedAt: new Date(),
-    },
+  await logPaymentCreated({
+    saleId: sale.id,
+    paymentId,
+    userId: reviewerUserId,
+    amount,
+    method: declaracion.method,
+    description: `Confirmó el pago declarado de $${amount.toLocaleString("es-AR")} desde el portal (venta #${sale.number})`,
   });
 
   await logOperatorAction({
@@ -315,7 +339,7 @@ export async function confirmPaymentDeclaration(
     `Confirmamos tu pago de $${amount.toLocaleString("es-AR")} para la compra #${sale.number}.`
   );
 
-  return { ok: true, paymentId: payment.id };
+  return { ok: true, paymentId };
 }
 
 export async function rejectPaymentDeclaration(
@@ -328,8 +352,11 @@ export async function rejectPaymentDeclaration(
   const { declaracion } = cargado;
   const { sale } = declaracion;
 
-  await prisma.paymentDeclaration.update({
-    where: { id: declaracion.id },
+  // Condicional, por la misma razón que al confirmar: si otro admin la confirmó
+  // en el medio, rechazarla ahora dejaría un pago real con la declaración
+  // marcada como rechazada.
+  const tomada = await prisma.paymentDeclaration.updateMany({
+    where: { id: declaracion.id, status: "PENDING" },
     data: {
       status: "REJECTED",
       rejectionReason: reason,
@@ -337,6 +364,9 @@ export async function rejectPaymentDeclaration(
       reviewedAt: new Date(),
     },
   });
+  if (tomada.count === 0) {
+    return { ok: false, error: "Esta declaración ya fue revisada", status: 409 };
+  }
 
   await logOperatorAction({
     userId: reviewerUserId,

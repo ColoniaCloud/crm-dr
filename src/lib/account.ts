@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   round2,
+  computeSaleRemaining,
+  sumCreditedReturns,
   computeInstallmentStatus,
   type InstallmentStatus,
 } from "@/lib/account-calc";
@@ -11,6 +13,9 @@ import {
 // re-exportan acá para que del lado del servidor haya un solo lugar de import.
 export {
   round2,
+  toCents,
+  computeSaleRemaining,
+  sumCreditedReturns,
   computeSalePaymentStatus,
   computeInstallmentStatus,
   buildInstallmentSchedule,
@@ -254,6 +259,7 @@ export async function getPendingSales(
       total: true,
       createdAt: true,
       payments: { select: { amount: true } },
+      returns: { select: { total: true, refund: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -265,7 +271,16 @@ export async function getPendingSales(
   return sales
     .map((s) => {
       const paid = round2(s.payments.reduce((sum, p) => sum + Number(p.amount), 0));
-      const remaining = round2(Math.max(0, Number(s.total) - paid));
+      // Las devoluciones a crédito bajan lo que se debe de esta venta: sin esto
+      // el portal le ofrecía declarar un pago por mercadería ya devuelta.
+      const remaining = Math.max(
+        0,
+        computeSaleRemaining({
+          total: Number(s.total),
+          paid,
+          creditedReturns: sumCreditedReturns(s.returns),
+        })
+      );
       const plan = planPorVenta.get(s.id);
       const pendiente: PendingSale = {
         saleId: s.id,

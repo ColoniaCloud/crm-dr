@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { computeSaleRemaining, sumCreditedReturns } from "@/lib/account-calc";
 import { prisma } from "@/lib/prisma";
 import { createLogger } from "@/lib/logger";
 import { requireRole } from "@/lib/api-auth";
@@ -9,12 +10,15 @@ export async function GET() {
   if (!gate.success) return gate.response;
 
   try {
+    // Las anuladas no son deuda: antes aparecían acá con su total entero.
     const sales = await prisma.sale.findMany({
+      where: { status: { not: "CANCELLED" } },
       include: {
         contact: {
           select: { id: true, firstName: true, lastName: true, company: true },
         },
         payments: { select: { amount: true } },
+        returns: { select: { total: true, refund: true } },
       },
     });
 
@@ -25,7 +29,11 @@ export async function GET() {
           0
         );
         const total = Number(sale.total);
-        const remaining = total - paid;
+        const remaining = computeSaleRemaining({
+          total,
+          paid,
+          creditedReturns: sumCreditedReturns(sale.returns),
+        });
         const contact = sale.contact;
         const clientName = contact
           ? contact.company ||

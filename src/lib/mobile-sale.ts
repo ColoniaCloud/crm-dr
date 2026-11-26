@@ -1,4 +1,5 @@
 import type { Contact, Payment, Sale, SaleItem } from "@prisma/client";
+import { computeSaleRemaining, sumCreditedReturns } from "@/lib/account-calc";
 
 type SaleForSerialization = Sale & {
   contact: Pick<Contact, "id" | "firstName" | "lastName" | "company" | "cuit"> &
@@ -7,6 +8,8 @@ type SaleForSerialization = Sale & {
   remito?: { number: number; signedAt: Date | null; signedVia: string | null } | null;
   items: (SaleItem & { product: { id: string; name: string; sku: string | null } })[];
   payments: Payment[];
+  /** Devoluciones: las hechas a crédito bajan el saldo (ver computeSaleRemaining). */
+  returns?: { total: unknown; refund: string }[];
 };
 
 // Prisma's Decimal fields serialize to strings via JSON.stringify — this
@@ -41,7 +44,11 @@ export function serializeSaleDetail(sale: SaleForSerialization) {
     tax: Number(sale.tax),
     total: Number(sale.total),
     totalPaid,
-    remaining: Number(sale.total) - totalPaid,
+    remaining: computeSaleRemaining({
+      total: Number(sale.total),
+      paid: totalPaid,
+      creditedReturns: sumCreditedReturns(sale.returns ?? []),
+    }),
     createdAt: sale.createdAt.toISOString(),
     remito: sale.remito
       ? { number: sale.remito.number, signedAt: sale.remito.signedAt?.toISOString() ?? null, signedVia: sale.remito.signedVia }

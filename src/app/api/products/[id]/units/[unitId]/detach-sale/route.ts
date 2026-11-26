@@ -5,6 +5,11 @@ import { logOperatorAction } from "@/lib/notifications";
 import { calcTax } from "@/lib/utils";
 import { createLogger } from "@/lib/logger";
 import { releaseRollForSaleItem } from "@/lib/warranty";
+import { getSaleBalance, lockSale } from "@/lib/payments";
+import { toCents } from "@/lib/account-calc";
+
+/** Error que se le muestra tal cual a quien reasigna. */
+class ReasignacionBloqueada extends Error {}
 
 const log = createLogger("api/products/[id]/units/[unitId]/detach-sale");
 
@@ -81,6 +86,13 @@ export async function POST(
     }
 
     await prisma.$transaction(async (tx) => {
+      await lockSale(tx, sale.id);
+      const balance = await getSaleBalance(sale.id, tx);
+      // Lo que ya se cobró de esta venta. Sacarle el rollo no puede dejarla
+      // debiendo menos de lo cobrado (ni anularla con plata adentro): la plata
+      // quedaría fuera de la cuenta corriente.
+      const cobrado = balance ? balance.paid + balance.creditedReturns : 0;
+
       // Restore the stock this item consumed
       const product = await tx.product.findUnique({ where: { id: saleItem.productId } });
       if (product) {
@@ -107,6 +119,11 @@ export async function POST(
 
       const remainingItems = sale.items.length - 1;
       if (remainingItems <= 0) {
+        if (balance && toCents(balance.netPaid) > 0) {
+          throw new ReasignacionBloqueada(
+            `No se puede reasignar: era el único producto de la venta #${sale.number} y tiene $${balance.netPaid.toLocaleString("es-AR")} cobrados. Resolvé esa plata primero.`
+          );
+        }
         await tx.sale.update({ where: { id: sale.id }, data: { status: "CANCELLED" } });
       } else {
         const newSubtotal = Number(sale.subtotal) - Number(saleItem.total);
@@ -126,6 +143,11 @@ export async function POST(
         const newBase = sobreNeto ? Math.max(newSubtotal - discount, 0) : newSubtotal;
         const newTax = sinIva || !sale.requiresFactura ? 0 : calcTax(newBase);
         const newTotal = newSubtotal - discount + newTax;
+        if (toCents(newTotal) < toCents(cobrado)) {
+          throw new ReasignacionBloqueada(
+            `No se puede reasignar: la venta #${sale.number} quedaría en $${newTotal.toLocaleString("es-AR")} y ya tiene $${cobrado.toLocaleString("es-AR")} cobrados o acreditados.`
+          );
+        }
         await tx.sale.update({
           where: { id: sale.id },
           data: { subtotal: newSubtotal, tax: newTax, total: newTotal },
@@ -144,6 +166,9 @@ export async function POST(
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof ReasignacionBloqueada) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     log.error({ err: error }, "Error detaching sale from unit");
     return NextResponse.json({ error: "Error al reasignar la unidad" }, { status: 500 });
   }

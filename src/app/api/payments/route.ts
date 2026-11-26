@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { logOperatorAction } from "@/lib/notifications";
-import { rebuildAllocations } from "@/lib/account";
+import { toCents } from "@/lib/account";
+import { getSaleBalances, logPaymentCreated, registerPayment } from "@/lib/payments";
 const log = createLogger("api/payments");
 
 const createPaymentSchema = z.object({
@@ -33,8 +33,10 @@ export async function GET(request: Request) {
     const pending = searchParams.get("pending");
 
     if (pending === "true") {
-      // Find sales where total > sum of payments
+      // Ventas con saldo. Las anuladas no son deuda, y las devoluciones a
+      // crédito bajan el saldo aunque no haya un pago de por medio.
       const sales = await prisma.sale.findMany({
+        where: { status: { not: "CANCELLED" } },
         include: {
           contact: {
             select: { id: true, firstName: true, lastName: true, company: true },
@@ -42,26 +44,18 @@ export async function GET(request: Request) {
           payments: true,
         },
       });
+      const balances = await getSaleBalances(sales.map((s) => s.id));
 
       const pendingPayments = sales
-        .filter((sale) => {
-          const totalPaid = sale.payments.reduce(
-            (sum, payment) => sum + Number(payment.amount),
-            0
-          );
-          return totalPaid < Number(sale.total);
-        })
         .map((sale) => {
-          const totalPaid = sale.payments.reduce(
-            (sum, payment) => sum + Number(payment.amount),
-            0
-          );
+          const b = balances.get(sale.id);
           return {
             ...sale,
-            totalPaid,
-            remaining: Number(sale.total) - totalPaid,
+            totalPaid: b?.paid ?? 0,
+            remaining: b?.remaining ?? Number(sale.total),
           };
-        });
+        })
+        .filter((sale) => toCents(sale.remaining) > 0);
 
       return NextResponse.json(pendingPayments);
     }
@@ -77,7 +71,7 @@ export async function GET(request: Request) {
     const formatted = payments.map((p) => ({
       id: p.id,
       number: p.number,
-      date: p.createdAt.toISOString(),
+      date: p.paidAt.toISOString(),
       clientName: p.contact
         ? p.contact.company ||
           `${p.contact.firstName ?? ""} ${p.contact.lastName ?? ""}`.trim()
@@ -113,30 +107,23 @@ export async function POST(request: Request) {
     if (!parsed.success) return parsed.response;
     const { saleId, contactId, amount, method, reference, notes } = parsed.data;
 
-    // Use provided contactId, or derive from sale if not provided
-    let resolvedContactId = contactId;
-
-    if (!resolvedContactId) {
-      const sale = await prisma.sale.findUnique({
-        where: { id: saleId },
-      });
-
-      if (!sale) {
-        return NextResponse.json({ error: "Sale not found" }, { status: 404 });
-      }
-
-      resolvedContactId = sale.contactId;
+    // Mismo camino que la app móvil y las declaraciones del portal: tope de
+    // saldo, venta anulada, cliente de la venta y bloqueo contra cobros
+    // simultáneos (ver src/lib/payments.ts).
+    const result = await registerPayment({
+      saleId,
+      amount,
+      method,
+      reference,
+      notes,
+      expectedContactId: contactId,
+    });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const payment = await prisma.payment.create({
-      data: {
-        saleId,
-        contactId: resolvedContactId,
-        amount: new Prisma.Decimal(amount),
-        method,
-        reference,
-        notes,
-      },
+    const payment = await prisma.payment.findUniqueOrThrow({
+      where: { id: result.paymentId },
       include: {
         sale: {
           select: { id: true, number: true, total: true },
@@ -147,11 +134,10 @@ export async function POST(request: Request) {
       },
     });
 
-    // Si la venta tiene plan de cuotas, imputa este pago. Sin plan no hace nada.
-    await rebuildAllocations(saleId);
-
     const pName = payment.contact.company || `${payment.contact.firstName} ${payment.contact.lastName}`.trim();
-    await logOperatorAction({ userId: session.user.id, action: "CREATE_PAYMENT", entityType: "PAYMENT", entityId: payment.id, description: `Registró pago $${amount} de "${pName}"`, link: `/sales/${saleId}` });
+    const description = `Registró pago $${amount} de "${pName}"`;
+    await logPaymentCreated({ saleId, paymentId: payment.id, userId: session.user.id, amount, method, description });
+    await logOperatorAction({ userId: session.user.id, action: "CREATE_PAYMENT", entityType: "PAYMENT", entityId: payment.id, description, link: `/sales/${saleId}` });
     return NextResponse.json(payment, { status: 201 });
   } catch (error) {
     log.error({ err: error }, "Error creating payment");

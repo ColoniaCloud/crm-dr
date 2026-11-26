@@ -6,7 +6,8 @@ import { z } from "zod";
 import { validateBody } from "@/lib/api-validation";
 import { createLogger } from "@/lib/logger";
 import { ensurePaymentAuditTable, logOperatorAction } from "@/lib/notifications";
-import { rebuildAllocations } from "@/lib/account";
+import { rebuildAllocations, round2, toCents } from "@/lib/account";
+import { getSaleBalance, lockSale } from "@/lib/payments";
 
 const log = createLogger("api/payments/[id]");
 
@@ -64,20 +65,55 @@ export async function PUT(
       paidAt: paidAt ?? existing.paidAt.toISOString(),
     };
 
-    const updated = await prisma.payment.update({
-      where: { id },
-      data: {
-        amount: new Prisma.Decimal(amount),
-        method: method ?? existing.method,
-        reference: reference !== undefined ? reference : existing.reference,
-        notes: notes !== undefined ? notes : existing.notes,
-        paidAt: paidAt ? new Date(paidAt) : existing.paidAt,
-      },
-    });
+    // Una fecha que no se puede leer daba un 500; una futura dejaba un pago
+    // "hecho" que todavía no pasó y desordenaba la imputación FIFO a cuotas.
+    let nuevaFecha = existing.paidAt;
+    if (paidAt) {
+      nuevaFecha = new Date(paidAt);
+      if (Number.isNaN(nuevaFecha.getTime())) {
+        return NextResponse.json({ error: "La fecha del pago no es válida" }, { status: 400 });
+      }
+      if (nuevaFecha.getTime() > Date.now() + 60 * 60 * 1000) {
+        return NextResponse.json({ error: "La fecha del pago no puede ser futura" }, { status: 400 });
+      }
+    }
 
-    // El monto o la fecha pueden haber cambiado, así que las imputaciones a
-    // cuotas se recalculan enteras (la función es idempotente).
-    await rebuildAllocations(existing.sale.id);
+    const result = await prisma.$transaction(async (tx) => {
+      await lockSale(tx, existing.sale.id);
+
+      // Subir el monto tiene el mismo tope que cobrar: el saldo de la venta
+      // con este pago sacado. Antes no había ninguno.
+      if (toCents(amount) > toCents(Number(existing.amount))) {
+        const balance = await getSaleBalance(existing.sale.id, tx);
+        const disponible = round2((balance?.remaining ?? 0) + Number(existing.amount));
+        if (toCents(amount) > toCents(disponible)) {
+          return {
+            ok: false as const,
+            error: `Con este pago, el saldo de la venta #${existing.sale.number} admite como máximo $${disponible.toLocaleString("es-AR")}.`,
+          };
+        }
+      }
+
+      const payment = await tx.payment.update({
+        where: { id },
+        data: {
+          amount: new Prisma.Decimal(amount),
+          method: method ?? existing.method,
+          reference: reference !== undefined ? reference : existing.reference,
+          notes: notes !== undefined ? notes : existing.notes,
+          paidAt: nuevaFecha,
+        },
+      });
+
+      // El monto o la fecha pueden haber cambiado, así que las imputaciones a
+      // cuotas se recalculan enteras (la función es idempotente).
+      await rebuildAllocations(existing.sale.id, tx);
+      return { ok: true as const, payment };
+    });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+    const updated = result.payment;
 
     const contactName =
       existing.contact.company ||
@@ -182,11 +218,13 @@ export async function DELETE(
       )
     `;
 
-    await prisma.payment.delete({ where: { id } });
-
     // Al desaparecer el pago, sus imputaciones se van por cascada; el rebuild
     // recorre los pagos que quedaron y vuelve a llenar las cuotas desde cero.
-    await rebuildAllocations(existing.sale.id);
+    await prisma.$transaction(async (tx) => {
+      await lockSale(tx, existing.sale.id);
+      await tx.payment.delete({ where: { id } });
+      await rebuildAllocations(existing.sale.id, tx);
+    });
 
     await logOperatorAction({
       userId: session.user.id,

@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { linkRollToSaleItem, releaseRollForSaleItem } from "@/lib/warranty";
+import { getSaleBalance, lockSale } from "@/lib/payments";
+import { toCents } from "@/lib/account-calc";
 
 type Tx = Prisma.TransactionClient;
 
@@ -104,6 +106,9 @@ export async function confirmSale(
  * decremented, so restoring it anyway would inflate stock that was never
  * actually removed.
  *
+ * Blocks (returns ok:false) when the sale has money collected on it (payments
+ * minus cash refunds): see the comment inside.
+ *
  * If the sale has an ACTIVE PaymentPlan: blocks (returns ok:false) when any
  * cuota already has a payment applied — that money needs to be sorted out
  * by hand first (nota de crédito, devolución), not silently orphaned. If the
@@ -116,11 +121,26 @@ export async function restoreSaleStock(
   userId: string,
   reason: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  await lockSale(tx, saleId);
   const sale = await tx.sale.findUnique({
     where: { id: saleId },
     include: { items: true },
   });
   if (!sale) return { ok: true };
+
+  // Con plata cobrada no se anula ni se borra. La cuenta corriente ignora los
+  // pagos de una venta anulada, así que la plata desaparecía: el cliente pagó,
+  // y su extracto no mostraba ni deuda, ni saldo a favor, ni devolución. Y
+  // borrar la venta borraba los pagos sin dejar rastro. Primero hay que
+  // resolver esa plata a mano: devolverla (una devolución en efectivo) o, si el
+  // pago fue un error de carga, eliminarlo.
+  const balance = await getSaleBalance(saleId, tx);
+  if (balance && toCents(balance.netPaid) > 0) {
+    return {
+      ok: false,
+      error: `Esta venta tiene $${balance.netPaid.toLocaleString("es-AR")} cobrados. Antes de anularla o eliminarla, devolvé esa plata (devolución en efectivo) o eliminá los pagos si fueron un error de carga.`,
+    };
+  }
 
   const plan = await tx.paymentPlan.findUnique({
     where: { saleId },

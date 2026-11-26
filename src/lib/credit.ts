@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeSaleRemaining, sumCreditedReturns } from "@/lib/account-calc";
 import type { Prisma } from "@prisma/client";
 
 export interface CreditCheckResult {
@@ -66,11 +67,18 @@ export async function getCreditBalance(
 ): Promise<number> {
   const sales = await prisma.sale.findMany({
     where: { contactId, ...ventasAPlazo(opciones.excluirVentaId) },
-    select: { total: true, payments: { select: { amount: true } } },
+    select: { total: true, payments: { select: { amount: true } }, returns: { select: { total: true, refund: true } }, },
   });
   return sales.reduce((sum, sale) => {
     const paid = sale.payments.reduce((s, p) => s + Number(p.amount), 0);
-    return sum + (Number(sale.total) - paid);
+    return (
+      sum +
+      computeSaleRemaining({
+        total: Number(sale.total),
+        paid,
+        creditedReturns: sumCreditedReturns(sale.returns),
+      })
+    );
   }, 0);
 }
 
