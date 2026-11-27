@@ -141,6 +141,42 @@ export function creditPerUnit(
 }
 
 /**
+ * Lo que se acredita por devolver `quantity` unidades de una línea.
+ *
+ * No es `creditPerUnit × quantity`: ese redondea a centavos POR UNIDAD y después
+ * multiplica, así que el error de redondeo se multiplica por la cantidad. Se
+ * parte del neto de la línea entera y se redondea una sola vez. (Ultraglass,
+ * venta #101: devuelta entera, se acreditaron $1.340.000,01 sobre $1.340.000.)
+ */
+export function lineCredit(
+  sale: { subtotal: unknown; tagDiscount: unknown; total: unknown },
+  saleItem: { total: unknown; tagDiscount: unknown; quantity: number },
+  quantity: number
+): number {
+  if (saleItem.quantity <= 0) return 0;
+  const netoLinea = Number(saleItem.total) - Number(saleItem.tagDiscount);
+  return round2(((netoLinea * quantity) / saleItem.quantity) * creditRatioNeto(sale));
+}
+
+/**
+ * El techo de lo que una devolución puede acreditar: lo que queda de la venta
+ * sin acreditar todavía. Y si esta devolución completa la venta (no queda una
+ * sola unidad por devolver), se acredita EXACTAMENTE ese resto, así los
+ * centavos de redondeo de las devoluciones parciales cierran en cero en vez de
+ * dejar al cliente con un centavo a favor o en contra.
+ */
+export function capReturnCredit(params: {
+  computed: number;
+  saleTotal: number;
+  previouslyCredited: number;
+  completesSale: boolean;
+}): number {
+  const resto = round2(Math.max(0, params.saleTotal - params.previouslyCredited));
+  if (params.completesSale) return resto;
+  return round2(Math.min(params.computed, resto));
+}
+
+/**
  * Registra una devolución (total o parcial) sobre una venta ya entregada.
  *
  * Tiene que correr dentro de una transacción: mueve stock, libera rollos de
@@ -258,7 +294,7 @@ export async function createSaleReturn(
       // Lo acreditable de esta parte de la línea, con SU propio descuento de
       // etiqueta descontado y el cargado a mano prorrateado. Se guarda acá para
       // que el total de abajo sea una suma y no dos cuentas distintas.
-      credito: round2(creditPerUnit(sale, saleItem) * item.quantity),
+      credito: lineCredit(sale, saleItem, item.quantity),
     });
   }
 
@@ -269,7 +305,20 @@ export async function createSaleReturn(
   // Y el total es la suma de los créditos por línea. Antes era
   // `subtotal × creditRatio(sale)` — un prorrateo uniforme que dejó de valer
   // cuando cada línea puede llevar su propio descuento (ver creditPerUnit).
-  const total = round2(aDevolver.reduce((suma, i) => suma + i.credito, 0));
+  // Con techo: nunca más que lo que queda de la venta sin acreditar, y el resto
+  // exacto cuando esta devolución la completa (ver capReturnCredit).
+  const yaAcreditado = await tx.saleReturn.aggregate({ where: { saleId }, _sum: { total: true } });
+  const completaLaVenta = sale.items.every((i) => {
+    const previa = devueltas.get(i.id) ?? 0;
+    const ahora = aDevolver.find((d) => d.saleItem.id === i.id)?.quantity ?? 0;
+    return previa + ahora >= i.quantity;
+  });
+  const total = capReturnCredit({
+    computed: round2(aDevolver.reduce((suma, i) => suma + i.credito, 0)),
+    saleTotal: Number(sale.total),
+    previouslyCredited: Number(yaAcreditado._sum.total ?? 0),
+    completesSale: completaLaVenta,
+  });
   if (total <= 0) {
     return { ok: false, error: "El importe a devolver da cero" };
   }
