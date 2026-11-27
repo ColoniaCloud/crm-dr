@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
+import { Button } from "@/components/ui/button";
+import { AccountAdjustmentDialog } from "@/components/clients/account-adjustment-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -74,6 +77,10 @@ export function ClientAccountStatement({ clientId }: { clientId: string }) {
   const { format: formatCurrency } = useCurrency();
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  const { data: session } = useSession();
+  // Solo SUPERADMIN carga ajustes; la ruta lo exige igual.
+  const canAdjust = session?.user?.role === "SUPERADMIN";
 
   const fetchAccount = useCallback(async () => {
     try {
@@ -191,7 +198,14 @@ export function ClientAccountStatement({ clientId }: { clientId: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Movimientos</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">Movimientos</CardTitle>
+            {canAdjust && (
+              <Button size="sm" variant="outline" onClick={() => setAdjustmentOpen(true)}>
+                Cargar ajuste
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {entries.length === 0 ? (
@@ -238,6 +252,15 @@ export function ClientAccountStatement({ clientId }: { clientId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {adjustmentOpen && (
+        <AccountAdjustmentDialog
+          clientId={clientId}
+          open={adjustmentOpen}
+          onOpenChange={setAdjustmentOpen}
+          onCreated={fetchAccount}
+        />
+      )}
     </div>
   );
 }
