@@ -602,6 +602,7 @@ export default function InstallersPage() {
       {/* ── Email Dialog ── */}
       {waInstaller && contactWhatsappRaw(waInstaller) && (
         <WhatsAppContactDialog
+          contactId={waInstaller.id}
           number={contactWhatsappRaw(waInstaller)!}
           country={countryFromName(waInstaller.installerCountry)}
           name={`${waInstaller.firstName} ${waInstaller.lastName}`.trim()}

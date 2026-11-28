@@ -195,6 +195,34 @@ describe("envío", () => {
     expect(row).toMatchObject({ type: "template", templateName: "kristall_pedir_datos", sentById: "user_1" });
   });
 
+  it("la plantilla mandada desde una ficha queda en esa ficha, aunque el número ya estuviera vinculado a otra", async () => {
+    const vieja = await fakePrisma.contact.create({
+      data: { type: "LEAD", source: "WHATSAPP", firstName: "Provisoria", lastName: "", createdAt: new Date() },
+    });
+    const lead = await fakePrisma.contact.create({
+      data: { type: "LEAD", source: "MANUAL", firstName: "Marcos", lastName: "Pérez", createdAt: new Date() },
+    });
+    await msg({ wamid: "a", direction: "inbound", from: CUSTOMER_WA, to: BUSINESS_DISPLAY, timestamp: ago(40 * HOUR), contactId: vieja.id });
+
+    const input = { kind: "template" as const, name: "kristall_pedir_datos", language: "es_AR", params: ["Marcos", "link"] };
+    await sendToPeer(CUSTOMER_WA, input, "u", LINE, lead.id as string);
+
+    const row = messages().find((m) => m.wamid === "wamid.SENT_2");
+    expect(row).toMatchObject({ templateName: "kristall_pedir_datos", contactId: lead.id });
+  });
+
+  it("si la ficha indicada no existe, se vincula como siempre por el número", async () => {
+    const vieja = await fakePrisma.contact.create({
+      data: { type: "LEAD", source: "WHATSAPP", firstName: "Provisoria", lastName: "", createdAt: new Date() },
+    });
+    await msg({ wamid: "a", direction: "inbound", from: CUSTOMER_WA, to: BUSINESS_DISPLAY, timestamp: ago(40 * HOUR), contactId: vieja.id });
+
+    const input = { kind: "template" as const, name: "kristall_pedir_datos", language: "es_AR", params: ["Marcos", "link"] };
+    await sendToPeer(CUSTOMER_WA, input, "u", LINE, "no_existe");
+
+    expect(messages().find((m) => m.wamid === "wamid.SENT_2")).toMatchObject({ contactId: vieja.id });
+  });
+
   it("rechaza una plantilla que no está aprobada o con otro idioma", async () => {
     await inbound("a", HOUR);
     for (const input of [

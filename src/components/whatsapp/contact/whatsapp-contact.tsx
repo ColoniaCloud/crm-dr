@@ -26,6 +26,7 @@ export function WhatsAppTrigger({
   number,
   country,
   name,
+  contactId,
   className,
   title = "WhatsApp",
   children,
@@ -33,6 +34,8 @@ export function WhatsAppTrigger({
   number: string;
   country?: WaCountry;
   name?: string;
+  /** La ficha del número: la plantilla que se mande queda registrada en ella. */
+  contactId?: string;
   className?: string;
   title?: string;
   children: React.ReactNode;
@@ -54,7 +57,7 @@ export function WhatsAppTrigger({
       >
         {children}
       </button>
-      {open && <WhatsAppContactDialog number={number} country={country} name={name} onClose={() => setOpen(false)} />}
+      {open && <WhatsAppContactDialog number={number} country={country} name={name} contactId={contactId} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -64,11 +67,13 @@ export function WhatsAppContactDialog({
   number,
   country,
   name,
+  contactId,
   onClose,
 }: {
   number: string;
   country?: WaCountry;
   name?: string;
+  contactId?: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -81,7 +86,7 @@ export function WhatsAppContactDialog({
   const valid = isPlausibleWhatsappNumber(normalized);
   const peer = peerKey(normalized);
 
-  if (templateFlow) return <TemplateSendFlow peer={peer} name={name} onClose={onClose} />;
+  if (templateFlow) return <TemplateSendFlow peer={peer} name={name} contactId={contactId} onClose={onClose} />;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

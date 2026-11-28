@@ -949,7 +949,7 @@ export default function ClientsPage() {
                           <a href={`tel:${client.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{client.phone}</a>
                         )}
                         {waNum && (
-                          <WhatsAppTrigger number={waRaw!} name={client.company || `${client.firstName} ${client.lastName}`.trim()} className="text-[#25d366]" title="WhatsApp">
+                          <WhatsAppTrigger contactId={client.id} number={waRaw!} name={client.company || `${client.firstName} ${client.lastName}`.trim()} className="text-[#25d366]" title="WhatsApp">
                             <WhatsAppIcon size={14} />
                           </WhatsAppTrigger>
                         )}
@@ -1113,7 +1113,7 @@ export default function ClientsPage() {
                         </TableCell>
                         <TableCell>
                           {waNum ? (
-                            <WhatsAppTrigger
+                            <WhatsAppTrigger contactId={client.id}
                               number={waRaw!}
                               name={client.company || `${client.firstName} ${client.lastName}`.trim()}
                               className="inline-flex items-center gap-1.5 text-sm text-[#25d366] hover:text-[#25d366]/80 transition-colors whitespace-nowrap"

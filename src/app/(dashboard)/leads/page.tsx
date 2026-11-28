@@ -1273,7 +1273,7 @@ export default function LeadsPage() {
                             <a href={`tel:${lead.phone}`} className="text-xs text-muted-foreground hover:text-foreground">{lead.phone}</a>
                           )}
                           {waNum && (
-                            <WhatsAppTrigger number={waRaw!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()} className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
+                            <WhatsAppTrigger contactId={lead.id} number={waRaw!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()} className="text-[#25d366] hover:text-[#25d366]/80" title="WhatsApp">
                               <WhatsAppIcon size={14} />
                             </WhatsAppTrigger>
                           )}
@@ -1448,7 +1448,7 @@ export default function LeadsPage() {
                             </TableCell>
                             <TableCell className="p-2 w-9">
                               {contactWhatsappRaw(lead) ? (
-                                <WhatsAppTrigger number={contactWhatsappRaw(lead)!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()}
+                                <WhatsAppTrigger contactId={lead.id} number={contactWhatsappRaw(lead)!} name={lead.company || `${lead.firstName} ${lead.lastName}`.trim()}
                                   className="flex items-center justify-center h-8 w-8 transition-colors text-[#25d366] hover:text-[#25d366]/80" title={contactWhatsappRaw(lead)!}>
                                   <WhatsAppIcon size={16} />
                                 </WhatsAppTrigger>

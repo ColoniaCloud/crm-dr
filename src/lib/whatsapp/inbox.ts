@@ -260,7 +260,14 @@ export async function sendToPeer(
   peer: string,
   input: SendInput,
   userId: string,
-  line: WhatsAppLine
+  line: WhatsAppLine,
+  /**
+   * La ficha desde la que se mandó, cuando se sabe (el botón de WhatsApp de una
+   * lista). Manda sobre lo que se deduciría del número: con fichas duplicadas o un
+   * número que ya estaba vinculado a otra, el envío tiene que quedar en esta, que
+   * es la que después se filtra por "recibió / no recibió la plantilla".
+   */
+  forContactId?: string | null
 ): Promise<{ wamid: string }> {
   // Ni siquiera con permisos: una sesión de demostración no manda mensajes reales.
   if (esDemo()) throw new InboxSendError("No disponible en la demostración", 403);
@@ -280,7 +287,11 @@ export async function sendToPeer(
   const to = normalizeWhatsappNumber(latest ? otherSide(latest) : key);
   if (!to) throw new InboxSendError("Número inválido", 400);
 
+  const explicit = forContactId
+    ? (await prisma.contact.findUnique({ where: { id: forContactId }, select: { id: true } }))?.id
+    : undefined;
   const contactId =
+    explicit ??
     (await prisma.whatsAppCloudMessage.findFirst({
       where: { contactId: { not: null }, OR: [{ direction: "inbound", from: { in: variants } }, { direction: "outbound", to: { in: variants } }] },
       orderBy: { timestamp: "desc" },

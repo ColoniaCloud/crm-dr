@@ -34,10 +34,14 @@ export async function GET(request: Request, { params }: Ctx) {
   }
 }
 
+/** La ficha desde la que se manda, si se sabe: el envío queda en ella y no en la que se deduzca del número. */
+const contactId = z.string().min(1).max(64).optional();
+
 const schema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("text"), text: z.string().min(1).max(4096) }),
+  z.object({ kind: z.literal("text"), text: z.string().min(1).max(4096), contactId }),
   z.object({
     kind: z.literal("template"),
+    contactId,
     name: z.string().min(1).max(512),
     language: z.string().min(2).max(16),
     params: z.array(z.string().max(1000)).max(20),
@@ -62,7 +66,8 @@ export async function POST(request: Request, { params }: Ctx) {
   }
 
   try {
-    const { wamid } = await sendToPeer(peer, validation.data, gate.session.user.id, gate.line);
+    const { contactId: forContactId, ...input } = validation.data;
+    const { wamid } = await sendToPeer(peer, input, gate.session.user.id, gate.line, forContactId);
     return NextResponse.json({ ok: true, wamid });
   } catch (error) {
     if (error instanceof InboxSendError) {

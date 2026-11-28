@@ -18,11 +18,14 @@ import { sendTemplateTo } from "./send-template";
 export function TemplateSendFlow({
   peer,
   name,
+  contactId,
   onClose,
 }: {
   /** Número ya normalizado (solo dígitos con código de país). */
   peer: string;
   name?: string;
+  /** La ficha (Contact) desde la que se manda, si la hay. */
+  contactId?: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -50,7 +53,7 @@ export function TemplateSendFlow({
   const send = async (t: InboxTemplate, params: string[]) => {
     setSending(true);
     setSendError(null);
-    const result = await sendTemplateTo(peer, t, params);
+    const result = await sendTemplateTo(peer, t, params, contactId);
     setSending(false);
     if (result.ok) {
       setPicked(null);
